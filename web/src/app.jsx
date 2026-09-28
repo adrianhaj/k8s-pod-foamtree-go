@@ -187,6 +187,7 @@ function App() {
   const [nodes, setNodes] = useState([]);
   const [error, setError] = useState(null);
   const gridRef = useRef(null);
+  const sceneRef = useRef(null);
 
   useEffect(() => {
     apiFetch('/api/me').then(r => r.json()).then(setMe).catch(() => {});
@@ -424,6 +425,7 @@ function App() {
               view={view}
               context={contexts[contextIdx] && contexts[contextIdx].context}
               gridRef={gridRef}
+              sceneRef={sceneRef}
               treemap={{
                 nodes, metric, match, highlight, highlightActive,
                 hueOf: idx => nodeHue(idx, tw.colorScheme),
@@ -448,6 +450,7 @@ function App() {
               highlightActive={highlightActive}
               onPodSelect={toggleWorkload}
               onPodHover={setHoveredWorkload}
+              snapshotRef={sceneRef}
             />
           ) : (
             <TreemapGrid
