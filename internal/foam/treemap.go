@@ -26,6 +26,19 @@ func (a Axis) pod(p Pod) int64 {
 	return p.Memory
 }
 
+// limit is nil for a pod with no ceiling on this axis.
+func (a Axis) limit(p Pod) *float64 {
+	l := p.CPULimit
+	if a == Memory {
+		l = p.MemoryLimit
+	}
+	if l == nil {
+		return nil
+	}
+	v := a.weight(*l)
+	return &v
+}
+
 func (a Axis) node(n Node) int64 {
 	if a == CPU {
 		return n.CPU
@@ -54,6 +67,10 @@ type NodeGroup struct {
 	Taints        []Taint         `json:"taints"`
 	Conditions    map[string]bool `json:"conditions"`
 	Warnings      []string        `json:"warnings"`
+	Zone          string          `json:"zone"`
+	Region        string          `json:"region"`
+	InstanceType  string          `json:"instanceType"`
+	Pool          string          `json:"pool"`
 }
 
 type PodGroup struct {
@@ -65,6 +82,7 @@ type PodGroup struct {
 	QOS               string            `json:"qos"`
 	HasInitContainers bool              `json:"hasInitContainers"`
 	Findings          []string          `json:"findings"`
+	Limit             *float64          `json:"limit"`
 }
 
 type Leaf struct {
@@ -110,6 +128,10 @@ func Treemap(nodes []Node, pods []Pod, axis Axis) Tree {
 			Taints:        orEmpty(n.Taints),
 			Conditions:    orEmptyMap(n.Conditions),
 			Warnings:      Warnings(n),
+			Zone:          n.Zone,
+			Region:        n.Region,
+			InstanceType:  n.InstanceType,
+			Pool:          n.Pool,
 		})
 	}
 	return tree
@@ -134,6 +156,7 @@ func podGroup(p Pod, n Node, axis Axis) PodGroup {
 		QOS:               p.QOS,
 		HasInitContainers: len(p.InitContainers) > 0,
 		Findings:          Findings(p, n),
+		Limit:             axis.limit(p),
 	}
 }
 
