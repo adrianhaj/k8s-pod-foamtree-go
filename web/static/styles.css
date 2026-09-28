@@ -1374,3 +1374,6 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 .group-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; }
 .group-meta { color: var(--text-soft); }
 .group-util { margin-left: auto; font-weight: 600; }
+
+/* History: the header chip while a recorded snapshot is on screen. */
+.hist-chip { color: var(--warn); border-color: var(--warn); }
