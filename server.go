@@ -61,6 +61,18 @@ func newHandler(src source, static fs.FS, a *auth.Auth) http.Handler {
 			writeCSV(w, foam.Report(nodes, pods))
 		}
 	})
+	// Read-only dry run, so a GET: nothing to forge, and the link can be shared.
+	app.HandleFunc("GET /api/fit", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		p, err := foam.Hypothetical(q.Get("cpu"), q.Get("memory"), q.Get("nodeSelector"), q.Get("tolerations"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if nodes, pods, ok := snapshot(w, r, src); ok {
+			writeJSON(w, foam.Fit(nodes, pods, p))
+		}
+	})
 	app.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
 		if u, ok := auth.UserFrom(r.Context()); ok {
 			writeJSON(w, map[string]string{"auth": "oidc", "email": u.Email, "name": u.Name})
@@ -83,7 +95,8 @@ func newHandler(src source, static fs.FS, a *auth.Auth) http.Handler {
 	return secure(root)
 }
 
-// snapshot writes the error response itself when it returns ok=false.
+// snapshot reads the ?context= cluster, writing the error response itself
+// when that fails.
 func snapshot(w http.ResponseWriter, r *http.Request, src source) ([]foam.Node, []foam.Pod, bool) {
 	ctx, cancel := context.WithTimeout(r.Context(), snapshotTimeout)
 	defer cancel()
