@@ -1,7 +1,7 @@
 // Main app — sidebar + treemap grid for the k8sfoams dashboard.
 
 const { useState, useEffect, useMemo, useRef } = React;
-const { NodeCard } = window.k8sTreemap;
+const { NodeCard, metricCap, metricValue } = window.k8sTreemap;
 const { Scene3D } = window.k8sScene3D;
 const { workloadKey } = window.k8sWorkload;
 const { warnInfo, statusOf, WARNING_ORDER } = window.k8sNodeStatus;
@@ -9,7 +9,7 @@ const { findingInfo, FINDING_ORDER, PodAuditBadge } = window.k8sPodAudit;
 const { ExportMenu } = window.k8sExport;
 const { fitMatch, FitPanel, FitVerdict, DrainSection } = window.k8sSimulate;
 const { QOS_INFO, QOS_ORDER, NEUTRAL_HUE } = window.k8sQos;
-const { GROUP_BY, groupNodes, groupUsage } = window.k8sTopology;
+const { GROUP_BY, groupNodes } = window.k8sTopology;
 const { pack, unpack, record, diff } = window.k8sHistory;
 
 // Per-node hue assignment — deterministic from index, evenly spaced around wheel.
@@ -32,6 +32,22 @@ const COLOR_MODES = [
   { id: "node", label: "Node" },
   { id: "qos", label: "QoS" },
 ];
+
+// Extended resources become metrics when a node offers them. Byte-sized ones
+// are shown in the memory unit, the rest (GPUs…) are device counts.
+const EXT_LABELS = { "nvidia.com/gpu": "GPU", "amd.com/gpu": "AMD GPU", "google.com/tpu": "TPU", "ephemeral-storage": "Storage" };
+const isBytes = key => key === "ephemeral-storage" || key.startsWith("hugepages-");
+
+function extMetric(key) {
+  const label = EXT_LABELS[key] || (key.startsWith("hugepages-") ? `HugePages ${key.slice(10)}` : key.split("/").pop());
+  return { id: key, label, icon: isBytes(key) ? "mem" : "cpu" };
+}
+
+function fmtExt(v, key, memUnit, capacity = false) {
+  return isBytes(key) ? fmtMem(v / (1024 * 1024), memUnit, capacity) : String(v);
+}
+
+const extUnit = (key, memUnit) => (isBytes(key) ? memUnit : extMetric(key).label);
 
 const VIEWS = [
   { id: "2d", label: "2D Map", icon: "rect" },
@@ -99,7 +115,8 @@ function mergeResources(cpuData, memData) {
           init: !!cc.color,
           cpu: cc.weight || 0,
           // Convert memory from kB to MiB
-          mem: kbToMib(mc.weight || 0)
+          mem: kbToMib(mc.weight || 0),
+          ext: cc.extended || {}
         };
       });
 
@@ -128,6 +145,7 @@ function mergeResources(cpuData, memData) {
         // null = no ceiling on that axis.
         cpuLimit: cp.limit ?? null,
         memLimit: mp.limit != null ? kbToMib(mp.limit) : null,
+        ext: cp.extended || {},
         containers
       });
     }
@@ -150,6 +168,8 @@ function mergeResources(cpuData, memData) {
       memUsed: convertedMemUsed,
       cpuFree: Math.max(0, (cg.weight || 0) - cpuUsed),
       memFree: Math.max(0, memCapacity - convertedMemUsed),
+      // Extended capacity by resource name, in bytes or devices.
+      ext: cg.extended || {},
       pods,
       // Node health from the backend. Absent on an older backend, so every
       // field falls back to what a plainly healthy node would report.
@@ -345,6 +365,13 @@ function App() {
   const changes = useMemo(() => (base && baseNodes ? diff(baseNodes, nodes) : null), [base, baseNodes, nodes]);
   const toggleCompare = () => setBase(b => (b ? null : at == null ? entries[entries.length - 1] : entries.find(e => e.t === at)));
 
+  const metrics = useMemo(() => {
+    const keys = new Set(nodes.flatMap(n => Object.keys(n.ext)));
+    return [...METRICS, ...[...keys].sort().map(extMetric)];
+  }, [nodes]);
+  // A context without the chosen resource shows CPU; switching back restores it.
+  const activeMetric = metrics.some(m => m.id === metric) ? metric : "cpu";
+
   const parsedQuery = useMemo(() => window.k8sQuery.parseQuery(query), [query]);
 
   // Matched pods are highlighted and unmatched ones dimmed — nodes are never
@@ -396,16 +423,18 @@ function App() {
 
   // Totals
   const totals = useMemo(() => {
-    const t = { cpuCap: 0, cpuUsed: 0, memCap: 0, memUsed: 0, pods: 0, nodes: nodes.length };
+    const t = { cpuCap: 0, cpuUsed: 0, memCap: 0, memUsed: 0, extCap: 0, extUsed: 0, pods: 0, nodes: nodes.length };
     for (const n of nodes) {
       t.cpuCap += n.cpuCapacity;
       t.cpuUsed += n.cpuUsed;
       t.memCap += n.memCapacity;
       t.memUsed += n.memUsed;
       t.pods += n.pods.length;
+      t.extCap += n.ext[activeMetric] || 0;
+      for (const p of n.pods) t.extUsed += p.ext[activeMetric] || 0;
     }
     return t;
-  }, [nodes]);
+  }, [nodes, activeMetric]);
 
   // Auto-refresh tick — re-fetch live cluster data every refreshInterval seconds.
   useEffect(() => {
@@ -483,7 +512,7 @@ function App() {
         view={view} setView={setView}
         zoom={zoom} setZoom={setZoom}
         groupBy={groupBy} setGroupBy={setGroupBy}
-        metric={metric} setMetric={setMetric}
+        metric={activeMetric} setMetric={setMetric} metrics={metrics}
         memUnit={memUnit} setMemUnit={setMemUnit}
         refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
         contexts={contexts}
@@ -511,7 +540,7 @@ function App() {
         )}
 
         <Header
-          metric={metric}
+          metric={activeMetric} metrics={metrics}
           view={view} setView={setView}
           totals={totals}
           query={query} setQuery={setQuery}
@@ -532,7 +561,7 @@ function App() {
               gridRef={gridRef}
               sceneRef={sceneRef}
               treemap={{
-                nodes, metric, match, highlight, highlightActive,
+                nodes, metric: activeMetric, match, highlight, highlightActive,
                 hueOf: idx => nodeHue(idx, tw.colorScheme),
                 nodeStyle: tw.nodeStyle, density: tw.density, showLabels: tw.showLabels,
               }}
@@ -563,7 +592,7 @@ function App() {
             <TreemapGrid
               nodes={nodes}
               match={shown}
-              metric={metric}
+              metric={activeMetric}
               groupBy={groupBy}
               hueOf={hueOf}
               colorBy={colorBy}
@@ -622,7 +651,7 @@ function App() {
 /* ─────────── Sidebar ─────────── */
 
 function Sidebar({
-  open, onToggle, view, setView, zoom, setZoom, groupBy, setGroupBy, metric, setMetric, memUnit, setMemUnit,
+  open, onToggle, view, setView, zoom, setZoom, groupBy, setGroupBy, metric, setMetric, metrics, memUnit, setMemUnit,
   refreshInterval, setRefreshInterval,
   contexts, contextIdx, setContextIdx, doRefresh, refreshing, lastRefresh, nodeCount, health,
   audit, qosBreakdown, colorBy, setColorBy, query, setQuery, entries, at, setAt, playing, setPlaying, base, toggleCompare, changes, ctxName, children
@@ -685,9 +714,9 @@ function Sidebar({
         {/* Cubes plot CPU and Memory on separate axes, so there is nothing for
             this control to switch between in 3D. */}
         <div className={`seg seg-2 ${is3d ? "seg-disabled" : ""}`}>
-          {METRICS.map(m => (
+          {metrics.map(m => (
             <button key={m.id} className={!is3d && metric === m.id ? "seg-on" : ""}
-              disabled={is3d}
+              disabled={is3d} title={m.id}
               onClick={() => !is3d && setMetric(m.id)}>
               <MetricIcon kind={m.icon} /> {m.label}
             </button>
@@ -912,7 +941,7 @@ function nodeDeltaText(d, memUnit) {
 /* ─────────── Header ─────────── */
 
 function Header({
-  metric, view, setView, totals, query, setQuery, match, memUnit, contexts, contextIdx,
+  metric, metrics, view, setView, totals, query, setQuery, match, memUnit, contexts, contextIdx,
   onMenu, onRefresh, refreshing, workload, onClearWorkload, me, exportMenu, at,
 }) {
   const [hintOpen, setHintOpen] = useState(false);
@@ -923,7 +952,8 @@ function Header({
   const contextLabel = currentCtx ? shortContext(currentCtx.context) : "No Context";
 
   const is3d = view === "3d";
-  const titleMain = is3d ? "CPU + Memory" : metric === "cpu" ? "CPU" : "Memory";
+  const titleMain = is3d ? "CPU + Memory" : metrics.find(m => m.id === metric).label;
+  const ext = !is3d && metric !== "cpu" && metric !== "mem";
 
   return (
     <header className="header">
@@ -955,6 +985,10 @@ function Header({
       <div className="header-stats">
         <Stat label="CPU" value={`${(totals.cpuUsed / 1000).toFixed(1)} / ${(totals.cpuCap / 1000).toFixed(0)}`} unit="cores" pct={cpuPct} />
         <Stat label="Memory" value={`${fmtMem(totals.memUsed, memUnit)} / ${fmtMem(totals.memCap, memUnit, true)}`} unit={memUnit} pct={memPct} />
+        {ext && (
+          <Stat label={titleMain} unit={extUnit(metric, memUnit)} pct={totals.extUsed / (totals.extCap || 1)}
+            value={`${fmtExt(totals.extUsed, metric, memUnit)} / ${fmtExt(totals.extCap, metric, memUnit, true)}`} />
+        )}
         <Stat label="Pods" value={totals.pods} unit={`/ ${totals.nodes * 110} cap`} pct={totals.pods / (totals.nodes * 110 || 1)} />
       </div>
 
@@ -1079,7 +1113,9 @@ function TreemapGrid({
     return () => ro.disconnect();
   }, []);
 
-  const cap = n => (metric === "cpu" ? n.cpuCapacity : n.memCapacity);
+  const cap = n => metricCap(n, metric);
+  const used = n => (metric === "cpu" ? n.cpuUsed : metric === "mem" ? n.memUsed
+    : n.pods.reduce((s, p) => s + metricValue(p, metric), 0));
   const ready = box.w > 0 && box.h > 0;
 
   // Squarify of nodes themselves, sized by capacity, into one rect.
@@ -1122,7 +1158,7 @@ function TreemapGrid({
     <div className="grid" ref={containerRef}>
       {ready && groupBy === "none" && cards(nodes.map((node, idx) => ({ node, idx })), 0, 0, box.w, box.h)}
       {groups.map(g => {
-        const u = groupUsage(g.members)[metric], n = g.members.length;
+        const u = g.members.reduce((s, m) => s + used(m.node), 0) / (g.value || 1), n = g.members.length;
         return (
           <div key={g.key} className="group-box" style={{ left: g.x, top: g.y, width: g.w - 8, height: g.h - 8 }}>
             <div className="group-label" style={{ height: GROUP_HEAD }}>
@@ -1173,6 +1209,21 @@ function FocusOverlay({ node, onClose, metric, memUnit, context, fitReasons }) {
             <div className="ov-bar"><div style={{ width: `${(node.pods.length / 110) * 100}%`, background: "#22d3ee" }} /></div>
           </div>
         </div>
+        {/* Own row, one column per resource, so no grid cell is left blank. */}
+        {Object.keys(node.ext).length > 0 && (
+          <div className="overlay-stats" style={{ gridTemplateColumns: `repeat(${Object.keys(node.ext).length}, 1fr)` }}>
+            {Object.keys(node.ext).sort().map(key => {
+              const used = node.pods.reduce((s, p) => s + (p.ext[key] || 0), 0);
+              return (
+                <div key={key} className="ov-stat" title={key}>
+                  <div className="ov-label">{extMetric(key).label}</div>
+                  <div className="ov-val">{fmtExt(used, key, memUnit)} / {fmtExt(node.ext[key], key, memUnit, true)} <span>{extUnit(key, memUnit)}</span></div>
+                  <div className="ov-bar"><div style={{ width: `${(used / node.ext[key]) * 100}%` }} /></div>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {(node.warnings.length > 0 || node.taints.length > 0) && (
           <div className="overlay-sched">
             <div className="ov-section-title">Scheduling</div>
@@ -1216,6 +1267,15 @@ function FocusOverlay({ node, onClose, metric, memUnit, context, fitReasons }) {
                         <span key={j} className={`container-pill${c.init ? " init" : ""}`}>{c.name}</span>
                       ))}
                     </div>
+                    {Object.keys(p.ext).length > 0 && (
+                      <div className="pod-row-containers">
+                        {Object.keys(p.ext).sort().map(key => (
+                          <span key={key} className="container-pill" title={key}>
+                            {extMetric(key).label} {fmtExt(p.ext[key], key, memUnit)}{isBytes(key) ? ` ${memUnit}` : ""}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {p.findings.length > 0 && (
                       <div className="pod-row-findings">
                         {p.findings.map(f => (
