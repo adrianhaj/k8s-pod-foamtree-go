@@ -7,6 +7,7 @@ const { workloadKey } = window.k8sWorkload;
 const { warnInfo, statusOf, WARNING_ORDER } = window.k8sNodeStatus;
 const { findingInfo, FINDING_ORDER, PodAuditBadge } = window.k8sPodAudit;
 const { ExportMenu } = window.k8sExport;
+const { fitMatch, FitPanel, FitVerdict } = window.k8sSimulate;
 
 // Per-node hue assignment — deterministic from index, evenly spaced around wheel.
 function nodeHue(idx, scheme) {
@@ -188,6 +189,9 @@ function App() {
   const [error, setError] = useState(null);
   const gridRef = useRef(null);
   const sceneRef = useRef(null);
+  // Last "Can I fit this pod?" answer: one verdict per node, or null.
+  const [fit, setFit] = useState(null);
+  const context = contexts[contextIdx] ? contexts[contextIdx].context : "";
 
   useEffect(() => {
     apiFetch('/api/me').then(r => r.json()).then(setMe).catch(() => {});
@@ -260,6 +264,7 @@ function App() {
   useEffect(() => {
     setSelectedWorkload(null);
     setHoveredWorkload(null);
+    setFit(null);
   }, [contextIdx]);
 
   // Keep a stable ref to the latest loadData so the auto-refresh interval
@@ -287,6 +292,9 @@ function App() {
     }
     return { active, pods, dimNodes, count: active ? pods.size : total, total, errors: parsedQuery.errors };
   }, [nodes, parsedQuery]);
+
+  // A fit verdict takes over the map's dimming until it is cleared.
+  const shown = useMemo(() => (fit ? fitMatch(nodes, fit) : match), [fit, nodes, match]);
 
   const highlight = selectedWorkload || hoveredWorkload;
   const highlightActive = !!selectedWorkload;
@@ -396,7 +404,9 @@ function App() {
         health={health}
         audit={audit}
         query={query} setQuery={setQuery}
-      />
+      >
+        <FitPanel context={context} result={fit} onResult={setFit} />
+      </Sidebar>
 
       <main className="main">
         {error && (
@@ -439,7 +449,7 @@ function App() {
           {view === "3d" ? (
             <Scene3D
               nodes={nodes}
-              match={match}
+              match={shown}
               zoom={zoom}
               groupBy={groupBy}
               hueOf={idx => nodeHue(idx, tw.colorScheme)}
@@ -455,7 +465,7 @@ function App() {
           ) : (
             <TreemapGrid
               nodes={nodes}
-              match={match}
+              match={shown}
               metric={metric}
               colorScheme={tw.colorScheme}
               nodeStyle={tw.nodeStyle}
@@ -472,7 +482,8 @@ function App() {
       </main>
 
       {focused && (
-        <FocusOverlay node={focused} onClose={() => setFocused(null)} metric={metric} memUnit={memUnit} />
+        <FocusOverlay node={focused} onClose={() => setFocused(null)} metric={metric} memUnit={memUnit}
+          fitReasons={fit && (fit.find(v => v.node === focused.name) || {}).reasons} />
       )}
 
       <TweaksPanel>
@@ -515,7 +526,7 @@ function Sidebar({
   open, onToggle, view, setView, zoom, setZoom, groupBy, setGroupBy, metric, setMetric, memUnit, setMemUnit,
   refreshInterval, setRefreshInterval,
   contexts, contextIdx, setContextIdx, doRefresh, refreshing, lastRefresh, nodeCount, health,
-  audit, query, setQuery
+  audit, query, setQuery, children
 }) {
   const is3d = view === "3d";
   return (
@@ -634,6 +645,8 @@ function Sidebar({
           ))}
         </div>
       </div>
+
+      {children}
 
       {/* Only rendered when something is actually wrong, so a healthy cluster
           looks exactly as it did before this feature existed. */}
@@ -897,7 +910,7 @@ function TreemapGrid({
 
 /* ─────────── Focus overlay ─────────── */
 
-function FocusOverlay({ node, onClose, metric, memUnit }) {
+function FocusOverlay({ node, onClose, metric, memUnit, fitReasons }) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card" onClick={e => e.stopPropagation()}>
@@ -953,6 +966,7 @@ function FocusOverlay({ node, onClose, metric, memUnit }) {
             )}
           </div>
         )}
+        {fitReasons && <FitVerdict reasons={fitReasons} />}
         <div className="overlay-pods">
           <div className="ov-section-title">Workloads</div>
           {node.pods.length === 0 && <div className="empty-state">Node has no scheduled pods.</div>}
