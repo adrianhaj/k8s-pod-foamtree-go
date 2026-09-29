@@ -1,0 +1,213 @@
+package foam
+
+import (
+	"reflect"
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+func ctr(name, cpu, mem string) corev1.Container {
+	req := corev1.ResourceList{}
+	if cpu != "" {
+		req[corev1.ResourceCPU] = resource.MustParse(cpu)
+	}
+	if mem != "" {
+		req[corev1.ResourceMemory] = resource.MustParse(mem)
+	}
+	return corev1.Container{Name: name, Resources: corev1.ResourceRequirements{Requests: req}}
+}
+
+func withMemLimit(c corev1.Container, limit string) corev1.Container {
+	c.Resources.Limits = corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(limit)}
+	return c
+}
+
+func pod(containers []corev1.Container, inits ...corev1.Container) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: "kube-system"},
+		Spec:       corev1.PodSpec{NodeName: "master", Containers: containers, InitContainers: inits},
+	}
+}
+
+func TestFromPodSingleContainer(t *testing.T) {
+	p := FromPod(pod([]corev1.Container{ctr("etcd", "100m", "1G")}))
+	if p.Name != "etcd" || p.NodeName != "master" || p.CPU != 100 || p.Memory != 1_000_000_000 {
+		t.Fatalf("got %+v", p)
+	}
+	if len(p.InitContainers) != 0 || p.Containers[0].CPU != 100 || p.Containers[0].Memory != 1_000_000_000 {
+		t.Fatalf("containers %+v", p.Containers)
+	}
+}
+
+func TestFromPodSumsRegularContainers(t *testing.T) {
+	p := FromPod(pod([]corev1.Container{ctr("etcd", "100m", "1G"), ctr("side", "50m", "100Mi")}))
+	if p.CPU != 150 || p.Memory != 1_000_000_000+104_857_600 {
+		t.Fatalf("got cpu=%d mem=%v", p.CPU, p.Memory)
+	}
+}
+
+func TestFromPodWithoutRequestsIsZero(t *testing.T) {
+	p := FromPod(pod([]corev1.Container{ctr("etcd", "", "")}))
+	if p.CPU != 0 || p.Memory != 0 || p.Containers[0].CPU != 0 || p.Containers[0].Memory != 0 {
+		t.Fatalf("got %+v", p)
+	}
+}
+
+func TestFromPodEffectiveRequest(t *testing.T) {
+	regular := []corev1.Container{ctr("a", "100m", "100Mi"), ctr("b", "200m", "100Mi")}
+	cases := []struct {
+		name    string
+		inits   []corev1.Container
+		wantCPU int64
+		wantMem int64
+	}{
+		{"no init", nil, 300, 209_715_200},
+		{"init below sum", []corev1.Container{ctr("init-a", "200m", "")}, 300, 209_715_200},
+		{"init above sum", []corev1.Container{ctr("init-a", "500m", "")}, 500, 209_715_200},
+		{"max of inits", []corev1.Container{ctr("i1", "500m", ""), ctr("i2", "400m", "")}, 500, 209_715_200},
+		{"init without requests", []corev1.Container{ctr("i", "", "")}, 300, 209_715_200},
+		{"init dominates memory", []corev1.Container{ctr("i", "", "500Mi")}, 300, 524_288_000},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := FromPod(pod(regular, tc.inits...))
+			if p.CPU != tc.wantCPU || p.Memory != tc.wantMem {
+				t.Fatalf("got cpu=%d mem=%v, want %d %v", p.CPU, p.Memory, tc.wantCPU, tc.wantMem)
+			}
+			if len(p.InitContainers) != len(tc.inits) {
+				t.Fatalf("init containers %+v", p.InitContainers)
+			}
+		})
+	}
+}
+
+// Native sidecars (restartPolicy: Always) keep running next to the app, so the
+// scheduler adds them instead of maxing them. The Python port got this wrong.
+func TestFromPodSidecarIsSummed(t *testing.T) {
+	always := corev1.ContainerRestartPolicyAlways
+	sidecar := ctr("proxy", "50m", "")
+	sidecar.RestartPolicy = &always
+	p := FromPod(pod([]corev1.Container{ctr("app", "100m", "")}, sidecar))
+	if p.CPU != 150 {
+		t.Fatalf("cpu=%d, want 150", p.CPU)
+	}
+	if len(p.InitContainers) != 0 || len(p.Containers) != 2 || p.Containers[1].Name != "proxy" {
+		t.Fatalf("sidecar must be a regular container: %+v / %+v", p.Containers, p.InitContainers)
+	}
+}
+
+// The scheduler keeps reserving max(spec, allocated) until an in-place resize
+// down actually lands on the kubelet.
+func TestFromPodPendingResizeDownKeepsAllocated(t *testing.T) {
+	raw := pod([]corev1.Container{ctr("app", "1", "")})
+	raw.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name:               "app",
+		AllocatedResources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+	}}
+	if p := FromPod(raw); p.CPU != 4000 {
+		t.Fatalf("cpu=%d, want 4000", p.CPU)
+	}
+}
+
+func TestFromPodPodLevelResources(t *testing.T) {
+	raw := pod([]corev1.Container{ctr("a", "", ""), ctr("b", "", "")})
+	raw.Spec.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("4G")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("4G")},
+	}
+	p := FromPod(raw)
+	if l := p.PodLevel.MemoryLimit; p.CPU != 2000 || p.PodLevel.CPU != 2000 || p.PodLevel.Memory != 4_000_000_000 || l == nil || *l != 4_000_000_000 {
+		t.Fatalf("got %+v", p)
+	}
+	if bare := FromPod(pod([]corev1.Container{ctr("a", "1", "1G")})); bare.PodLevel != (Container{}) {
+		t.Fatalf("no pod-level resources: %+v", bare.PodLevel)
+	}
+}
+
+// The Python parser crashed on 1.5Gi and 100k; 1e3 and plain bytes it handled.
+func TestFromPodParsesEveryQuantityFormat(t *testing.T) {
+	cases := map[string]int64{"1.5Gi": 1_610_612_736, "100k": 100_000, "1e3": 1000, "128974848": 128_974_848}
+	for q, want := range cases {
+		if got := FromPod(pod([]corev1.Container{ctr("a", "", q)})).Memory; got != want {
+			t.Errorf("%s: got %v bytes, want %v", q, got, want)
+		}
+	}
+	if got := FromPod(pod([]corev1.Container{ctr("a", "0.5", "")})).CPU; got != 500 {
+		t.Errorf("0.5 cpu: got %d", got)
+	}
+}
+
+func TestFromPodSelectorMetadata(t *testing.T) {
+	p := pod([]corev1.Container{ctr("etcd", "100m", "1G")})
+	p.Labels = map[string]string{"app": "etcd", "tier": "control-plane"}
+	p.Status.QOSClass = corev1.PodQOSGuaranteed
+	got := FromPod(p)
+	if got.Namespace != "kube-system" || got.QOS != "Guaranteed" || !reflect.DeepEqual(got.Labels, p.Labels) {
+		t.Fatalf("got %+v", got)
+	}
+	bare := FromPod(pod([]corev1.Container{ctr("etcd", "100m", "1G")}))
+	if len(bare.Labels) != 0 || bare.QOS != "" {
+		t.Fatalf("unset labels/qos: %+v", bare)
+	}
+}
+
+func TestFromPodMemoryLimit(t *testing.T) {
+	p := FromPod(pod([]corev1.Container{withMemLimit(ctr("a", "100m", "100Mi"), "256Mi"), ctr("b", "100m", "100Mi")}))
+	if l := p.Containers[0].MemoryLimit; l == nil || *l != 268_435_456 {
+		t.Fatalf("limit %v", l)
+	}
+	if p.Containers[1].MemoryLimit != nil {
+		t.Fatal("unset limit must be nil")
+	}
+}
+
+func node(conds ...corev1.NodeCondition) *corev1.Node {
+	return &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "minikube"},
+		Status: corev1.NodeStatus{
+			Capacity:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("1Gi")},
+			Conditions: conds,
+		},
+	}
+}
+
+func cond(t corev1.NodeConditionType, s corev1.ConditionStatus) corev1.NodeCondition {
+	return corev1.NodeCondition{Type: t, Status: s}
+}
+
+func TestFromNodeHealthy(t *testing.T) {
+	n := FromNode(node(cond(corev1.NodeReady, corev1.ConditionTrue)))
+	want := map[string]bool{"MemoryPressure": false, "DiskPressure": false, "PIDPressure": false, "Ready": true}
+	if n.Name != "minikube" || n.CPU != 2000 || n.Memory != 1_073_741_824 || n.Unschedulable ||
+		len(n.Taints) != 0 || !reflect.DeepEqual(n.Conditions, want) {
+		t.Fatalf("got %+v", n)
+	}
+}
+
+func TestFromNodeTaintsDropCordonTaint(t *testing.T) {
+	raw := node()
+	raw.Spec.Unschedulable = true
+	raw.Spec.Taints = []corev1.Taint{
+		{Key: "node.kubernetes.io/unschedulable", Effect: corev1.TaintEffectNoSchedule},
+		{Key: "nvidia.com/gpu", Value: "true", Effect: corev1.TaintEffectNoSchedule},
+		{Key: "spot", Effect: corev1.TaintEffectPreferNoSchedule},
+	}
+	n := FromNode(raw)
+	want := []Taint{{"nvidia.com/gpu", "true", "NoSchedule"}, {"spot", "", "PreferNoSchedule"}}
+	if !n.Unschedulable || !reflect.DeepEqual(n.Taints, want) {
+		t.Fatalf("got %+v", n)
+	}
+}
+
+func TestFromNodeConditions(t *testing.T) {
+	n := FromNode(node(cond(corev1.NodeMemoryPressure, corev1.ConditionTrue), cond(corev1.NodeReady, corev1.ConditionUnknown)))
+	if !n.Conditions["MemoryPressure"] || n.Conditions["DiskPressure"] || n.Conditions["Ready"] {
+		t.Fatalf("got %+v", n.Conditions)
+	}
+	if silent := FromNode(node()); !silent.Conditions["Ready"] || silent.Conditions["MemoryPressure"] {
+		t.Fatalf("no conditions must read as ready: %+v", silent.Conditions)
+	}
+}
