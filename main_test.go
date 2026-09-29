@@ -145,3 +145,34 @@ func TestSessionKey(t *testing.T) {
 		t.Fatal("short key accepted")
 	}
 }
+
+func TestFitRoute(t *testing.T) {
+	src := &fakeSource{nodes: []foam.Node{
+		{Name: "big", AllocCPU: 8000, AllocMemory: 32_000_000_000, AllocPods: 110},
+		{Name: "small", AllocCPU: 1000, AllocMemory: 32_000_000_000, AllocPods: 110},
+	}}
+	h := newHandler(src, static, nil)
+	w := get(h, "/api/fit?context=kind-a&cpu=2&memory=1Gi")
+	want := `[{"node":"big","reasons":[]},{"node":"small","reasons":["insufficient cpu: requires 2000m, available 1000m"]}]` + "\n"
+	if w.Code != 200 || w.Body.String() != want || src.asked != "kind-a" {
+		t.Fatalf("%d %s (context %q)", w.Code, w.Body, src.asked)
+	}
+	if w := get(h, "/api/fit?cpu=lots"); w.Code != 400 || !strings.Contains(w.Body.String(), `cpu "lots"`) {
+		t.Fatalf("bad input: %d %s", w.Code, w.Body)
+	}
+	src.err = errors.New("Unauthorized")
+	if w := get(h, "/api/fit?cpu=1"); w.Code != 503 {
+		t.Fatalf("cluster error: %d", w.Code)
+	}
+}
+
+func TestFitRouteRejectsOversizedFreeText(t *testing.T) {
+	h := newHandler(&fakeSource{}, static, nil)
+	big := strings.Repeat("a", 4097)
+	if w := get(h, "/api/fit?tolerations="+big); w.Code != 400 {
+		t.Fatalf("oversized tolerations: %d", w.Code)
+	}
+	if w := get(h, "/api/fit?nodeSelector="+big); w.Code != 400 {
+		t.Fatalf("oversized nodeSelector: %d", w.Code)
+	}
+}

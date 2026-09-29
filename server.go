@@ -25,6 +25,10 @@ type source interface {
 // First load of a big cluster can take a while; later requests hit the cache.
 const snapshotTimeout = 20 * time.Second
 
+// A generous cap on the free-text /api/fit fields, well above any real
+// selector or toleration list, so a client can't force a huge parse.
+const maxFitFieldBytes = 4096
+
 // a is nil when auth is off.
 func newHandler(src source, static fs.FS, a *auth.Auth) http.Handler {
 	app := http.NewServeMux()
@@ -61,6 +65,22 @@ func newHandler(src source, static fs.FS, a *auth.Auth) http.Handler {
 			writeCSV(w, foam.Report(nodes, pods))
 		}
 	})
+	// Read-only dry run, so a GET: nothing to forge, and the link can be shared.
+	app.HandleFunc("GET /api/fit", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if len(q.Get("nodeSelector")) > maxFitFieldBytes || len(q.Get("tolerations")) > maxFitFieldBytes {
+			http.Error(w, "nodeSelector and tolerations must be at most 4096 bytes", http.StatusBadRequest)
+			return
+		}
+		p, err := foam.Hypothetical(q.Get("cpu"), q.Get("memory"), q.Get("nodeSelector"), q.Get("tolerations"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if nodes, pods, ok := snapshot(w, r, src); ok {
+			writeJSON(w, foam.Fit(nodes, pods, p))
+		}
+	})
 	app.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
 		if u, ok := auth.UserFrom(r.Context()); ok {
 			writeJSON(w, map[string]string{"auth": "oidc", "email": u.Email, "name": u.Name})
@@ -83,7 +103,8 @@ func newHandler(src source, static fs.FS, a *auth.Auth) http.Handler {
 	return secure(root)
 }
 
-// snapshot writes the error response itself when it returns ok=false.
+// snapshot reads the ?context= cluster, writing the error response itself
+// when that fails.
 func snapshot(w http.ResponseWriter, r *http.Request, src source) ([]foam.Node, []foam.Pod, bool) {
 	ctx, cancel := context.WithTimeout(r.Context(), snapshotTimeout)
 	defer cancel()
