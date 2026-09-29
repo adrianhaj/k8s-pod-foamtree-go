@@ -2,3 +2,7 @@
 # a symlink (link-plans), so no trailing slash
 /local
 .env
+bin/
+build/
+web/static/app.js
+kind.kubeconfig
