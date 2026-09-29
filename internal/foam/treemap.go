@@ -60,17 +60,18 @@ type Tree struct {
 }
 
 type NodeGroup struct {
-	Label         string          `json:"label"`
-	Weight        float64         `json:"weight"`
-	Groups        []any           `json:"groups"` // PodGroup..., then the "empty" Leaf
-	Unschedulable bool            `json:"unschedulable"`
-	Taints        []Taint         `json:"taints"`
-	Conditions    map[string]bool `json:"conditions"`
-	Warnings      []string        `json:"warnings"`
-	Zone          string          `json:"zone"`
-	Region        string          `json:"region"`
-	InstanceType  string          `json:"instanceType"`
-	Pool          string          `json:"pool"`
+	Label         string           `json:"label"`
+	Weight        float64          `json:"weight"`
+	Groups        []any            `json:"groups"` // PodGroup..., then the "empty" Leaf
+	Unschedulable bool             `json:"unschedulable"`
+	Taints        []Taint          `json:"taints"`
+	Conditions    map[string]bool  `json:"conditions"`
+	Warnings      []string         `json:"warnings"`
+	Zone          string           `json:"zone"`
+	Region        string           `json:"region"`
+	InstanceType  string           `json:"instanceType"`
+	Pool          string           `json:"pool"`
+	Extended      map[string]int64 `json:"extended,omitempty"`
 }
 
 type PodGroup struct {
@@ -83,12 +84,14 @@ type PodGroup struct {
 	HasInitContainers bool              `json:"hasInitContainers"`
 	Findings          []string          `json:"findings"`
 	Limit             *float64          `json:"limit"`
+	Extended          map[string]int64  `json:"extended,omitempty"`
 }
 
 type Leaf struct {
-	Label  string  `json:"label"`
-	Weight float64 `json:"weight"`
-	Color  string  `json:"color,omitempty"`
+	Label    string           `json:"label"`
+	Weight   float64          `json:"weight"`
+	Color    string           `json:"color,omitempty"`
+	Extended map[string]int64 `json:"extended,omitempty"`
 }
 
 const (
@@ -132,6 +135,7 @@ func Treemap(nodes []Node, pods []Pod, axis Axis) Tree {
 			Region:        n.Region,
 			InstanceType:  n.InstanceType,
 			Pool:          n.Pool,
+			Extended:      n.Extended,
 		})
 	}
 	return tree
@@ -141,7 +145,7 @@ func podGroup(p Pod, n Node, axis Axis) PodGroup {
 	leaves := make([]Leaf, 0, len(p.Containers)+len(p.InitContainers)+1)
 	rest := axis.container(p.PodLevel)
 	for _, c := range p.Containers {
-		leaves = append(leaves, Leaf{Label: c.Name, Weight: axis.weight(axis.container(c))})
+		leaves = append(leaves, Leaf{Label: c.Name, Weight: axis.weight(axis.container(c)), Extended: c.Extended})
 		rest -= axis.container(c)
 	}
 	// Pod-level budget no container claims would otherwise draw as nothing.
@@ -150,7 +154,7 @@ func podGroup(p Pod, n Node, axis Axis) PodGroup {
 	}
 	for _, c := range p.InitContainers {
 		if w := axis.container(c); w > 0 {
-			leaves = append(leaves, Leaf{Label: c.Name + " (init)", Weight: axis.weight(w), Color: initColor})
+			leaves = append(leaves, Leaf{Label: c.Name + " (init)", Weight: axis.weight(w), Color: initColor, Extended: c.Extended})
 		}
 	}
 	return PodGroup{
@@ -163,6 +167,7 @@ func podGroup(p Pod, n Node, axis Axis) PodGroup {
 		HasInitContainers: len(p.InitContainers) > 0,
 		Findings:          Findings(p, n),
 		Limit:             axis.limit(p),
+		Extended:          p.Extended,
 	}
 }
 
