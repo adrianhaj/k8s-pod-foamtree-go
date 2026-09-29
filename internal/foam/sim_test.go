@@ -141,3 +141,87 @@ func TestHypothetical(t *testing.T) {
 		}
 	}
 }
+
+func TestDrain(t *testing.T) {
+	a, b, c, spot := roomy("a"), roomy("b"), roomy("c"), roomy("spot")
+	a.AllocCPU, b.AllocCPU = 2000, 3000
+	spot.Taints = []Taint{{Key: "spot", Effect: "NoSchedule"}}
+	on := func(name, ctrl string, cpu int64) Pod {
+		return Pod{Name: name, Namespace: "ns", NodeName: "c", Controller: ctrl, CPU: cpu, Memory: 1_000_000_000}
+	}
+	pods := []Pod{
+		{Name: "resident", Namespace: "ns", NodeName: "b", CPU: 500},
+		on("small", "ReplicaSet", 500), on("big", "StatefulSet", 2500), on("huge", "ReplicaSet", 3500),
+		on("agent", "DaemonSet", 100), on("static", "Node", 100), on("bare", "", 100),
+	}
+	got, ok := Drain([]Node{a, b, c, spot}, pods, "c")
+	if !ok {
+		t.Fatal("node not found")
+	}
+	// Largest first onto the least-allocated node: big takes b (2500 of 2500 free), small then fits a.
+	want := DrainResult{
+		Moved: []Placement{{Pod: "ns/big", Node: "b"}, {Pod: "ns/small", Node: "a"}},
+		Pending: []Placement{{Pod: "ns/huge",
+			Reason: "0/3 nodes are available: 2 insufficient cpu, 1 untolerated taint"}},
+		Ignored:   []string{"ns/agent", "ns/static"},
+		Unmanaged: []string{"ns/bare"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got  %+v\nwant %+v", got, want)
+	}
+	if _, ok := Drain([]Node{a}, nil, "gone"); ok {
+		t.Fatal("unknown node reported as drained")
+	}
+}
+
+func TestDrainEmptyNodeHasEmptyLists(t *testing.T) {
+	got, _ := Drain([]Node{roomy("a")}, nil, "a")
+	if got.Moved == nil || got.Pending == nil || got.Ignored == nil || got.Unmanaged == nil {
+		t.Fatalf("null lists break the UI: %+v", got)
+	}
+}
+
+func TestDrainLastNode(t *testing.T) {
+	got, _ := Drain([]Node{roomy("a")}, []Pod{{Name: "web", Namespace: "ns", NodeName: "a", Controller: "ReplicaSet"}}, "a")
+	if fmt.Sprint(got.Pending) != "[{ns/web  0/0 nodes are available}]" {
+		t.Fatalf("got %+v", got.Pending)
+	}
+}
+
+// A node with zero allocatable on an axis must score 0 there, not NaN — a
+// BestEffort pod requests nothing, and NaN would never lose a max comparison
+// to a later, actually-better node (NaN > x and x > NaN are both false).
+func TestDrainScoreGuardsZeroAllocatable(t *testing.T) {
+	zero := roomy("aaa-zero") // sorts first
+	zero.AllocCPU, zero.AllocMemory = 0, 0
+	big := roomy("zzz-big") // sorts second, has real spare capacity
+	pods := []Pod{{Name: "p", Namespace: "ns", NodeName: "gone", Controller: "ReplicaSet"}}
+	got, ok := Drain([]Node{roomy("gone"), zero, big}, pods, "gone")
+	if !ok {
+		t.Fatal("node not found")
+	}
+	if len(got.Moved) != 1 || got.Moved[0].Node != "zzz-big" {
+		t.Fatalf("got %+v, want the pod on the node with real spare capacity", got)
+	}
+}
+
+// Placing a pod must book its share of the target's capacity immediately, or
+// a second pod is double-booked onto a node that is already full.
+func TestDrainBooksCapacityAfterEachPlacement(t *testing.T) {
+	full := roomy("full")
+	full.AllocPods = 1
+	pods := []Pod{
+		{Name: "a", Namespace: "ns", NodeName: "gone", Controller: "ReplicaSet"},
+		{Name: "b", Namespace: "ns", NodeName: "gone", Controller: "ReplicaSet"},
+	}
+	got, ok := Drain([]Node{roomy("gone"), full}, pods, "gone")
+	if !ok {
+		t.Fatal("node not found")
+	}
+	if len(got.Moved) != 1 || len(got.Pending) != 1 {
+		t.Fatalf("got %+v", got)
+	}
+	if got.Pending[0].Reason != "0/1 nodes are available: 1 too many pods" {
+		t.Fatalf("reason %q", got.Pending[0].Reason)
+	}
+}
