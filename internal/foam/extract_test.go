@@ -94,6 +94,37 @@ func TestFromPodSidecarIsSummed(t *testing.T) {
 	if p.CPU != 150 {
 		t.Fatalf("cpu=%d, want 150", p.CPU)
 	}
+	if len(p.InitContainers) != 0 || len(p.Containers) != 2 || p.Containers[1].Name != "proxy" {
+		t.Fatalf("sidecar must be a regular container: %+v / %+v", p.Containers, p.InitContainers)
+	}
+}
+
+// The scheduler keeps reserving max(spec, allocated) until an in-place resize
+// down actually lands on the kubelet.
+func TestFromPodPendingResizeDownKeepsAllocated(t *testing.T) {
+	raw := pod([]corev1.Container{ctr("app", "1", "")})
+	raw.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name:               "app",
+		AllocatedResources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+	}}
+	if p := FromPod(raw); p.CPU != 4000 {
+		t.Fatalf("cpu=%d, want 4000", p.CPU)
+	}
+}
+
+func TestFromPodPodLevelResources(t *testing.T) {
+	raw := pod([]corev1.Container{ctr("a", "", ""), ctr("b", "", "")})
+	raw.Spec.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("4G")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("4G")},
+	}
+	p := FromPod(raw)
+	if l := p.PodLevel.MemoryLimit; p.CPU != 2000 || p.PodLevel.CPU != 2000 || p.PodLevel.Memory != 4_000_000_000 || l == nil || *l != 4_000_000_000 {
+		t.Fatalf("got %+v", p)
+	}
+	if bare := FromPod(pod([]corev1.Container{ctr("a", "1", "1G")})); bare.PodLevel != (Container{}) {
+		t.Fatalf("no pod-level resources: %+v", bare.PodLevel)
+	}
 }
 
 // The Python parser crashed on 1.5Gi and 100k; 1e3 and plain bytes it handled.
@@ -118,7 +149,7 @@ func TestFromPodSelectorMetadata(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 	bare := FromPod(pod([]corev1.Container{ctr("etcd", "100m", "1G")}))
-	if bare.Labels == nil || len(bare.Labels) != 0 || bare.QOS != "" {
+	if len(bare.Labels) != 0 || bare.QOS != "" {
 		t.Fatalf("unset labels/qos: %+v", bare)
 	}
 }

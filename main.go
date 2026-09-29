@@ -19,9 +19,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/adrianhaj/k8s-pod-foamtree/internal/auth"
-	"github.com/adrianhaj/k8s-pod-foamtree/internal/kube"
-	"github.com/adrianhaj/k8s-pod-foamtree/web"
+	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/auth"
+	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/kube"
+	"github.com/adrianhaj/k8s-pod-foamtree-go/web"
 )
 
 type options struct {
