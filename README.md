@@ -190,7 +190,7 @@ Focusing the input opens a popover with the same token list; it is replaced by t
 
 ## Development
 
-Requires Go 1.27.
+Requires Go 1.27.1.
 
 ```bash
 go test ./...

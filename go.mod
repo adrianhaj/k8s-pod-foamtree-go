@@ -1,4 +1,4 @@
-module github.com/adrianhaj/k8s-pod-foamtree
+module github.com/adrianhaj/k8s-pod-foamtree-go
 
 go 1.27.1
 

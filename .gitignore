@@ -1,2 +1,4 @@
 .vscode/
-local
+# a symlink (link-plans), so no trailing slash
+/local
+.env
