@@ -4,6 +4,8 @@
   <img src="logo.png" alt="k8sfoams logo">
 </p>
 
+> Go implementation of [mmpyro/k8s-pod-foamtree](https://github.com/mmpyro/k8s-pod-foamtree).
+
 **k8sfoams** is a read-only dashboard that answers one question: *where is my cluster's requested CPU and memory actually going, and how much room is left on each node?*
 
 It visualizes **resource requests** — what the scheduler reserves — not live usage. That makes it a tool for spotting over-requesting pods and idle headroom, not a performance monitor. It is one static Go binary with the UI embedded. Run it on your laptop against *~/.kube/config* (or `$KUBECONFIG`), or inside the cluster behind built-in OIDC sign-in. It needs no metrics-server.
@@ -228,11 +230,15 @@ is created, evicted or cordoned.
   (`disk=ssd,zone=a`) and tolerations (`spot=true:NoSchedule,gpu`). Nodes that
   cannot take the pod are dimmed; the node overlay says why, e.g.
   `insufficient cpu: requires 4000m, available 1200m`. `GET /api/fit?cpu=&memory=&nodeSelector=&tolerations=`.
+- **Simulate drain** (node overlay): where each pod would land if the node
+  were drained or lost, and which would stay Pending. DaemonSet and static pods
+  are skipped, pods without a controller are reported as not recreated.
+  `GET /api/drain?node=`.
 
 Modelled: allocatable CPU, memory and pod count, cordons, `NoSchedule` /
 `NoExecute` taints, node selectors and required node affinity. Not modelled:
 pod (anti-)affinity, topology spread, volume zones, host ports, extended
-resources and preemption.
+resources and preemption. The drain also ignores PodDisruptionBudgets.
 
 ## Run in a cluster
 

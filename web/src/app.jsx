@@ -7,7 +7,7 @@ const { workloadKey } = window.k8sWorkload;
 const { warnInfo, statusOf, WARNING_ORDER } = window.k8sNodeStatus;
 const { findingInfo, FINDING_ORDER, PodAuditBadge } = window.k8sPodAudit;
 const { ExportMenu } = window.k8sExport;
-const { fitMatch, FitPanel, FitVerdict } = window.k8sSimulate;
+const { fitMatch, FitPanel, FitVerdict, DrainSection } = window.k8sSimulate;
 
 // Per-node hue assignment — deterministic from index, evenly spaced around wheel.
 function nodeHue(idx, scheme) {
@@ -482,7 +482,7 @@ function App() {
       </main>
 
       {focused && (
-        <FocusOverlay node={focused} onClose={() => setFocused(null)} metric={metric} memUnit={memUnit}
+        <FocusOverlay node={focused} onClose={() => setFocused(null)} metric={metric} memUnit={memUnit} context={context}
           fitReasons={fit && (fit.find(v => v.node === focused.name) || {}).reasons} />
       )}
 
@@ -910,7 +910,7 @@ function TreemapGrid({
 
 /* ─────────── Focus overlay ─────────── */
 
-function FocusOverlay({ node, onClose, metric, memUnit, fitReasons }) {
+function FocusOverlay({ node, onClose, metric, memUnit, context, fitReasons }) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card" onClick={e => e.stopPropagation()}>
@@ -967,6 +967,7 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons }) {
           </div>
         )}
         {fitReasons && <FitVerdict reasons={fitReasons} />}
+        <DrainSection context={context} node={node.name} />
         <div className="overlay-pods">
           <div className="ov-section-title">Workloads</div>
           {node.pods.length === 0 && <div className="empty-state">Node has no scheduled pods.</div>}
