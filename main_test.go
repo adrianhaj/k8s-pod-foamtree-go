@@ -180,8 +180,8 @@ func TestFitRouteRejectsOversizedFreeText(t *testing.T) {
 func TestDrainRoute(t *testing.T) {
 	src := &fakeSource{
 		nodes: []foam.Node{
-			{Name: "a", AllocCPU: 4000, AllocMemory: 8_000_000, AllocPods: 110},
-			{Name: "b", AllocCPU: 4000, AllocMemory: 8_000_000, AllocPods: 110},
+			{Name: "a", AllocCPU: 4000, AllocMemory: 8_000_000_000, AllocPods: 110},
+			{Name: "b", AllocCPU: 4000, AllocMemory: 8_000_000_000, AllocPods: 110},
 		},
 		pods: []foam.Pod{{Name: "web", Namespace: "ns", NodeName: "a", Controller: "ReplicaSet", CPU: 100}},
 	}

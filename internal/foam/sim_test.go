@@ -147,7 +147,7 @@ func TestDrain(t *testing.T) {
 	a.AllocCPU, b.AllocCPU = 2000, 3000
 	spot.Taints = []Taint{{Key: "spot", Effect: "NoSchedule"}}
 	on := func(name, ctrl string, cpu int64) Pod {
-		return Pod{Name: name, Namespace: "ns", NodeName: "c", Controller: ctrl, CPU: cpu, Memory: 1_000_000}
+		return Pod{Name: name, Namespace: "ns", NodeName: "c", Controller: ctrl, CPU: cpu, Memory: 1_000_000_000}
 	}
 	pods := []Pod{
 		{Name: "resident", Namespace: "ns", NodeName: "b", CPU: 500},
