@@ -151,8 +151,20 @@ function mergeResources(cpuData, memData) {
   });
 }
 
+// An expired session answers API calls with 401: sign in again, then come back here.
+function apiFetch(url) {
+  return fetch(url).then(r => {
+    if (r.status === 401) {
+      window.location.assign('/auth/login?next=' + encodeURIComponent(window.location.pathname + window.location.search));
+      throw new Error('Session expired, signing in again');
+    }
+    return r;
+  });
+}
+
 function App() {
   const [tw, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [me, setMe] = useState(null);
 
   const [view, setView] = useState("2d");
   const [zoom, setZoom] = useState(0.7);
@@ -174,9 +186,13 @@ function App() {
   const [nodes, setNodes] = useState([]);
   const [error, setError] = useState(null);
 
+  useEffect(() => {
+    apiFetch('/api/me').then(r => r.json()).then(setMe).catch(() => {});
+  }, []);
+
   // Load contexts from server
   useEffect(() => {
-    fetch('/contexts')
+    apiFetch('/contexts')
       .then(res => {
         if (!res.ok) throw new Error('API failed');
         return res.json();
@@ -207,11 +223,11 @@ function App() {
       const ctxParam = currentCtx ? `?context=${encodeURIComponent(currentCtx.context)}` : '';
 
       const [cpuRes, memRes] = await Promise.all([
-        fetch(`/resources/cpu${ctxParam}`).then(r => {
+        apiFetch(`/resources/cpu${ctxParam}`).then(r => {
           if (!r.ok) throw new Error(`CPU resources endpoint returned status ${r.status}`);
           return r.json();
         }),
-        fetch(`/resources/memory${ctxParam}`).then(r => {
+        apiFetch(`/resources/memory${ctxParam}`).then(r => {
           if (!r.ok) throw new Error(`Memory resources endpoint returned status ${r.status}`);
           return r.json();
         })
@@ -400,6 +416,7 @@ function App() {
           refreshing={refreshing}
           workload={workloadStats}
           onClearWorkload={() => setSelectedWorkload(null)}
+          me={me}
         />
 
         <div className="grid-wrap">
@@ -660,7 +677,7 @@ function Sidebar({
 
 function Header({
   metric, view, setView, totals, query, setQuery, match, memUnit, contexts, contextIdx,
-  onMenu, onRefresh, refreshing, workload, onClearWorkload,
+  onMenu, onRefresh, refreshing, workload, onClearWorkload, me,
 }) {
   const [hintOpen, setHintOpen] = useState(false);
   const cpuPct = totals.cpuUsed / (totals.cpuCap || 1);
@@ -723,6 +740,16 @@ function Header({
               stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
+        {me && me.auth === "oidc" && (
+          <form method="post" action="/auth/logout">
+            <button className="icon-btn" type="submit" title={`Sign out ${me.email || me.name}`} aria-label="sign out">
+              <svg viewBox="0 0 16 16" width="14" height="14">
+                <path d="M6 2.5H3.5v11H6 M10 5l3 3-3 3 M13 8H6.5"
+                  stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </form>
+        )}
       </div>
     </header>
   );

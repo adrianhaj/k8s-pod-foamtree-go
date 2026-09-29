@@ -20,7 +20,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/adrianhaj/k8s-pod-foamtree/internal/foam"
+	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/foam"
 )
 
 // InCluster is the only context name offered when running inside a pod.

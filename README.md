@@ -197,7 +197,7 @@ An unknown `context` returns 400; an unreachable cluster or rejected credentials
 
 ## Run
 
-Requires Go 1.27. No Node: the JSX is compiled by `go tool esbuild` and React is vendored in `web/static/vendor/`.
+Requires Go 1.27.1. No Node: the JSX is compiled by `go tool esbuild` and React is vendored in `web/static/vendor/`.
 
 ```bash
 make run                      # http://127.0.0.1:8080, uses ~/.kube/config (or $KUBECONFIG)
@@ -238,7 +238,7 @@ Images: `make image` builds `ghcr.io/adrianhaj/k8sfoams:<git describe>` locally;
 | `--auth` | `none` | `none` or `oidc` |
 | `--allow-unauthenticated` | off | required for `--auth=none` on a non-loopback host |
 | `--oidc-issuer`, `--oidc-client-id`, `--oidc-redirect-url` | | required with `--auth=oidc` |
-| `--oidc-allowed-emails` | | comma-separated; globs like `*@example.com` |
+| `--oidc-allowed-emails` | | comma-separated; globs like `*@example.com`. Only verified emails match (`email_verified`, or Entra's optional `xms_edov` claim); otherwise use groups |
 | `--oidc-allowed-groups` | | comma-separated; at least one allow list is required |
 | `--oidc-groups-claim` | `groups` | ID-token claim with group names |
 | `--oidc-scopes` | `openid,email,profile` | add `groups` for Dex/Keycloak |

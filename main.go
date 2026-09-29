@@ -19,9 +19,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/adrianhaj/k8s-pod-foamtree/internal/auth"
-	"github.com/adrianhaj/k8s-pod-foamtree/internal/kube"
-	"github.com/adrianhaj/k8s-pod-foamtree/web"
+	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/auth"
+	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/kube"
+	"github.com/adrianhaj/k8s-pod-foamtree-go/web"
 )
 
 type options struct {
@@ -81,7 +81,13 @@ func parseFlags(args []string) (options, error) {
 }
 
 func list(s string) []string {
-	return strings.FieldsFunc(s, func(r rune) bool { return r == ',' })
+	var out []string
+	for f := range strings.SplitSeq(s, ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 func isLoopback(host string) bool {

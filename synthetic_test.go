@@ -26,8 +26,16 @@ func TestSyntheticSnapshot(t *testing.T) {
 		t.Fatalf("nodes=%d pods=%d err=%v", len(nodes), len(pods), err)
 	}
 	zones, pools := map[string]bool{}, map[string]bool{}
+	requested := map[string]int64{}
+	for _, p := range pods {
+		requested[p.NodeName] += p.Memory
+	}
 	for _, n := range nodes {
 		zones[n.Zone], pools[n.Pool] = true, true
+		// Catches node and pod memory drifting into different units.
+		if requested[n.Name] > n.Memory {
+			t.Fatalf("%s: pods request %d bytes of memory, node has %d", n.Name, requested[n.Name], n.Memory)
+		}
 	}
 	unboundedMem, boundedCPU := 0, 0
 	for _, p := range pods {
@@ -74,5 +82,29 @@ func TestSyntheticFlag(t *testing.T) {
 	}
 	if _, err := parseFlags([]string{"--synthetic", "lots"}); err == nil {
 		t.Fatal("bad --synthetic accepted")
+	}
+}
+
+// Every QoS class shows up, and each pod's requests and limits agree with its
+// class, so Color by → QoS and the eviction panel have real data to show.
+func TestSyntheticQoS(t *testing.T) {
+	s, _ := parseSynthetic("30x20")
+	_, pods, _ := s.Snapshot(context.Background(), "")
+	count := map[string]int{}
+	for _, p := range pods {
+		count[p.QOS]++
+		switch p.QOS {
+		case "BestEffort":
+			if p.CPU != 0 || p.Memory != 0 || p.CPULimit != nil || p.MemoryLimit != nil || len(p.InitContainers) > 0 {
+				t.Fatalf("BestEffort pod with requests or limits: %+v", p)
+			}
+		case "Guaranteed":
+			if p.CPULimit == nil || *p.CPULimit != p.CPU || p.MemoryLimit == nil || *p.MemoryLimit != p.Memory || len(p.InitContainers) > 0 {
+				t.Fatalf("Guaranteed pod with limits != requests: %+v", p)
+			}
+		}
+	}
+	if len(count) != 3 || count["BestEffort"] == 0 || count["Guaranteed"] == 0 || count["Burstable"] == 0 {
+		t.Fatalf("QoS classes: %v", count)
 	}
 }

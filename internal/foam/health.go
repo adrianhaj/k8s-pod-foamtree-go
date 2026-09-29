@@ -49,13 +49,14 @@ func share(requested, capacity float64) float64 {
 }
 
 // Findings lists a pod's best-practice violations on its node, in fixed order.
-// Init containers are skipped: they finish before the pod runs.
+// Init containers are skipped: they finish before the pod runs. Pod-level
+// resources cover every container that sets none of its own.
 func Findings(p Pod, n Node) []string {
 	f := []string{}
 	missingRequests, missingLimits := false, false
 	for _, c := range p.Containers {
-		missingRequests = missingRequests || c.CPU == 0 || c.Memory == 0
-		missingLimits = missingLimits || c.MemoryLimit == nil
+		missingRequests = missingRequests || (c.CPU == 0 && p.PodLevel.CPU == 0) || (c.Memory == 0 && p.PodLevel.Memory == 0)
+		missingLimits = missingLimits || (c.MemoryLimit == nil && p.PodLevel.MemoryLimit == nil)
 	}
 	if missingRequests {
 		f = append(f, "missing-requests")

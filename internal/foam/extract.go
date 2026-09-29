@@ -26,6 +26,8 @@ type Pod struct {
 	InitContainers []Container
 	Labels         map[string]string
 	QOS            string
+	// spec.resources, which bounds all containers at once; zero when unset.
+	PodLevel Container
 	// nil when any running container is unbounded on that axis.
 	CPULimit    *int64
 	MemoryLimit *int64
@@ -140,23 +142,33 @@ func containers(cs []corev1.Container) []Container {
 
 func FromPod(p *corev1.Pod) Pod {
 	// The scheduler's own formula: max(sum regular, max init), sidecars,
-	// pod overhead and pod-level resources included.
-	req := resourcehelper.PodRequests(p, resourcehelper.PodResourcesOptions{})
-	labels := p.Labels
-	if labels == nil {
-		labels = map[string]string{}
-	}
+	// pod overhead and pod-level resources included, and max(spec, allocated)
+	// while an in-place resize is in flight.
+	req := resourcehelper.PodRequests(p, resourcehelper.PodResourcesOptions{
+		UseStatusResources: true,
+		InPlacePodLevelResourcesVerticalScalingEnabled: true,
+	})
 	out := Pod{
-		Name:           p.Name,
-		NodeName:       p.Spec.NodeName,
-		Namespace:      p.Namespace,
-		CPU:            req.Cpu().MilliValue(),
-		Memory:         req.Memory().Value(),
-		Containers:     containers(p.Spec.Containers),
-		InitContainers: containers(p.Spec.InitContainers),
-		Labels:         labels,
-		QOS:            string(p.Status.QOSClass),
-		Extended:       extended(req),
+		Name:       p.Name,
+		NodeName:   p.Spec.NodeName,
+		Namespace:  p.Namespace,
+		CPU:        req.Cpu().MilliValue(),
+		Memory:     req.Memory().Value(),
+		Containers: containers(p.Spec.Containers),
+		Labels:     p.Labels,
+		QOS:        string(p.Status.QOSClass),
+		Extended:   extended(req),
+	}
+	// Native sidecars run for the pod's whole life, so they count as regular.
+	for _, c := range p.Spec.InitContainers {
+		if c.RestartPolicy != nil && *c.RestartPolicy == corev1.ContainerRestartPolicyAlways {
+			out.Containers = append(out.Containers, container(c))
+		} else {
+			out.InitContainers = append(out.InitContainers, container(c))
+		}
+	}
+	if r := p.Spec.Resources; r != nil {
+		out.PodLevel = container(corev1.Container{Resources: *r})
 	}
 	lim := resourcehelper.PodLimits(p, resourcehelper.PodResourcesOptions{})
 	if bounded(p, corev1.ResourceCPU) {
@@ -171,7 +183,7 @@ func FromPod(p *corev1.Pod) Pod {
 }
 
 func FromNode(n *corev1.Node) Node {
-	taints := []Taint{}
+	var taints []Taint
 	for _, t := range n.Spec.Taints {
 		if t.Key != cordonTaint {
 			taints = append(taints, Taint{Key: t.Key, Value: t.Value, Effect: string(t.Effect)})

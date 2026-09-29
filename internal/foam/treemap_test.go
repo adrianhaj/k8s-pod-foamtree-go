@@ -79,6 +79,18 @@ func TestTreemapInitContainersAreGreyAndSkippedWhenZero(t *testing.T) {
 	}
 }
 
+func TestTreemapPodLevelRemainderLeaf(t *testing.T) {
+	p := Pod{Name: "shared", NodeName: "minikube", CPU: 400, PodLevel: Container{CPU: 400},
+		Containers: []Container{{Name: "a", CPU: 100}, {Name: "b"}}}
+	cs := children(children(render(t, []Node{minikube}, []Pod{p}, CPU)[0])[0])
+	if len(cs) != 3 || cs[2]["label"] != "(pod-level)" || cs[2]["weight"] != 300.0 || cs[2]["color"] != nil {
+		t.Fatalf("got %v", cs)
+	}
+	if cs := children(children(render(t, []Node{minikube}, []Pod{p}, Memory)[0])[0]); len(cs) != 2 {
+		t.Fatalf("no pod-level memory, no leaf: %v", cs)
+	}
+}
+
 func TestTreemapPodMetadata(t *testing.T) {
 	withInit := etcdPod()
 	withInit.InitContainers = []Container{{Name: "i"}}

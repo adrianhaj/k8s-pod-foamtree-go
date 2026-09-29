@@ -142,9 +142,15 @@ func Treemap(nodes []Node, pods []Pod, axis Axis) Tree {
 }
 
 func podGroup(p Pod, n Node, axis Axis) PodGroup {
-	leaves := make([]Leaf, 0, len(p.Containers)+len(p.InitContainers))
+	leaves := make([]Leaf, 0, len(p.Containers)+len(p.InitContainers)+1)
+	rest := axis.container(p.PodLevel)
 	for _, c := range p.Containers {
 		leaves = append(leaves, Leaf{Label: c.Name, Weight: axis.weight(axis.container(c)), Extended: c.Extended})
+		rest -= axis.container(c)
+	}
+	// Pod-level budget no container claims would otherwise draw as nothing.
+	if rest > 0 {
+		leaves = append(leaves, Leaf{Label: "(pod-level)", Weight: axis.weight(rest)})
 	}
 	for _, c := range p.InitContainers {
 		if w := axis.container(c); w > 0 {

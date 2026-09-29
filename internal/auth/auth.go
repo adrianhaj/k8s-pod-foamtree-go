@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -93,7 +94,7 @@ func New(ctx context.Context, cfg Config) (*Auth, error) {
 func (a *Auth) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/login", a.login)
 	mux.HandleFunc("GET /auth/callback", a.callback)
-	mux.HandleFunc("POST /auth/logout", a.logout)
+	mux.Handle("POST /auth/logout", http.NewCrossOriginProtection().Handler(http.HandlerFunc(a.logout)))
 }
 
 type userKey struct{}
@@ -113,7 +114,7 @@ func (a *Auth) Require(next http.Handler) http.Handler {
 			return
 		}
 		if strings.Contains(r.Header.Get("Accept"), "text/html") {
-			http.Redirect(w, r, "/auth/login", http.StatusFound)
+			http.Redirect(w, r, "/auth/login?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
 			return
 		}
 		http.Error(w, "unauthenticated", http.StatusUnauthorized)
@@ -121,23 +122,34 @@ func (a *Auth) Require(next http.Handler) http.Handler {
 }
 
 type loginState struct {
-	State, Nonce, Verifier string
+	State, Nonce, Verifier, Next string
 }
 
+// localPath rejects "//host" and "/\host", which browsers treat as another origin.
+func localPath(p string) bool {
+	return strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "//") && !strings.HasPrefix(p, `/\`)
+}
+
+// Each login gets its own cookie, named by its state, so parallel logins in
+// several tabs don't overwrite each other.
 func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
-	st := loginState{State: rand.Text(), Nonce: rand.Text(), Verifier: oauth2.GenerateVerifier()}
-	a.setCookie(w, loginCookie, "/auth/", a.seal(loginCookie, st, loginTTL), int(loginTTL.Seconds()))
+	st := loginState{State: rand.Text(), Nonce: rand.Text(), Verifier: oauth2.GenerateVerifier(), Next: "/"}
+	if next := r.FormValue("next"); localPath(next) {
+		st.Next = next
+	}
+	a.setCookie(w, loginCookie+"_"+st.State, "/auth/", a.seal(loginCookie, st, loginTTL), int(loginTTL.Seconds()))
 	http.Redirect(w, r, a.oauth.AuthCodeURL(st.State, oidc.Nonce(st.Nonce), oauth2.S256ChallengeOption(st.Verifier)), http.StatusFound)
 }
 
 func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 	var st loginState
-	c, err := r.Cookie(loginCookie)
+	name := loginCookie + "_" + r.FormValue("state")
+	c, err := r.Cookie(name)
 	if err != nil || a.open(loginCookie, c.Value, &st) != nil {
 		http.Error(w, "login expired, start again at /auth/login", http.StatusBadRequest)
 		return
 	}
-	a.setCookie(w, loginCookie, "/auth/", "", -1)
+	a.setCookie(w, name, "/auth/", "", -1)
 	if subtle.ConstantTimeCompare([]byte(r.FormValue("state")), []byte(st.State)) != 1 {
 		http.Error(w, "state mismatch", http.StatusBadRequest)
 		return
@@ -175,7 +187,7 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.setCookie(w, sessionCookie, "/", a.seal(sessionCookie, u, sessionTTL), int(sessionTTL.Seconds()))
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, st.Next, http.StatusFound)
 }
 
 // A redirect to "/" would just bounce through /auth/login again and, behind
@@ -195,14 +207,17 @@ func (a *Auth) claims(idt *oidc.IDToken) (User, []string, error) {
 	}
 	var c struct {
 		Email         string `json:"email"`
-		EmailVerified *bool  `json:"email_verified"`
+		EmailVerified any    `json:"email_verified"` // some IdPs (Cognito) send "true"/"false" strings
+		DomainOwner   any    `json:"xms_edov"`       // Entra ID's stand-in; it never sends email_verified
 		Name          string `json:"name"`
 	}
 	if err := idt.Claims(&c); err != nil {
 		return User{}, nil, err
 	}
-	// An unverified address is whatever the user typed: never match on it.
-	if c.EmailVerified != nil && !*c.EmailVerified {
+	// An unverified address is whatever the user typed (nOAuth): only match on
+	// an explicit yes. IdPs that never verify can still use the groups allowlist.
+	isTrue := func(v any) bool { return v == true || v == "true" }
+	if !isTrue(c.EmailVerified) && !isTrue(c.DomainOwner) {
 		c.Email = ""
 	}
 	var groups []string
