@@ -47,12 +47,12 @@ func TestWarnings(t *testing.T) {
 }
 
 // 4 cores / 16000 MB — a 1:4 core:GB node.
-var worker = Node{Name: "worker", CPU: 4000, Memory: 16_000_000}
+var worker = Node{Name: "worker", CPU: 4000, Memory: 16_000_000_000}
 
-func auditPod(cpu int64, mem float64, limit bool, inits ...Container) Pod {
+func auditPod(cpu int64, mem int64, limit bool, inits ...Container) Pod {
 	c := Container{Name: "app", CPU: cpu, Memory: mem}
 	if limit {
-		one := 1.0
+		one := int64(1)
 		c.MemoryLimit = &one
 	}
 	return Pod{Name: "app", NodeName: "worker", CPU: cpu, Memory: mem, Containers: []Container{c}, InitContainers: inits}
@@ -65,16 +65,16 @@ func TestFindings(t *testing.T) {
 		node Node
 		want []string
 	}{
-		{"well sized", auditPod(400, 1_600_000, true), worker, []string{}},
-		{"no cpu request", auditPod(0, 1_600_000, true), worker, []string{"missing-requests"}},
+		{"well sized", auditPod(400, 1_600_000_000, true), worker, []string{}},
+		{"no cpu request", auditPod(0, 1_600_000_000, true), worker, []string{"missing-requests"}},
 		{"no memory request", auditPod(400, 0, true), worker, []string{"missing-requests"}},
-		{"no memory limit", auditPod(400, 1_600_000, false), worker, []string{"missing-limits"}},
-		{"init containers not audited", auditPod(400, 1_600_000, true, Container{Name: "init"}), worker, []string{}},
-		{"exactly 80% is fine", auditPod(3200, 12_800_000, true), worker, []string{}},
-		{"lopsided", auditPod(2000, 800_000, true), worker, []string{"ratio-asymmetry"}},
-		{"small lopsided", auditPod(200, 16_000, true), worker, []string{}},
-		{"node without capacity", auditPod(400, 1_600_000, true), Node{Name: "ghost"}, []string{}},
-		{"all in order", auditPod(3600, 1_600_000, false), worker, []string{"missing-limits", "monolith", "ratio-asymmetry"}},
+		{"no memory limit", auditPod(400, 1_600_000_000, false), worker, []string{"missing-limits"}},
+		{"init containers not audited", auditPod(400, 1_600_000_000, true, Container{Name: "init"}), worker, []string{}},
+		{"exactly 80% is fine", auditPod(3200, 12_800_000_000, true), worker, []string{}},
+		{"lopsided", auditPod(2000, 800_000_000, true), worker, []string{"ratio-asymmetry"}},
+		{"small lopsided", auditPod(200, 16_000_000, true), worker, []string{}},
+		{"node without capacity", auditPod(400, 1_600_000_000, true), Node{Name: "ghost"}, []string{}},
+		{"all in order", auditPod(3600, 1_600_000_000, false), worker, []string{"missing-limits", "monolith", "ratio-asymmetry"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -83,7 +83,7 @@ func TestFindings(t *testing.T) {
 			}
 		})
 	}
-	for _, p := range []Pod{auditPod(3600, 14_400_000, true), auditPod(3600, 13_000_000, true)} {
+	for _, p := range []Pod{auditPod(3600, 14_400_000_000, true), auditPod(3600, 13_000_000_000, true)} {
 		if f := Findings(p, worker); !reflect.DeepEqual(f[:1], []string{"monolith"}) {
 			t.Errorf("monolith expected in %v", f)
 		}

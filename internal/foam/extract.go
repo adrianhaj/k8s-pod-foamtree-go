@@ -4,24 +4,23 @@ package foam
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	resourcehelper "k8s.io/component-helpers/resource"
 )
 
-// CPU is in millicores, memory in decimal kB — the units the frontend expects.
+// CPU is in millicores, memory in bytes — the scheduler's own units.
 type Container struct {
 	Name   string
 	CPU    int64
-	Memory float64
+	Memory int64
 	// nil when unset: an unbounded container is exactly what the audit flags.
-	MemoryLimit *float64
+	MemoryLimit *int64
 }
 
 type Pod struct {
 	Name, NodeName, Namespace string
 	// Effective request — what the scheduler reserves for the pod.
 	CPU            int64
-	Memory         float64
+	Memory         int64
 	Containers     []Container
 	InitContainers []Container
 	Labels         map[string]string
@@ -37,7 +36,7 @@ type Taint struct {
 type Node struct {
 	Name          string
 	CPU           int64
-	Memory        float64
+	Memory        int64
 	Unschedulable bool
 	Taints        []Taint
 	Conditions    map[string]bool
@@ -49,16 +48,14 @@ const cordonTaint = "node.kubernetes.io/unschedulable"
 
 var pressureConditions = []string{"MemoryPressure", "DiskPressure", "PIDPressure"}
 
-func kB(q resource.Quantity) float64 { return float64(q.Value()) / 1000 }
-
 func container(c corev1.Container) Container {
 	out := Container{
 		Name:   c.Name,
 		CPU:    c.Resources.Requests.Cpu().MilliValue(),
-		Memory: kB(*c.Resources.Requests.Memory()),
+		Memory: c.Resources.Requests.Memory().Value(),
 	}
 	if q, ok := c.Resources.Limits[corev1.ResourceMemory]; ok {
-		v := kB(q)
+		v := q.Value()
 		out.MemoryLimit = &v
 	}
 	return out
@@ -85,7 +82,7 @@ func FromPod(p *corev1.Pod) Pod {
 		NodeName:       p.Spec.NodeName,
 		Namespace:      p.Namespace,
 		CPU:            req.Cpu().MilliValue(),
-		Memory:         kB(*req.Memory()),
+		Memory:         req.Memory().Value(),
 		Containers:     containers(p.Spec.Containers),
 		InitContainers: containers(p.Spec.InitContainers),
 		Labels:         labels,
@@ -115,7 +112,7 @@ func FromNode(n *corev1.Node) Node {
 	return Node{
 		Name:          n.Name,
 		CPU:           n.Status.Capacity.Cpu().MilliValue(),
-		Memory:        kB(*n.Status.Capacity.Memory()),
+		Memory:        n.Status.Capacity.Memory().Value(),
 		Unschedulable: n.Spec.Unschedulable,
 		Taints:        taints,
 		Conditions:    conditions,

@@ -34,17 +34,17 @@ func pod(containers []corev1.Container, inits ...corev1.Container) *corev1.Pod {
 
 func TestFromPodSingleContainer(t *testing.T) {
 	p := FromPod(pod([]corev1.Container{ctr("etcd", "100m", "1G")}))
-	if p.Name != "etcd" || p.NodeName != "master" || p.CPU != 100 || p.Memory != 1_000_000 {
+	if p.Name != "etcd" || p.NodeName != "master" || p.CPU != 100 || p.Memory != 1_000_000_000 {
 		t.Fatalf("got %+v", p)
 	}
-	if len(p.InitContainers) != 0 || p.Containers[0].CPU != 100 || p.Containers[0].Memory != 1_000_000 {
+	if len(p.InitContainers) != 0 || p.Containers[0].CPU != 100 || p.Containers[0].Memory != 1_000_000_000 {
 		t.Fatalf("containers %+v", p.Containers)
 	}
 }
 
 func TestFromPodSumsRegularContainers(t *testing.T) {
 	p := FromPod(pod([]corev1.Container{ctr("etcd", "100m", "1G"), ctr("side", "50m", "100Mi")}))
-	if p.CPU != 150 || p.Memory != 1_000_000+104_857.6 {
+	if p.CPU != 150 || p.Memory != 1_000_000_000+104_857_600 {
 		t.Fatalf("got cpu=%d mem=%v", p.CPU, p.Memory)
 	}
 }
@@ -62,14 +62,14 @@ func TestFromPodEffectiveRequest(t *testing.T) {
 		name    string
 		inits   []corev1.Container
 		wantCPU int64
-		wantMem float64
+		wantMem int64
 	}{
-		{"no init", nil, 300, 209_715.2},
-		{"init below sum", []corev1.Container{ctr("init-a", "200m", "")}, 300, 209_715.2},
-		{"init above sum", []corev1.Container{ctr("init-a", "500m", "")}, 500, 209_715.2},
-		{"max of inits", []corev1.Container{ctr("i1", "500m", ""), ctr("i2", "400m", "")}, 500, 209_715.2},
-		{"init without requests", []corev1.Container{ctr("i", "", "")}, 300, 209_715.2},
-		{"init dominates memory", []corev1.Container{ctr("i", "", "500Mi")}, 300, 524_288},
+		{"no init", nil, 300, 209_715_200},
+		{"init below sum", []corev1.Container{ctr("init-a", "200m", "")}, 300, 209_715_200},
+		{"init above sum", []corev1.Container{ctr("init-a", "500m", "")}, 500, 209_715_200},
+		{"max of inits", []corev1.Container{ctr("i1", "500m", ""), ctr("i2", "400m", "")}, 500, 209_715_200},
+		{"init without requests", []corev1.Container{ctr("i", "", "")}, 300, 209_715_200},
+		{"init dominates memory", []corev1.Container{ctr("i", "", "500Mi")}, 300, 524_288_000},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -98,10 +98,10 @@ func TestFromPodSidecarIsSummed(t *testing.T) {
 
 // The Python parser crashed on 1.5Gi and 100k; 1e3 and plain bytes it handled.
 func TestFromPodParsesEveryQuantityFormat(t *testing.T) {
-	cases := map[string]float64{"1.5Gi": 1_610_612.736, "100k": 100, "1e3": 1, "128974848": 128_974.848}
+	cases := map[string]int64{"1.5Gi": 1_610_612_736, "100k": 100_000, "1e3": 1000, "128974848": 128_974_848}
 	for q, want := range cases {
 		if got := FromPod(pod([]corev1.Container{ctr("a", "", q)})).Memory; got != want {
-			t.Errorf("%s: got %v kB, want %v", q, got, want)
+			t.Errorf("%s: got %v bytes, want %v", q, got, want)
 		}
 	}
 	if got := FromPod(pod([]corev1.Container{ctr("a", "0.5", "")})).CPU; got != 500 {
@@ -125,7 +125,7 @@ func TestFromPodSelectorMetadata(t *testing.T) {
 
 func TestFromPodMemoryLimit(t *testing.T) {
 	p := FromPod(pod([]corev1.Container{withMemLimit(ctr("a", "100m", "100Mi"), "256Mi"), ctr("b", "100m", "100Mi")}))
-	if l := p.Containers[0].MemoryLimit; l == nil || *l != 268_435.456 {
+	if l := p.Containers[0].MemoryLimit; l == nil || *l != 268_435_456 {
 		t.Fatalf("limit %v", l)
 	}
 	if p.Containers[1].MemoryLimit != nil {
@@ -150,7 +150,7 @@ func cond(t corev1.NodeConditionType, s corev1.ConditionStatus) corev1.NodeCondi
 func TestFromNodeHealthy(t *testing.T) {
 	n := FromNode(node(cond(corev1.NodeReady, corev1.ConditionTrue)))
 	want := map[string]bool{"MemoryPressure": false, "DiskPressure": false, "PIDPressure": false, "Ready": true}
-	if n.Name != "minikube" || n.CPU != 2000 || n.Memory != 1_073_741.824 || n.Unschedulable ||
+	if n.Name != "minikube" || n.CPU != 2000 || n.Memory != 1_073_741_824 || n.Unschedulable ||
 		len(n.Taints) != 0 || !reflect.DeepEqual(n.Conditions, want) {
 		t.Fatalf("got %+v", n)
 	}

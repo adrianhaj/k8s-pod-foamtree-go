@@ -65,7 +65,7 @@ func Findings(p Pod, n Node) []string {
 	}
 
 	cpu := share(float64(p.CPU), float64(n.CPU))
-	mem := share(p.Memory, n.Memory)
+	mem := share(float64(p.Memory), float64(n.Memory))
 	if cpu > monolithShare || mem > monolithShare {
 		f = append(f, "monolith")
 	}

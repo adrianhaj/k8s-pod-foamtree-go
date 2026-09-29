@@ -4,14 +4,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-var minikube = Node{Name: "minikube", CPU: 2000, Memory: 1_000_000}
+var minikube = Node{Name: "minikube", CPU: 2000, Memory: 1_000_000_000}
 
 func etcdPod() Pod {
 	return Pod{
-		Name: "etcd", NodeName: "minikube", Namespace: "kube-system", CPU: 150, Memory: 150_000,
-		Containers: []Container{{Name: "etcd", CPU: 100, Memory: 100_000}, {Name: "side", CPU: 50, Memory: 50_000}},
+		Name: "etcd", NodeName: "minikube", Namespace: "kube-system", CPU: 150, Memory: 150_000_000,
+		Containers: []Container{{Name: "etcd", CPU: 100, Memory: 100_000_000}, {Name: "side", CPU: 50, Memory: 50_000_000}},
 		Labels:     map[string]string{"app": "web"}, QOS: "Guaranteed",
 	}
 }
@@ -139,15 +142,31 @@ func BenchmarkTreemap(b *testing.B) {
 	var nodes []Node
 	var pods []Pod
 	for i := range 200 {
-		nodes = append(nodes, Node{Name: fmt.Sprintf("node-%03d", i), CPU: 16000, Memory: 64_000_000})
+		nodes = append(nodes, Node{Name: fmt.Sprintf("node-%03d", i), CPU: 16000, Memory: 64_000_000_000})
 		for j := range 50 {
 			pods = append(pods, Pod{Name: fmt.Sprintf("pod-%d-%d", i, j), Namespace: "default", NodeName: nodes[i].Name,
-				CPU: 100, Memory: 256_000, Containers: []Container{{Name: "app", CPU: 100, Memory: 256_000}}})
+				CPU: 100, Memory: 256_000_000, Containers: []Container{{Name: "app", CPU: 100, Memory: 256_000_000}}})
 		}
 	}
 	for b.Loop() {
 		if _, err := json.Marshal(Treemap(nodes, pods, CPU)); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// Summing kB floats drifted: 3 × 3Mi on a 9Mi node left a non-zero "empty".
+func TestTreemapMemoryExactFitLeavesZeroEmpty(t *testing.T) {
+	n := node()
+	n.Status.Capacity[corev1.ResourceMemory] = resource.MustParse("9Mi")
+	var pods []Pod
+	for i := range 3 {
+		p := pod([]corev1.Container{ctr("app", "", "3Mi")})
+		p.Name, p.Spec.NodeName = fmt.Sprint("p", i), "minikube"
+		pods = append(pods, FromPod(p))
+	}
+	groups := children(render(t, []Node{FromNode(n)}, pods, Memory)[0])
+	if empty := groups[len(groups)-1]["weight"]; empty != 0.0 {
+		t.Fatalf("empty weight %v, want 0", empty)
 	}
 }

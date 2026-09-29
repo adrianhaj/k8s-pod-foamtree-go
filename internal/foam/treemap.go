@@ -12,25 +12,34 @@ const (
 	Memory
 )
 
-func (a Axis) container(c Container) float64 {
+func (a Axis) container(c Container) int64 {
 	if a == CPU {
-		return float64(c.CPU)
+		return c.CPU
 	}
 	return c.Memory
 }
 
-func (a Axis) pod(p Pod) float64 {
+func (a Axis) pod(p Pod) int64 {
 	if a == CPU {
-		return float64(p.CPU)
+		return p.CPU
 	}
 	return p.Memory
 }
 
-func (a Axis) node(n Node) float64 {
+func (a Axis) node(n Node) int64 {
 	if a == CPU {
-		return float64(n.CPU)
+		return n.CPU
 	}
 	return n.Memory
+}
+
+// weight converts to the frontend's units: millicores, or decimal kB. Sums
+// stay int64 until here so an exactly full node has an exactly empty leaf.
+func (a Axis) weight(v int64) float64 {
+	if a == CPU {
+		return float64(v)
+	}
+	return float64(v) / 1000
 }
 
 type Tree struct {
@@ -87,15 +96,15 @@ func Treemap(nodes []Node, pods []Pod, axis Axis) Tree {
 			return cmp.Or(cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name))
 		})
 		groups := make([]any, 0, len(onNode)+1)
-		used := 0.0
+		var used int64
 		for _, p := range onNode {
 			groups = append(groups, podGroup(p, n, axis))
 			used += axis.pod(p)
 		}
-		groups = append(groups, Leaf{Label: "empty", Weight: axis.node(n) - used, Color: emptyColor})
+		groups = append(groups, Leaf{Label: "empty", Weight: axis.weight(axis.node(n) - used), Color: emptyColor})
 		tree.Groups = append(tree.Groups, NodeGroup{
 			Label:         n.Name,
-			Weight:        axis.node(n),
+			Weight:        axis.weight(axis.node(n)),
 			Groups:        groups,
 			Unschedulable: n.Unschedulable,
 			Taints:        orEmpty(n.Taints),
@@ -109,16 +118,16 @@ func Treemap(nodes []Node, pods []Pod, axis Axis) Tree {
 func podGroup(p Pod, n Node, axis Axis) PodGroup {
 	leaves := make([]Leaf, 0, len(p.Containers)+len(p.InitContainers))
 	for _, c := range p.Containers {
-		leaves = append(leaves, Leaf{Label: c.Name, Weight: axis.container(c)})
+		leaves = append(leaves, Leaf{Label: c.Name, Weight: axis.weight(axis.container(c))})
 	}
 	for _, c := range p.InitContainers {
 		if w := axis.container(c); w > 0 {
-			leaves = append(leaves, Leaf{Label: c.Name + " (init)", Weight: w, Color: initColor})
+			leaves = append(leaves, Leaf{Label: c.Name + " (init)", Weight: axis.weight(w), Color: initColor})
 		}
 	}
 	return PodGroup{
 		Label:             p.Name,
-		Weight:            axis.pod(p),
+		Weight:            axis.weight(axis.pod(p)),
 		Groups:            leaves,
 		Namespace:         p.Namespace,
 		Labels:            orEmptyMap(p.Labels),
