@@ -15,6 +15,7 @@ type Container struct {
 	Memory int64
 	// nil when unset: an unbounded container is exactly what the audit flags.
 	MemoryLimit *int64
+	Extended    map[string]int64
 }
 
 type Pod struct {
@@ -31,6 +32,7 @@ type Pod struct {
 	// nil when any running container is unbounded on that axis.
 	CPULimit    *int64
 	MemoryLimit *int64
+	Extended    map[string]int64
 	// What the scheduler's filters read. Affinity holds node affinity only.
 	NodeSelector map[string]string
 	Affinity     *corev1.Affinity
@@ -54,6 +56,9 @@ type Node struct {
 	Conditions    map[string]bool
 	// "" when the node does not carry the label.
 	Zone, Region, InstanceType, Pool string
+	// From allocatable, what pods can actually claim; CPU and Memory stay on
+	// capacity, as the Python app did.
+	Extended map[string]int64
 	// All labels, for node selectors and affinity.
 	Labels map[string]string
 	// Capacity minus system reservations: what the scheduler hands out.
@@ -83,11 +88,32 @@ var PoolLabels = []string{
 	"kubernetes.azure.com/agentpool",
 }
 
+// TopologyLabels are the node labels the dashboard reads.
+var TopologyLabels = append([]string{zoneLabel, regionLabel, instanceTypeLabel}, PoolLabels...)
+
+// extended keeps every non-zero resource besides CPU and memory (GPUs,
+// ephemeral-storage, hugepages) in its base unit: bytes or devices. nil when
+// there are none. "pods" is a node's pod slot count, not something pods request.
+func extended(l corev1.ResourceList) map[string]int64 {
+	var out map[string]int64
+	for name, q := range l {
+		if name == corev1.ResourceCPU || name == corev1.ResourceMemory || name == corev1.ResourcePods || q.IsZero() {
+			continue
+		}
+		if out == nil {
+			out = map[string]int64{}
+		}
+		out[string(name)] = q.Value()
+	}
+	return out
+}
+
 func container(c corev1.Container) Container {
 	out := Container{
-		Name:   c.Name,
-		CPU:    c.Resources.Requests.Cpu().MilliValue(),
-		Memory: c.Resources.Requests.Memory().Value(),
+		Name:     c.Name,
+		CPU:      c.Resources.Requests.Cpu().MilliValue(),
+		Memory:   c.Resources.Requests.Memory().Value(),
+		Extended: extended(c.Resources.Requests),
 	}
 	if q, ok := c.Resources.Limits[corev1.ResourceMemory]; ok {
 		v := q.Value()
@@ -144,6 +170,7 @@ func FromPod(p *corev1.Pod) Pod {
 		Containers:   containers(p.Spec.Containers),
 		Labels:       p.Labels,
 		QOS:          string(p.Status.QOSClass),
+		Extended:     extended(req),
 		NodeSelector: p.Spec.NodeSelector,
 		Affinity:     p.Spec.Affinity,
 		Tolerations:  p.Spec.Tolerations,
@@ -211,6 +238,7 @@ func FromNode(n *corev1.Node) Node {
 		Region:        n.Labels[regionLabel],
 		InstanceType:  n.Labels[instanceTypeLabel],
 		Pool:          pool,
+		Extended:      extended(n.Status.Allocatable),
 		Labels:        n.Labels,
 		AllocCPU:      n.Status.Allocatable.Cpu().MilliValue(),
 		AllocMemory:   n.Status.Allocatable.Memory().Value(),
