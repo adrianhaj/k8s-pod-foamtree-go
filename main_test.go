@@ -84,6 +84,35 @@ func TestResourcesPassesContextAndMapsErrors(t *testing.T) {
 	}
 }
 
+func TestReportRoutes(t *testing.T) {
+	src := &fakeSource{
+		nodes: []foam.Node{{Name: "minikube", CPU: 2000, Memory: 1_000_000_000, Zone: "z1"}},
+		pods: []foam.Pod{
+			{Name: "etcd", Namespace: "kube-system", NodeName: "minikube", CPU: 150, Memory: 100_000_000},
+			{Name: "pending", Namespace: "dev", CPU: 100},
+		},
+	}
+	h := newHandler(src, static, nil)
+	w := get(h, "/report.csv?context=kind")
+	want := "node,zone,pool,instance_type,node_cpu_m,node_memory_bytes,node_warnings,namespace,pod,qos," +
+		"cpu_request_m,cpu_limit_m,memory_request_bytes,memory_limit_bytes,findings\n" +
+		"minikube,z1,,,2000,1000000000,,kube-system,etcd,,150,,100000000,,\n" +
+		",,,,0,0,,dev,pending,,100,,0,,\n"
+	if w.Code != 200 || w.Body.String() != want || src.asked != "kind" ||
+		w.Header().Get("Content-Type") != "text/csv; charset=utf-8" ||
+		w.Header().Get("Content-Disposition") != "attachment" {
+		t.Fatalf("csv: %d %v\n%s", w.Code, w.Header(), w.Body)
+	}
+	w = get(h, "/report.json")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"pod":"etcd","qos":"","cpu":150,"cpuLimit":null,"memoryBytes":100000000`) {
+		t.Fatalf("json: %d %s", w.Code, w.Body)
+	}
+	src.err = fmt.Errorf("%w %q", kube.ErrUnknownContext, "prod")
+	if w := get(h, "/report.csv?context=prod"); w.Code != 400 {
+		t.Fatalf("unknown context: %d", w.Code)
+	}
+}
+
 func TestFlags(t *testing.T) {
 	cases := []struct {
 		args []string
@@ -114,5 +143,63 @@ func TestSessionKey(t *testing.T) {
 	}
 	if _, err := sessionKey("c2hvcnQ="); err == nil {
 		t.Fatal("short key accepted")
+	}
+}
+
+func TestFitRoute(t *testing.T) {
+	src := &fakeSource{nodes: []foam.Node{
+		{Name: "big", AllocCPU: 8000, AllocMemory: 32_000_000_000, AllocPods: 110},
+		{Name: "small", AllocCPU: 1000, AllocMemory: 32_000_000_000, AllocPods: 110},
+	}}
+	h := newHandler(src, static, nil)
+	w := get(h, "/api/fit?context=kind-a&cpu=2&memory=1Gi")
+	want := `[{"node":"big","reasons":[]},{"node":"small","reasons":["insufficient cpu: requires 2000m, available 1000m"]}]` + "\n"
+	if w.Code != 200 || w.Body.String() != want || src.asked != "kind-a" {
+		t.Fatalf("%d %s (context %q)", w.Code, w.Body, src.asked)
+	}
+	if w := get(h, "/api/fit?cpu=lots"); w.Code != 400 || !strings.Contains(w.Body.String(), `cpu "lots"`) {
+		t.Fatalf("bad input: %d %s", w.Code, w.Body)
+	}
+	src.err = errors.New("Unauthorized")
+	if w := get(h, "/api/fit?cpu=1"); w.Code != 503 {
+		t.Fatalf("cluster error: %d", w.Code)
+	}
+}
+
+func TestFitRouteRejectsOversizedFreeText(t *testing.T) {
+	h := newHandler(&fakeSource{}, static, nil)
+	big := strings.Repeat("a", 4097)
+	if w := get(h, "/api/fit?tolerations="+big); w.Code != 400 {
+		t.Fatalf("oversized tolerations: %d", w.Code)
+	}
+	if w := get(h, "/api/fit?nodeSelector="+big); w.Code != 400 {
+		t.Fatalf("oversized nodeSelector: %d", w.Code)
+	}
+}
+
+func TestDrainRoute(t *testing.T) {
+	src := &fakeSource{
+		nodes: []foam.Node{
+			{Name: "a", AllocCPU: 4000, AllocMemory: 8_000_000_000, AllocPods: 110},
+			{Name: "b", AllocCPU: 4000, AllocMemory: 8_000_000_000, AllocPods: 110},
+		},
+		pods: []foam.Pod{{Name: "web", Namespace: "ns", NodeName: "a", Controller: "ReplicaSet", CPU: 100}},
+	}
+	h := newHandler(src, static, nil)
+	w := get(h, "/api/drain?context=kind-a&node=a")
+	want := `{"moved":[{"pod":"ns/web","node":"b"}],"pending":[],"ignored":[],"unmanaged":[]}` + "\n"
+	if w.Code != 200 || w.Body.String() != want || src.asked != "kind-a" {
+		t.Fatalf("%d %s (context %q)", w.Code, w.Body, src.asked)
+	}
+	if w := get(h, "/api/drain?node=gone"); w.Code != 404 {
+		t.Fatalf("unknown node: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestDrainRouteRejectsOversizedNode(t *testing.T) {
+	h := newHandler(&fakeSource{}, static, nil)
+	big := strings.Repeat("a", 4097)
+	if w := get(h, "/api/drain?node="+big); w.Code != 400 {
+		t.Fatalf("oversized node: %d", w.Code)
 	}
 }

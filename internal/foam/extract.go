@@ -4,6 +4,7 @@ package foam
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	resourcehelper "k8s.io/component-helpers/resource"
 )
 
@@ -32,6 +33,12 @@ type Pod struct {
 	CPULimit    *int64
 	MemoryLimit *int64
 	Extended    map[string]int64
+	// What the scheduler's filters read. Affinity holds node affinity only.
+	NodeSelector map[string]string
+	Affinity     *corev1.Affinity
+	Tolerations  []corev1.Toleration
+	// Kind of the controlling owner, "" for a bare pod: decides what a drain does with it.
+	Controller string
 }
 
 type Taint struct {
@@ -52,6 +59,12 @@ type Node struct {
 	// From allocatable, what pods can actually claim; CPU and Memory stay on
 	// capacity, as the Python app did.
 	Extended map[string]int64
+	// All labels, for node selectors and affinity.
+	Labels map[string]string
+	// Capacity minus system reservations: what the scheduler hands out.
+	AllocCPU    int64
+	AllocMemory int64
+	AllocPods   int64
 }
 
 // Kubernetes adds this taint itself on cordon; spec.unschedulable already
@@ -149,15 +162,21 @@ func FromPod(p *corev1.Pod) Pod {
 		InPlacePodLevelResourcesVerticalScalingEnabled: true,
 	})
 	out := Pod{
-		Name:       p.Name,
-		NodeName:   p.Spec.NodeName,
-		Namespace:  p.Namespace,
-		CPU:        req.Cpu().MilliValue(),
-		Memory:     req.Memory().Value(),
-		Containers: containers(p.Spec.Containers),
-		Labels:     p.Labels,
-		QOS:        string(p.Status.QOSClass),
-		Extended:   extended(req),
+		Name:         p.Name,
+		NodeName:     p.Spec.NodeName,
+		Namespace:    p.Namespace,
+		CPU:          req.Cpu().MilliValue(),
+		Memory:       req.Memory().Value(),
+		Containers:   containers(p.Spec.Containers),
+		Labels:       p.Labels,
+		QOS:          string(p.Status.QOSClass),
+		Extended:     extended(req),
+		NodeSelector: p.Spec.NodeSelector,
+		Affinity:     p.Spec.Affinity,
+		Tolerations:  p.Spec.Tolerations,
+	}
+	if ref := metav1.GetControllerOf(p); ref != nil {
+		out.Controller = ref.Kind
 	}
 	// Native sidecars run for the pod's whole life, so they count as regular.
 	for _, c := range p.Spec.InitContainers {
@@ -220,5 +239,9 @@ func FromNode(n *corev1.Node) Node {
 		InstanceType:  n.Labels[instanceTypeLabel],
 		Pool:          pool,
 		Extended:      extended(n.Status.Allocatable),
+		Labels:        n.Labels,
+		AllocCPU:      n.Status.Allocatable.Cpu().MilliValue(),
+		AllocMemory:   n.Status.Allocatable.Memory().Value(),
+		AllocPods:     n.Status.Allocatable.Pods().Value(),
 	}
 }

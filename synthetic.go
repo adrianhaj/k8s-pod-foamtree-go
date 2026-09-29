@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/foam"
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/kube"
 )
@@ -60,6 +62,8 @@ func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam
 			n.Taints = []foam.Taint{{Key: "nvidia.com/gpu", Value: "present", Effect: "NoSchedule"}}
 			n.Extended["nvidia.com/gpu"] = 8
 		}
+		n.AllocCPU, n.AllocMemory, n.AllocPods = n.CPU-500, n.Memory-2_000_000, 110
+		n.Labels = map[string]string{"topology.kubernetes.io/zone": n.Zone, "karpenter.sh/nodepool": n.Pool}
 		nodes = append(nodes, n)
 		for j := range s.podsPerNode {
 			k := i*s.podsPerNode + j
@@ -109,6 +113,18 @@ func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam
 			}
 			if len(ext) > 0 {
 				c.Extended, p.Extended = ext, ext
+			}
+			switch n.Pool {
+			case "memory":
+				p.NodeSelector = map[string]string{"karpenter.sh/nodepool": "memory"}
+			case "spot":
+				p.Tolerations = []corev1.Toleration{{Key: "spot", Operator: corev1.TolerationOpEqual, Value: "true", Effect: corev1.TaintEffectNoSchedule}}
+			}
+			switch {
+			case j == 0:
+				p.Controller = "DaemonSet"
+			case k%29 != 3:
+				p.Controller = "ReplicaSet"
 			}
 			p.Containers = []foam.Container{c}
 			pods = append(pods, p)
