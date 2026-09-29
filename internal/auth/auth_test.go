@@ -164,10 +164,12 @@ func TestGroupGrantsSession(t *testing.T) {
 
 func TestDenied(t *testing.T) {
 	cases := map[string]map[string]any{
-		"not on the list":  {"email": "eve@evil.com", "email_verified": true},
-		"unverified email": {"email": "eve@example.com", "email_verified": false},
-		"wrong group":      {"email": "eve@evil.com", "groups": []string{"dev"}},
-		"groups not list":  {"email": "eve@evil.com", "groups": "sre"},
+		"not on the list":   {"email": "eve@evil.com", "email_verified": true},
+		"unverified email":  {"email": "eve@example.com", "email_verified": false},
+		"no email_verified": {"email": "eve@example.com"},
+		"xms_edov false":    {"email": "eve@example.com", "xms_edov": false},
+		"wrong group":       {"email": "eve@evil.com", "groups": []string{"dev"}},
+		"groups not list":   {"email": "eve@evil.com", "groups": "sre"},
 	}
 	for name, claims := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -221,8 +223,30 @@ func TestLogoutDeletesSession(t *testing.T) {
 	if c == nil || c.Path != "/" || c.MaxAge >= 0 {
 		t.Fatalf("session cookie not deleted: %+v", c)
 	}
-	if w := do(h, "GET", "/auth/logout", nil); w.Code == http.StatusSeeOther {
+	if w := do(h, "GET", "/auth/logout", nil); cookie(w, sessionCookie) != nil {
 		t.Fatal("GET logout must not work: it is CSRF-able")
+	}
+	if w := do(h, "POST", "/auth/logout", nil, "Sec-Fetch-Site", "cross-site"); cookie(w, sessionCookie) != nil {
+		t.Fatal("cross-site POST logout must be rejected")
+	}
+}
+
+func TestStringEmailVerified(t *testing.T) {
+	idp := newIdP(t)
+	h := handler(newAuth(t, idp, []string{"*@example.com"}, nil))
+	if w := login(t, h, idp, map[string]any{"email": "ada@example.com", "email_verified": "true"}); cookie(w, sessionCookie) == nil {
+		t.Fatalf("string email_verified=true denied: %d %s", w.Code, w.Body)
+	}
+	if w := login(t, h, idp, map[string]any{"email": "eve@example.com", "email_verified": "false"}); w.Code != http.StatusForbidden {
+		t.Fatalf("string email_verified=false: got %d", w.Code)
+	}
+}
+
+func TestEntraDomainVerifiedEmail(t *testing.T) {
+	idp := newIdP(t)
+	h := handler(newAuth(t, idp, []string{"*@example.com"}, nil))
+	if w := login(t, h, idp, map[string]any{"email": "ada@example.com", "xms_edov": true}); cookie(w, sessionCookie) == nil {
+		t.Fatalf("xms_edov=true denied: %d %s", w.Code, w.Body)
 	}
 }
 

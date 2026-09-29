@@ -94,6 +94,7 @@ func TestFlags(t *testing.T) {
 		{[]string{"--host", "0.0.0.0", "--allow-unauthenticated"}, true},
 		{[]string{"--host", "0.0.0.0", "--auth", "oidc"}, true},
 		{[]string{"--host", "::1"}, true},
+		{[]string{"--port", "x"}, false},
 		{[]string{"--auth", "basic"}, false},
 	}
 	for _, tc := range cases {
@@ -101,7 +102,7 @@ func TestFlags(t *testing.T) {
 			t.Errorf("%v: err=%v", tc.args, err)
 		}
 	}
-	o, _ := parseFlags([]string{"--auth", "oidc", "--oidc-allowed-emails", "a@x.com,*@y.com"})
+	o, _ := parseFlags([]string{"--auth", "oidc", "--oidc-allowed-emails", "a@x.com, *@y.com,"})
 	if fmt.Sprint(o.oidc.AllowedEmails, o.oidc.Scopes) != "[a@x.com *@y.com] [openid email profile]" {
 		t.Fatalf("lists: %v %v", o.oidc.AllowedEmails, o.oidc.Scopes)
 	}

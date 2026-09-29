@@ -93,7 +93,7 @@ func New(ctx context.Context, cfg Config) (*Auth, error) {
 func (a *Auth) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/login", a.login)
 	mux.HandleFunc("GET /auth/callback", a.callback)
-	mux.HandleFunc("POST /auth/logout", a.logout)
+	mux.Handle("POST /auth/logout", http.NewCrossOriginProtection().Handler(http.HandlerFunc(a.logout)))
 }
 
 type userKey struct{}
@@ -195,14 +195,17 @@ func (a *Auth) claims(idt *oidc.IDToken) (User, []string, error) {
 	}
 	var c struct {
 		Email         string `json:"email"`
-		EmailVerified *bool  `json:"email_verified"`
+		EmailVerified any    `json:"email_verified"` // some IdPs (Cognito) send "true"/"false" strings
+		DomainOwner   any    `json:"xms_edov"`       // Entra ID's stand-in; it never sends email_verified
 		Name          string `json:"name"`
 	}
 	if err := idt.Claims(&c); err != nil {
 		return User{}, nil, err
 	}
-	// An unverified address is whatever the user typed: never match on it.
-	if c.EmailVerified != nil && !*c.EmailVerified {
+	// An unverified address is whatever the user typed (nOAuth): only match on
+	// an explicit yes. IdPs that never verify can still use the groups allowlist.
+	isTrue := func(v any) bool { return v == true || v == "true" }
+	if !isTrue(c.EmailVerified) && !isTrue(c.DomainOwner) {
 		c.Email = ""
 	}
 	var groups []string

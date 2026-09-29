@@ -71,7 +71,13 @@ func parseFlags(args []string) (options, error) {
 }
 
 func list(s string) []string {
-	return strings.FieldsFunc(s, func(r rune) bool { return r == ',' })
+	var out []string
+	for f := range strings.SplitSeq(s, ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 func isLoopback(host string) bool {
