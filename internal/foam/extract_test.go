@@ -311,7 +311,7 @@ func TestFromNodeLabelsAndAllocatable(t *testing.T) {
 		corev1.ResourceCPU: resource.MustParse("1900m"), corev1.ResourceMemory: resource.MustParse("900M"), corev1.ResourcePods: resource.MustParse("110"),
 	}
 	n := FromNode(raw)
-	if n.Labels["disk"] != "ssd" || n.AllocCPU != 1900 || n.AllocMemory != 900_000 || n.AllocPods != 110 {
+	if n.Labels["disk"] != "ssd" || n.AllocCPU != 1900 || n.AllocMemory != 900_000_000 || n.AllocPods != 110 {
 		t.Fatalf("got %+v", n)
 	}
 }
