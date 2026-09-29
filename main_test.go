@@ -40,7 +40,7 @@ func get(h http.Handler, target string) *httptest.ResponseRecorder {
 
 func TestRoutes(t *testing.T) {
 	src := &fakeSource{
-		nodes: []foam.Node{{Name: "minikube", CPU: 2000, Memory: 1_000_000}},
+		nodes: []foam.Node{{Name: "minikube", CPU: 2000, Memory: 1_000_000_000}},
 		pods:  []foam.Pod{{Name: "etcd", NodeName: "minikube", CPU: 150, Containers: []foam.Container{{Name: "etcd", CPU: 150}}}},
 	}
 	h := newHandler(src, static)
