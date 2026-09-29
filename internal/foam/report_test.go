@@ -6,17 +6,17 @@ import (
 )
 
 func TestReport(t *testing.T) {
-	cpuLimit, memLimit := int64(500), 1_610_612.736 // 1.5Gi in decimal kB
+	cpuLimit, memLimit := int64(500), int64(1_610_612_736) // 1.5Gi
 	nodes := []Node{
-		{Name: "b", CPU: 4000, Memory: 8_000_000},
-		{Name: "a", CPU: 2000, Memory: 1_000_000, Zone: "z1", Pool: "spot", InstanceType: "m5.large", Unschedulable: true},
+		{Name: "b", CPU: 4000, Memory: 8_000_000_000},
+		{Name: "a", CPU: 2000, Memory: 1_000_000_000, Zone: "z1", Pool: "spot", InstanceType: "m5.large", Unschedulable: true},
 	}
 	pods := []Pod{
-		{Name: "web-2", Namespace: "prod", NodeName: "a", CPU: 250, Memory: 200_000, QOS: "Burstable",
-			Containers: []Container{{Name: "web", CPU: 250, Memory: 200_000}}},
-		{Name: "api", Namespace: "dev", NodeName: "a", CPU: 400, Memory: 100_000, QOS: "Guaranteed",
+		{Name: "web-2", Namespace: "prod", NodeName: "a", CPU: 250, Memory: 200_000_000, QOS: "Burstable",
+			Containers: []Container{{Name: "web", CPU: 250, Memory: 200_000_000}}},
+		{Name: "api", Namespace: "dev", NodeName: "a", CPU: 400, Memory: 100_000_000, QOS: "Guaranteed",
 			CPULimit: &cpuLimit, MemoryLimit: &memLimit,
-			Containers: []Container{{Name: "api", CPU: 400, Memory: 100_000, MemoryLimit: &memLimit}}},
+			Containers: []Container{{Name: "api", CPU: 400, Memory: 100_000_000, MemoryLimit: &memLimit}}},
 		{Name: "pending", Namespace: "dev", CPU: 100, QOS: "Burstable",
 			Containers: []Container{{Name: "job", CPU: 100}}},
 		{Name: "orphan", Namespace: "dev", NodeName: "gone"},

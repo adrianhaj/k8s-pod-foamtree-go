@@ -86,9 +86,9 @@ func TestResourcesPassesContextAndMapsErrors(t *testing.T) {
 
 func TestReportRoutes(t *testing.T) {
 	src := &fakeSource{
-		nodes: []foam.Node{{Name: "minikube", CPU: 2000, Memory: 1_000_000, Zone: "z1"}},
+		nodes: []foam.Node{{Name: "minikube", CPU: 2000, Memory: 1_000_000_000, Zone: "z1"}},
 		pods: []foam.Pod{
-			{Name: "etcd", Namespace: "kube-system", NodeName: "minikube", CPU: 150, Memory: 100_000},
+			{Name: "etcd", Namespace: "kube-system", NodeName: "minikube", CPU: 150, Memory: 100_000_000},
 			{Name: "pending", Namespace: "dev", CPU: 100},
 		},
 	}

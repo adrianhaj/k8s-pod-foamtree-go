@@ -2,14 +2,12 @@ package foam
 
 import (
 	"cmp"
-	"math"
 	"slices"
 )
 
 // ReportRow is one pod with its node and both axes side by side, the flat
 // shape a spreadsheet wants. A node without pods gets one row with the pod
-// columns empty, so its free capacity still shows. Memory is in bytes here:
-// the report is read by people, not by the treemap.
+// columns empty, so its free capacity still shows.
 type ReportRow struct {
 	Node             string   `json:"node"`
 	Zone             string   `json:"zone"`
@@ -28,8 +26,6 @@ type ReportRow struct {
 	Findings         []string `json:"findings"`
 }
 
-func bytes(kB float64) int64 { return int64(math.Round(kB * 1000)) }
-
 // Report lists nodes by name with their pods by namespace then name, like the
 // treemap, then the pods the treemap cannot draw: pending ones and any whose
 // node is gone. Those keep their nodeName (empty while pending) and have no
@@ -44,7 +40,7 @@ func Report(nodes []Node, pods []Pod) []ReportRow {
 	for _, n := range nodes {
 		base := ReportRow{
 			Node: n.Name, Zone: n.Zone, Pool: n.Pool, InstanceType: n.InstanceType,
-			NodeCPU: n.CPU, NodeMemoryBytes: bytes(n.Memory), NodeWarnings: Warnings(n), Findings: []string{},
+			NodeCPU: n.CPU, NodeMemoryBytes: n.Memory, NodeWarnings: Warnings(n), Findings: []string{},
 		}
 		if len(byNode[n.Name]) == 0 {
 			rows = append(rows, base)
@@ -75,11 +71,7 @@ func appendPods(rows []ReportRow, base ReportRow, n Node, pods []Pod) []ReportRo
 	for _, p := range sortPods(pods) {
 		r := base
 		r.Namespace, r.Pod, r.QOS = p.Namespace, p.Name, p.QOS
-		r.CPU, r.CPULimit, r.MemoryBytes = p.CPU, p.CPULimit, bytes(p.Memory)
-		if p.MemoryLimit != nil {
-			v := bytes(*p.MemoryLimit)
-			r.MemoryLimitBytes = &v
-		}
+		r.CPU, r.CPULimit, r.MemoryBytes, r.MemoryLimitBytes = p.CPU, p.CPULimit, p.Memory, p.MemoryLimit
 		r.Findings = Findings(p, n)
 		rows = append(rows, r)
 	}
