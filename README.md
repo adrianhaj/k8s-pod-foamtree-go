@@ -192,7 +192,7 @@ An unknown `context` returns 400; an unreachable cluster or rejected credentials
 
 ## Run
 
-Requires Go 1.27. No Node: the JSX is compiled by `go tool esbuild` and React is vendored in `web/static/vendor/`.
+Requires Go 1.27.1. No Node: the JSX is compiled by `go tool esbuild` and React is vendored in `web/static/vendor/`.
 
 ```bash
 make run                      # http://127.0.0.1:8080, uses ~/.kube/config (or $KUBECONFIG)

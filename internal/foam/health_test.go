@@ -58,6 +58,13 @@ func auditPod(cpu int64, mem int64, limit bool, inits ...Container) Pod {
 	return Pod{Name: "app", NodeName: "worker", CPU: cpu, Memory: mem, Containers: []Container{c}, InitContainers: inits}
 }
 
+// Containers set nothing; spec.resources at pod level bounds them all.
+func podLevel(r Container) Pod {
+	p := auditPod(0, 0, false)
+	p.CPU, p.Memory, p.PodLevel = 400, 1_600_000_000, r
+	return p
+}
+
 func TestFindings(t *testing.T) {
 	cases := []struct {
 		name string
@@ -75,6 +82,9 @@ func TestFindings(t *testing.T) {
 		{"small lopsided", auditPod(200, 16_000_000, true), worker, []string{}},
 		{"node without capacity", auditPod(400, 1_600_000_000, true), Node{Name: "ghost"}, []string{}},
 		{"all in order", auditPod(3600, 1_600_000_000, false), worker, []string{"missing-limits", "monolith", "ratio-asymmetry"}},
+		{"pod-level requests and limit", podLevel(Container{CPU: 400, Memory: 1_600_000_000, MemoryLimit: new(int64(1))}), worker, []string{}},
+		{"pod-level cpu only", podLevel(Container{CPU: 400, MemoryLimit: new(int64(1))}), worker, []string{"missing-requests"}},
+		{"pod-level requests, no limit", podLevel(Container{CPU: 400, Memory: 1_600_000_000}), worker, []string{"missing-limits"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
