@@ -105,9 +105,10 @@ func do(h http.Handler, method, target string, cookies []*http.Cookie, header ..
 	return w
 }
 
+// Login cookies are named per state, so name also matches "<name>_<state>".
 func cookie(w *httptest.ResponseRecorder, name string) *http.Cookie {
 	for _, c := range w.Result().Cookies() {
-		if c.Name == name {
+		if c.Name == name || strings.HasPrefix(c.Name, name+"_") {
 			return c
 		}
 	}
@@ -117,22 +118,36 @@ func cookie(w *httptest.ResponseRecorder, name string) *http.Cookie {
 // login walks /auth/login → IdP → /auth/callback and returns the callback response.
 func login(t *testing.T, h http.Handler, idp *fakeIdP, claims map[string]any) *httptest.ResponseRecorder {
 	t.Helper()
-	start := do(h, "GET", "/auth/login", nil)
-	loc, err := url.Parse(start.Header().Get("Location"))
-	if err != nil || start.Code != http.StatusFound {
-		t.Fatalf("login redirect: %d %v", start.Code, err)
+	return loginFrom(t, h, idp, claims, "/auth/login")
+}
+
+func loginFrom(t *testing.T, h http.Handler, idp *fakeIdP, claims map[string]any, start string) *httptest.ResponseRecorder {
+	t.Helper()
+	callback, jar := startLogin(t, h, idp, start)
+	idp.claims = claims
+	return do(h, "GET", callback, jar)
+}
+
+// startLogin returns the callback URL the IdP would send the browser to, and
+// the cookies the browser would hold for it.
+func startLogin(t *testing.T, h http.Handler, idp *fakeIdP, start string) (string, []*http.Cookie) {
+	t.Helper()
+	w := do(h, "GET", start, nil)
+	loc, err := url.Parse(w.Header().Get("Location"))
+	if err != nil || w.Code != http.StatusFound {
+		t.Fatalf("login redirect: %d %v", w.Code, err)
 	}
 	q := loc.Query()
 	if q.Get("code_challenge_method") != "S256" {
 		t.Fatal("login must use PKCE S256")
 	}
-	idp.nonce, idp.challenge, idp.claims = q.Get("nonce"), q.Get("code_challenge"), claims
-	return do(h, "GET", "/auth/callback?code=c&state="+q.Get("state"), []*http.Cookie{cookie(start, loginCookie)})
+	idp.nonce, idp.challenge = q.Get("nonce"), q.Get("code_challenge")
+	return "/auth/callback?code=c&state=" + q.Get("state"), w.Result().Cookies()
 }
 
 func TestAnonymousIsRedirectedOrRejected(t *testing.T) {
 	h := handler(newAuth(t, newIdP(t), []string{"*@example.com"}, nil))
-	if w := do(h, "GET", "/", nil, "Accept", "text/html"); w.Code != http.StatusFound || w.Header().Get("Location") != "/auth/login" {
+	if w := do(h, "GET", "/?context=prod", nil, "Accept", "text/html"); w.Code != http.StatusFound || w.Header().Get("Location") != "/auth/login?next=%2F%3Fcontext%3Dprod" {
 		t.Fatalf("page: %d %s", w.Code, w.Header().Get("Location"))
 	}
 	if w := do(h, "GET", "/resources/cpu", nil, "Accept", "*/*"); w.Code != http.StatusUnauthorized {
@@ -180,6 +195,53 @@ func TestDenied(t *testing.T) {
 				t.Fatalf("got %d, cookie=%v", w.Code, cookie(w, sessionCookie))
 			}
 		})
+	}
+}
+
+func TestLoginReturnsToRequestedPage(t *testing.T) {
+	ada := map[string]any{"email": "ada@example.com", "email_verified": true}
+	cases := map[string]string{
+		"/auth/login?next=%2F%3Fcontext%3Dprod": "/?context=prod",
+		"/auth/login":                           "/",
+		"/auth/login?next=https://evil.com":     "/",
+		"/auth/login?next=//evil.com":           "/",
+		`/auth/login?next=/\evil.com`:           "/",
+		"/auth/login?next=javascript:alert(1)":  "/",
+	}
+	for start, want := range cases {
+		t.Run(start, func(t *testing.T) {
+			idp := newIdP(t)
+			h := handler(newAuth(t, idp, []string{"*@example.com"}, nil))
+			if w := loginFrom(t, h, idp, ada, start); w.Header().Get("Location") != want {
+				t.Fatalf("got %d %q, want %q", w.Code, w.Header().Get("Location"), want)
+			}
+		})
+	}
+}
+
+// Two signed-out tabs both start a login; the browser holds both login
+// cookies, and whichever tab returns first must still succeed.
+func TestConcurrentLogins(t *testing.T) {
+	idp := newIdP(t)
+	h := handler(newAuth(t, idp, []string{"*@example.com"}, nil))
+	first, jar1 := startLogin(t, h, idp, "/auth/login")
+	nonce1, challenge1 := idp.nonce, idp.challenge
+	second, jar2 := startLogin(t, h, idp, "/auth/login")
+	jar := map[string]*http.Cookie{}
+	for _, c := range append(jar1, jar2...) {
+		jar[c.Name] = c
+	}
+	var cookies []*http.Cookie
+	for _, c := range jar {
+		cookies = append(cookies, c)
+	}
+	idp.claims = map[string]any{"email": "ada@example.com", "email_verified": true}
+	if w := do(h, "GET", second, cookies); cookie(w, sessionCookie) == nil {
+		t.Fatalf("second tab: %d %s", w.Code, w.Body)
+	}
+	idp.nonce, idp.challenge = nonce1, challenge1
+	if w := do(h, "GET", first, cookies); cookie(w, sessionCookie) == nil {
+		t.Fatalf("first tab: %d %s", w.Code, w.Body)
 	}
 }
 
