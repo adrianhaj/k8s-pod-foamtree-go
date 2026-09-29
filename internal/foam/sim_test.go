@@ -9,7 +9,7 @@ import (
 )
 
 func roomy(name string) Node {
-	return Node{Name: name, CPU: 4000, Memory: 8_000_000, AllocCPU: 4000, AllocMemory: 8_000_000, AllocPods: 110}
+	return Node{Name: name, CPU: 4000, Memory: 8_000_000_000, AllocCPU: 4000, AllocMemory: 8_000_000_000, AllocPods: 110}
 }
 
 func reasonsOf(verdicts []Verdict) map[string][]string {
@@ -27,11 +27,11 @@ func TestFitFilters(t *testing.T) {
 	soft.Taints = []Taint{{Key: "spot", Value: "true", Effect: "PreferNoSchedule"}}
 	full.AllocPods = 1
 	running := []Pod{
-		{Name: "a", NodeName: "busy", CPU: 3000, Memory: 1_000_000},
+		{Name: "a", NodeName: "busy", CPU: 3000, Memory: 1_000_000_000},
 		{Name: "b", NodeName: "full"},
 		{Name: "pending"},
 	}
-	got := reasonsOf(Fit([]Node{roomy("ok"), busy, cordoned, spot, soft, full}, running, Pod{CPU: 2000, Memory: 1_000_000}))
+	got := reasonsOf(Fit([]Node{roomy("ok"), busy, cordoned, spot, soft, full}, running, Pod{CPU: 2000, Memory: 1_000_000_000}))
 	want := map[string][]string{
 		"ok":       {},
 		"busy":     {"insufficient cpu: requires 2000m, available 1000m"},
@@ -48,8 +48,8 @@ func TestFitFilters(t *testing.T) {
 func TestFitReportsEveryFailingFilter(t *testing.T) {
 	n := roomy("n")
 	n.Unschedulable = true
-	n.AllocMemory = 3_435_973.837 // 3.2 Gi, in kB
-	p := Pod{CPU: 5000, Memory: 17_179_869.184, NodeSelector: map[string]string{"disk": "ssd"}}
+	n.AllocMemory = 3_435_973_837 // 3.2Gi
+	p := Pod{CPU: 5000, Memory: 16 << 30, NodeSelector: map[string]string{"disk": "ssd"}}
 	got := Fit([]Node{n}, nil, p)[0].Reasons
 	want := []string{"cordoned", "node selector mismatch", "insufficient cpu: requires 5000m, available 4000m",
 		"insufficient memory: requires 16.0Gi, available 3.2Gi"}
@@ -82,7 +82,7 @@ func TestFitTolerationsAndSelectors(t *testing.T) {
 // A BestEffort pod requests nothing, and the scheduler skips a resource the pod does not ask for.
 func TestFitZeroRequestSkipsResourceCheck(t *testing.T) {
 	n := roomy("n")
-	if got := Fit([]Node{n}, []Pod{{NodeName: "n", CPU: 5000, Memory: 9_000_000}}, Pod{})[0].Reasons; len(got) != 0 {
+	if got := Fit([]Node{n}, []Pod{{NodeName: "n", CPU: 5000, Memory: 9_000_000_000}}, Pod{})[0].Reasons; len(got) != 0 {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -90,10 +90,22 @@ func TestFitZeroRequestSkipsResourceCheck(t *testing.T) {
 // Below 1Gi the reason must switch to Mi, not print a useless "0.0Gi".
 func TestFitMemoryReasonUsesMiBelowOneGi(t *testing.T) {
 	n := roomy("n")
-	n.AllocMemory = 500_000                                     // ~476.8Mi
-	got := Fit([]Node{n}, nil, Pod{Memory: 900_000})[0].Reasons // ~858.3Mi requested
+	n.AllocMemory = 500_000_000                                     // ~476.8Mi
+	got := Fit([]Node{n}, nil, Pod{Memory: 900_000_000})[0].Reasons // ~858.3Mi requested
 	want := []string{"insufficient memory: requires 858.3Mi, available 476.8Mi"}
 	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %q", got)
+	}
+}
+
+// 2 × 3Mi bound on a 9Mi node leaves exactly 3Mi; summing float kB said it didn't.
+func TestFitExactMemory(t *testing.T) {
+	p, _ := Hypothetical("", "3Mi", "", "")
+	n := roomy("n")
+	n.AllocMemory = 9 << 20
+	bound := []Pod{p, p}
+	bound[0].NodeName, bound[1].NodeName = "n", "n"
+	if got := Fit([]Node{n}, bound, p)[0].Reasons; len(got) != 0 {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -115,7 +127,7 @@ func TestHypothetical(t *testing.T) {
 		{Key: "gpu", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 		{Key: "dedicated", Operator: corev1.TolerationOpExists},
 	}
-	if p.CPU != 500 || p.Memory != 1_073_741.824 || fmt.Sprint(p.NodeSelector) != "map[disk:ssd zone:a]" || !reflect.DeepEqual(p.Tolerations, want) {
+	if p.CPU != 500 || p.Memory != 1<<30 || fmt.Sprint(p.NodeSelector) != "map[disk:ssd zone:a]" || !reflect.DeepEqual(p.Tolerations, want) {
 		t.Fatalf("got %+v", p)
 	}
 	if p, err := Hypothetical("", "", "", ""); err != nil || p.CPU != 0 || p.Memory != 0 || len(p.NodeSelector)+len(p.Tolerations) != 0 {

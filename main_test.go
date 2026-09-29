@@ -148,8 +148,8 @@ func TestSessionKey(t *testing.T) {
 
 func TestFitRoute(t *testing.T) {
 	src := &fakeSource{nodes: []foam.Node{
-		{Name: "big", AllocCPU: 8000, AllocMemory: 32_000_000, AllocPods: 110},
-		{Name: "small", AllocCPU: 1000, AllocMemory: 32_000_000, AllocPods: 110},
+		{Name: "big", AllocCPU: 8000, AllocMemory: 32_000_000_000, AllocPods: 110},
+		{Name: "small", AllocCPU: 1000, AllocMemory: 32_000_000_000, AllocPods: 110},
 	}}
 	h := newHandler(src, static, nil)
 	w := get(h, "/api/fit?context=kind-a&cpu=2&memory=1Gi")

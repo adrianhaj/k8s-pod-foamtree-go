@@ -26,9 +26,7 @@ import (
 
 // room is what a node still hands out: allocatable minus bound requests.
 type room struct {
-	cpu    int64
-	memory float64
-	pods   int64
+	cpu, memory, pods int64
 }
 
 func free(nodes []Node, pods []Pod) map[string]room {
@@ -48,13 +46,13 @@ func noScheduleOrExecute(t *corev1.Taint) bool {
 	return t.Effect == corev1.TaintEffectNoSchedule || t.Effect == corev1.TaintEffectNoExecute
 }
 
-// humanMem formats a decimal-kB amount as Gi, falling back to Mi below 1Gi
-// so a small amount doesn't print as "0.0Gi".
-func humanMem(kb float64) string {
-	if gib := kb * 1000 / (1 << 30); gib >= 1 {
+// humanMem formats bytes as Gi, falling back to Mi below 1Gi so a small
+// amount doesn't print as "0.0Gi".
+func humanMem(b int64) string {
+	if gib := float64(b) / (1 << 30); gib >= 1 {
 		return fmt.Sprintf("%.1fGi", gib)
 	}
-	return fmt.Sprintf("%.1fMi", kb*1000/(1<<20))
+	return fmt.Sprintf("%.1fMi", float64(b)/(1<<20))
 }
 
 // rejects lists why n refuses p, in the scheduler's filter order; empty means
@@ -134,7 +132,7 @@ func Hypothetical(cpu, memory, nodeSelector, tolerations string) (Pod, error) {
 	if err != nil {
 		return p, err
 	}
-	p.CPU, p.Memory = c.MilliValue(), kB(m)
+	p.CPU, p.Memory = c.MilliValue(), m.Value()
 	if p.NodeSelector, err = labels.ConvertSelectorToLabelsMap(nodeSelector); err != nil {
 		return p, fmt.Errorf("node selector %q: %w", nodeSelector, err)
 	}
