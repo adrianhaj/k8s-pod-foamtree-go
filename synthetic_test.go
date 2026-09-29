@@ -26,8 +26,16 @@ func TestSyntheticSnapshot(t *testing.T) {
 		t.Fatalf("nodes=%d pods=%d err=%v", len(nodes), len(pods), err)
 	}
 	zones, pools := map[string]bool{}, map[string]bool{}
+	requested := map[string]int64{}
+	for _, p := range pods {
+		requested[p.NodeName] += p.Memory
+	}
 	for _, n := range nodes {
 		zones[n.Zone], pools[n.Pool] = true, true
+		// Catches node and pod memory drifting into different units.
+		if requested[n.Name] > n.Memory {
+			t.Fatalf("%s: pods request %d bytes of memory, node has %d", n.Name, requested[n.Name], n.Memory)
+		}
 	}
 	unboundedMem, boundedCPU := 0, 0
 	for _, p := range pods {
