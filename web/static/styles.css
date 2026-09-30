@@ -1,29 +1,73 @@
+/* Tokens. Light on :root; dark twice, for the OS setting and for the explicit
+   override (data-theme on <html>, set from Settings → Theme). Hex only: the 3D
+   scene and the SVG export parse these values. */
 :root {
-  --bg: #07080c;
-  --bg-2: #0d0f15;
-  --bg-3: #141822;
-  --panel: #0f121a;
-  --panel-2: #161a26;
-  --line: #232839;
-  --line-2: #2b3147;
-  --text: #e7eaf3;
-  --text-dim: #9aa3b8;
-  --text-soft: #6b7388;
-  --accent: #7c5cff;
-  --accent-2: #5a3eff;
-  --ok: #10b981;
-  --warn: #f59e0b;
-  --danger: #ef4444;
-  --info: #60a5fa;
+  color-scheme: light;
+  --bg: #f2f3f5; --bg-2: #eceef1; --bg-3: #eef0f3;
+  --panel: #ffffff; --panel-2: #f7f8fa;
+  --line: #dde0e6; --line-2: #c9ced7;
+  --text: #1a1e25; --text-dim: #4b5362; --text-soft: #7c8494;
+  --accent: #1f5fd6; --accent-2: #1a4fb5; --accent-wash: #e8effc; --on-accent: #ffffff;
+  --on-status: #ffffff; --on-warn: #2b1d00;
+  --ok: #0ca30c; --warn: #e7a50e; --danger: #d03b3b; --info: #4f6fae;
+  --ns-0: #2a78d6; --ns-1: #eb6834; --ns-2: #1baf7a; --ns-3: #4a3aa7; --ns-4: #e87ba4; --ns-other: #9aa0a9;
+  --pod-neutral: #8a919d;
+  --tint-fill: 16%; --tint-edge: 42%; --tint-box: 34%;
+  --hatch-0: #f7f8fa; --hatch-1: #eceef1;
+  --hatch-danger-0: #fdf2f2; --hatch-danger-1: #f3cbcb; --hatch-danger-text: #9b2c2c;
+  --hatch-warn-0: #fdf8ec; --hatch-warn-1: #f0dca8; --hatch-warn-text: #7d5a08;
+  --hatch-info-0: #f2f5fa; --hatch-info-1: #d0daee; --hatch-info-text: #3d5a92;
+  --plate: #ffffff; --floor: #e4e6ea; --shell: #1a1e25;
+  --shadow: 0 8px 24px rgba(20, 22, 28, .12);
 
-  --r-md: 10px;
-  --r-lg: 14px;
+  --r-md: 6px;
+  --r-lg: 10px;
   --r-pill: 999px;
-
-  --font-sans: "Space Grotesk", "Manrope", -apple-system, sans-serif;
-  --font-body: "Manrope", -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+  --font-sans: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
 }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111317; --bg-2: #15181c; --bg-3: #23272e;
+    --panel: #1a1d22; --panel-2: #1f2328;
+    --line: #2a2e36; --line-2: #383d47;
+    --text: #e6e8ec; --text-dim: #a9b0bc; --text-soft: #7a818d;
+    --accent: #86aef5; --accent-2: #a3c1f8; --accent-wash: #1c2944; --on-accent: #0c1422;
+    --on-status: #ffffff; --on-warn: #2b1d00;
+    --ok: #3fae5a; --warn: #e9a91c; --danger: #e0605d; --info: #7497d6;
+    --ns-0: #3987e5; --ns-1: #d95926; --ns-2: #199e70; --ns-3: #9085e9; --ns-4: #d55181; --ns-other: #6b7079;
+    --pod-neutral: #6b7280;
+    --tint-fill: 30%; --tint-edge: 55%; --tint-box: 48%;
+    --hatch-0: #1a1d22; --hatch-1: #23272d;
+    --hatch-danger-0: #241819; --hatch-danger-1: #4a2527; --hatch-danger-text: #f09a98;
+    --hatch-warn-0: #241f16; --hatch-warn-1: #4a3a18; --hatch-warn-text: #f0cf87;
+    --hatch-info-0: #1a1f2a; --hatch-info-1: #2a3754; --hatch-info-text: #b6c8ec;
+    --plate: #23272e; --floor: #171a1f; --shell: #e6e8ec;
+    --shadow: 0 10px 28px rgba(0, 0, 0, .45);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111317; --bg-2: #15181c; --bg-3: #23272e;
+  --panel: #1a1d22; --panel-2: #1f2328;
+  --line: #2a2e36; --line-2: #383d47;
+  --text: #e6e8ec; --text-dim: #a9b0bc; --text-soft: #7a818d;
+  --accent: #86aef5; --accent-2: #a3c1f8; --accent-wash: #1c2944; --on-accent: #0c1422;
+  --on-status: #ffffff; --on-warn: #2b1d00;
+  --ok: #3fae5a; --warn: #e9a91c; --danger: #e0605d; --info: #7497d6;
+  --ns-0: #3987e5; --ns-1: #d95926; --ns-2: #199e70; --ns-3: #9085e9; --ns-4: #d55181; --ns-other: #6b7079;
+  --pod-neutral: #6b7280;
+  --tint-fill: 30%; --tint-edge: 55%; --tint-box: 48%;
+  --hatch-0: #1a1d22; --hatch-1: #23272d;
+  --hatch-danger-0: #241819; --hatch-danger-1: #4a2527; --hatch-danger-text: #f09a98;
+  --hatch-warn-0: #241f16; --hatch-warn-1: #4a3a18; --hatch-warn-text: #f0cf87;
+  --hatch-info-0: #1a1f2a; --hatch-info-1: #2a3754; --hatch-info-text: #b6c8ec;
+  --plate: #23272e; --floor: #171a1f; --shell: #e6e8ec;
+  --shadow: 0 10px 28px rgba(0, 0, 0, .45);
+}
+/* ── end tokens ── */
 
 * { box-sizing: border-box; }
 html, body, #root {
@@ -43,10 +87,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 .app {
   display: flex;
   height: 100vh;
-  background:
-    radial-gradient(1200px 600px at 80% -10%, #1a1830 0%, transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, #15192a 0%, transparent 55%),
-    var(--bg);
+  background: var(--bg);
 }
 .app .sidebar { width: 268px; flex-shrink: 0; transition: width .25s cubic-bezier(.4,0,.2,1), margin-left .25s cubic-bezier(.4,0,.2,1); }
 .app.sidebar-collapsed .sidebar { margin-left: -268px; }
@@ -54,7 +95,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 /* ─────────── Sidebar ─────────── */
 
 .sidebar {
-  background: linear-gradient(180deg, rgba(20,24,36,.95), rgba(13,15,22,.95));
+  background: var(--panel);
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
@@ -72,10 +113,10 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 .brand-mark {
   width: 36px; height: 36px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent), #a78bfa);
+  background: none;
   display: grid; place-items: center;
-  color: white;
-  box-shadow: 0 4px 18px -4px var(--accent);
+  color: var(--accent);
+  box-shadow: none;
 }
 .brand-text { flex: 1; }
 .brand-title {
@@ -142,7 +183,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 .seg button.seg-on {
   background: var(--panel-2);
   color: var(--text);
-  box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 4px 12px -4px rgba(0,0,0,.5);
+  box-shadow: var(--shadow);
 }
 
 /* Context list */
@@ -164,9 +205,9 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   text-align: left;
   transition: background .15s, color .15s;
 }
-.ctx-item:hover { background: rgba(255,255,255,.03); color: var(--text); }
+.ctx-item:hover { background: color-mix(in srgb, var(--text) 3%, transparent); color: var(--text); }
 .ctx-item.ctx-on {
-  background: linear-gradient(90deg, rgba(124,92,255,.18), rgba(124,92,255,.04));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent) 4%, transparent));
   color: var(--text);
 }
 .ctx-item.ctx-on::before {
@@ -214,11 +255,11 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   gap: 8px;
   padding: 9px 12px;
   background: linear-gradient(180deg, var(--accent), var(--accent-2));
-  color: white;
+  color: var(--on-accent);
   border-radius: var(--r-md);
   font-weight: 600;
   font-size: 12px;
-  box-shadow: 0 4px 14px -4px var(--accent), inset 0 1px 0 rgba(255,255,255,.2);
+  box-shadow: 0 4px 14px -4px var(--accent), inset 0 1px 0 color-mix(in srgb, var(--text) 20%, transparent);
   transition: transform .1s;
 }
 .btn-primary:hover { transform: translateY(-1px); }
@@ -254,7 +295,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   display: flex; align-items: center; gap: 20px;
   padding: 16px 22px;
   border-bottom: 1px solid var(--line);
-  background: rgba(13,15,22,.92);
+  background: var(--panel);
 }
 
 .icon-btn {
@@ -306,7 +347,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   width: 150px;
   padding: 7px 12px 8px;
   border-radius: var(--r-md);
-  background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,0));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--text) 2%, transparent), color-mix(in srgb, var(--text) 0%, transparent));
   border: 1px solid var(--line);
 }
 .stat-label {
@@ -379,10 +420,10 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   background: var(--panel-2);
   border: 1px solid var(--line-2);
   border-radius: var(--r-md);
-  box-shadow: 0 14px 34px rgba(0,0,0,.55);
+  box-shadow: var(--shadow);
 }
 .query-errors { border-color: var(--danger); }
-.query-err { display: flex; gap: 7px; font-size: 11px; color: #fca5a5; }
+.query-err { display: flex; gap: 7px; font-size: 11px; color: var(--hatch-danger-text); }
 .query-err + .query-err { margin-top: 4px; }
 .query-err code { font-family: var(--font-mono); color: var(--text); flex-shrink: 0; }
 
@@ -420,7 +461,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   background: var(--panel-2);
   border: 1px solid var(--line-2);
   border-radius: var(--r-md);
-  box-shadow: 0 14px 34px rgba(0,0,0,.55);
+  box-shadow: var(--shadow);
 }
 .export-pop button, .export-pop a {
   padding: 7px 10px;
@@ -459,7 +500,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 }
 .node-card:hover {
   transform: translateY(-1px);
-  box-shadow: 0 14px 36px -8px rgba(0,0,0,.6);
+  box-shadow: var(--shadow);
   filter: brightness(1.08);
 }
 .node-card::after {
@@ -467,7 +508,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   content: "";
   position: absolute; inset: 0;
   border-radius: inherit;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 6%, transparent);
   pointer-events: none;
 }
 
@@ -476,9 +517,9 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   padding: 0 10px;
   font-family: var(--font-mono);
   font-size: 11px;
-  color: rgba(255,255,255,.95);
-  text-shadow: 0 1px 2px rgba(0,0,0,.4);
-  background: linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,0));
+  color: color-mix(in srgb, var(--text) 95%, transparent);
+  text-shadow: 0 1px 2px color-mix(in srgb, var(--bg) 40%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 15%, transparent), color-mix(in srgb, var(--bg) 0%, transparent));
   position: relative;
   z-index: 2;
 }
@@ -510,13 +551,13 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   position: absolute; top: 0; left: 0; right: 0;
   height: 12px;
   font-size: 8px;
-  color: rgba(255,255,255,.85);
+  color: color-mix(in srgb, var(--text) 85%, transparent);
   padding: 0 4px;
   display: flex; align-items: center;
   font-family: var(--font-mono);
   letter-spacing: -0.02em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  text-shadow: 0 1px 1px rgba(0,0,0,.5);
+  text-shadow: 0 1px 1px color-mix(in srgb, var(--bg) 50%, transparent);
   pointer-events: none;
 }
 .container-box {
@@ -524,7 +565,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   border-radius: 2px;
   display: flex; align-items: center; justify-content: center;
   font-size: 9px;
-  color: rgba(0,0,0,.85);
+  color: color-mix(in srgb, var(--bg) 85%, transparent);
   font-weight: 500;
   overflow: hidden;
   padding: 0 3px;
@@ -548,16 +589,16 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   border-radius: 6px;
   background: repeating-linear-gradient(
     45deg,
-    rgba(255,255,255,.04),
-    rgba(255,255,255,.04) 4px,
-    rgba(255,255,255,.08) 4px,
-    rgba(255,255,255,.08) 8px
+    color-mix(in srgb, var(--text) 4%, transparent),
+    color-mix(in srgb, var(--text) 4%, transparent) 4px,
+    color-mix(in srgb, var(--text) 8%, transparent) 4px,
+    color-mix(in srgb, var(--text) 8%, transparent) 8px
   );
-  border: 1px dashed rgba(255,255,255,.12);
+  border: 1px dashed color-mix(in srgb, var(--text) 12%, transparent);
   display: flex; align-items: center; justify-content: center;
   font-family: var(--font-mono);
   font-size: 10px;
-  color: rgba(255,255,255,.45);
+  color: color-mix(in srgb, var(--text) 45%, transparent);
   letter-spacing: -0.01em;
 }
 
@@ -570,29 +611,29 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 .pod-empty.warn-danger {
   background: repeating-linear-gradient(
     45deg,
-    rgba(239,68,68,.10), rgba(239,68,68,.10) 5px,
-    rgba(239,68,68,.28) 5px, rgba(239,68,68,.28) 10px
+    color-mix(in srgb, var(--danger) 10%, transparent), color-mix(in srgb, var(--danger) 10%, transparent) 5px,
+    color-mix(in srgb, var(--danger) 28%, transparent) 5px, color-mix(in srgb, var(--danger) 28%, transparent) 10px
   );
-  border-color: rgba(239,68,68,.55);
-  color: rgba(255,255,255,.7);
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  color: color-mix(in srgb, var(--text) 70%, transparent);
 }
 .pod-empty.warn-warn {
   background: repeating-linear-gradient(
     45deg,
-    rgba(245,158,11,.10), rgba(245,158,11,.10) 5px,
-    rgba(245,158,11,.26) 5px, rgba(245,158,11,.26) 10px
+    color-mix(in srgb, var(--warn) 10%, transparent), color-mix(in srgb, var(--warn) 10%, transparent) 5px,
+    color-mix(in srgb, var(--warn) 26%, transparent) 5px, color-mix(in srgb, var(--warn) 26%, transparent) 10px
   );
-  border-color: rgba(245,158,11,.5);
-  color: rgba(255,255,255,.7);
+  border-color: color-mix(in srgb, var(--warn) 50%, transparent);
+  color: color-mix(in srgb, var(--text) 70%, transparent);
 }
 .pod-empty.warn-info {
   background: repeating-linear-gradient(
     45deg,
-    rgba(96,165,250,.08), rgba(96,165,250,.08) 5px,
-    rgba(96,165,250,.2) 5px, rgba(96,165,250,.2) 10px
+    color-mix(in srgb, var(--info) 8%, transparent), color-mix(in srgb, var(--info) 8%, transparent) 5px,
+    color-mix(in srgb, var(--info) 20%, transparent) 5px, color-mix(in srgb, var(--info) 20%, transparent) 10px
   );
-  border-color: rgba(96,165,250,.45);
-  color: rgba(255,255,255,.65);
+  border-color: color-mix(in srgb, var(--info) 45%, transparent);
+  color: color-mix(in srgb, var(--text) 65%, transparent);
 }
 
 /* Node warning badge, shared by the 2D header and the 3D plate label. */
@@ -615,7 +656,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 
 .overlay {
   position: fixed; inset: 0;
-  background: rgba(5,7,12,.78);
+  background: var(--panel);
   display: grid; place-items: center;
   z-index: 100;
   animation: fadeIn .2s;
@@ -627,7 +668,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   background: var(--panel);
   border: 1px solid var(--line-2);
   border-radius: var(--r-lg);
-  box-shadow: 0 24px 80px -16px rgba(0,0,0,.8);
+  box-shadow: var(--shadow);
   display: flex; flex-direction: column;
   overflow: hidden;
   animation: slideUp .25s cubic-bezier(.4,0,.2,1);
@@ -658,10 +699,10 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   letter-spacing: 0.08em;
   font-weight: 600;
 }
-.status-ready { background: rgba(16,185,129,.15); color: var(--ok); }
-.status-pressure { background: rgba(245,158,11,.15); color: var(--warn); }
-.status-scheduling-disabled { background: rgba(239,68,68,.15); color: var(--danger); }
-.status-tainted { background: rgba(96,165,250,.15); color: var(--info); }
+.status-ready { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.status-pressure { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+.status-scheduling-disabled { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+.status-tainted { background: color-mix(in srgb, var(--info) 15%, transparent); color: var(--info); }
 
 .overlay-sched {
   padding: 16px 22px;
@@ -692,7 +733,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 /* PreferNoSchedule is a hint, not a wall — it reads dimmer than the two effects
    that actually keep pods off the node. */
 .taint-effect.eff-NoSchedule, .taint-effect.eff-NoExecute {
-  background: rgba(96,165,250,.14);
+  background: color-mix(in srgb, var(--info) 14%, transparent);
   color: var(--info);
 }
 
@@ -807,7 +848,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #3a4060; }
+::-webkit-scrollbar-thumb:hover { background: var(--line-2); }
 ::-webkit-scrollbar-track { background: transparent; }
 
 /* Responsive — the title must never lose. Both the stat tiles and the context
@@ -826,9 +867,9 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 
 /* Error Banner */
 .error-banner {
-  background: rgba(239, 68, 68, 0.16);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
   border-bottom: 1px solid var(--danger);
-  color: #fca5a5;
+  color: var(--hatch-danger-text);
   padding: 10px 22px;
   display: flex;
   justify-content: space-between;
@@ -842,7 +883,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 }
 .error-banner button {
   background: var(--danger);
-  color: white;
+  color: var(--on-status);
   padding: 4px 10px;
   border-radius: 6px;
   font-weight: 600;
@@ -901,15 +942,14 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 }
 .view-pill button.view-on.view-3d {
   background: linear-gradient(180deg, var(--accent), var(--accent-2));
-  color: white;
-  box-shadow: 0 3px 12px -3px var(--accent);
+  color: var(--on-accent);
 }
 
 .scene-3d {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: radial-gradient(120% 90% at 50% 40%, rgba(20,10,60,.5), transparent 70%);
+  background: var(--bg);
 }
 .scene-scroll {
   width: 100%; height: 100%;
@@ -946,8 +986,8 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   inset: -18%;
   transform: translateZ(-2px);
   background-image:
-    linear-gradient(to right, rgba(124,92,255,.16) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(124,92,255,.16) 1px, transparent 1px);
+    linear-gradient(to right, color-mix(in srgb, var(--accent) 16%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 16%, transparent) 1px, transparent 1px);
   background-size: 62px 62px;
   -webkit-mask-image: radial-gradient(60% 60% at 50% 50%, #000 30%, transparent 75%);
   mask-image: radial-gradient(60% 60% at 50% 50%, #000 30%, transparent 75%);
@@ -988,8 +1028,8 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   font: inherit; font-size: 11px; text-align: left;
   cursor: pointer;
 }
-.audit-row:hover { background: rgba(255,255,255,.05); }
-.audit-row.audit-on { background: rgba(255,255,255,.08); color: var(--text); }
+.audit-row:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+.audit-row.audit-on { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
 .audit-swatch {
   width: 8px; height: 8px;
   border-radius: 50%;
@@ -1007,7 +1047,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   border: 1px solid currentColor;
   font-size: 10px;
   font-family: var(--font-mono);
-  background: rgba(0,0,0,.2);
+  background: color-mix(in srgb, var(--bg) 20%, transparent);
 }
 .audit-pill .pod-audit { position: static; filter: none; }
 
@@ -1033,7 +1073,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   position: absolute; top: 1px; right: 2px;
   line-height: 0;
   z-index: 1;
-  filter: drop-shadow(0 1px 1px rgba(0,0,0,.6));
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--bg) 60%, transparent));
 }
 
 .plate {
@@ -1050,7 +1090,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
    forces transform-style:flat on the element it applies to, which collapses
    every cube on the plate into a flat top rhombus. Light up the surface inlay
    and the faces instead — neither is a 3D ancestor of anything. */
-.plate:hover::before { background-color: rgba(255,255,255,.07); }
+.plate:hover::before { background-color: color-mix(in srgb, var(--text) 7%, transparent); }
 .plate:hover .cube-face { filter: brightness(1.3) saturate(1.15); }
 /* Query dimming obeys the same rule: no opacity or filter on .plate itself,
    only on the leaf faces, the shadow and the billboarded label. */
@@ -1065,8 +1105,8 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(to right, rgba(255,255,255,.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255,255,255,.05) 1px, transparent 1px);
+    linear-gradient(to right, color-mix(in srgb, var(--text) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--text) 5%, transparent) 1px, transparent 1px);
   background-size: 26px 26px;
   pointer-events: none;
   transition: background-color .2s;
@@ -1082,24 +1122,24 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 .plate.warn-danger::before {
   background-image: repeating-linear-gradient(
     0deg,
-    rgba(239,68,68,.06), rgba(239,68,68,.06) 6px,
-    rgba(239,68,68,.24) 6px, rgba(239,68,68,.24) 12px
+    color-mix(in srgb, var(--danger) 6%, transparent), color-mix(in srgb, var(--danger) 6%, transparent) 6px,
+    color-mix(in srgb, var(--danger) 24%, transparent) 6px, color-mix(in srgb, var(--danger) 24%, transparent) 12px
   );
   background-size: auto;
 }
 .plate.warn-warn::before {
   background-image: repeating-linear-gradient(
     0deg,
-    rgba(245,158,11,.06), rgba(245,158,11,.06) 6px,
-    rgba(245,158,11,.22) 6px, rgba(245,158,11,.22) 12px
+    color-mix(in srgb, var(--warn) 6%, transparent), color-mix(in srgb, var(--warn) 6%, transparent) 6px,
+    color-mix(in srgb, var(--warn) 22%, transparent) 6px, color-mix(in srgb, var(--warn) 22%, transparent) 12px
   );
   background-size: auto;
 }
 .plate.warn-info::before {
   background-image: repeating-linear-gradient(
     0deg,
-    rgba(96,165,250,.05), rgba(96,165,250,.05) 6px,
-    rgba(96,165,250,.16) 6px, rgba(96,165,250,.16) 12px
+    color-mix(in srgb, var(--info) 5%, transparent), color-mix(in srgb, var(--info) 5%, transparent) 6px,
+    color-mix(in srgb, var(--info) 16%, transparent) 6px, color-mix(in srgb, var(--info) 16%, transparent) 12px
   );
   background-size: auto;
 }
@@ -1123,7 +1163,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   gap: 6px;
   max-width: 250px;
   padding: 3px 8px;
-  background: rgba(4,6,12,.92);
+  background: var(--panel);
   border: 1px solid;
   border-radius: 3px;
   transform: translateZ(84px) rotateZ(-45deg) rotateX(-55deg);
@@ -1178,7 +1218,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   align-items: center;
   gap: 6px;
   padding: 10px 14px 10px 8px;
-  background: rgba(8,10,18,.86);
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   backdrop-filter: blur(6px);
@@ -1201,10 +1241,10 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   position: fixed;
   z-index: 60;
   padding: 8px 10px;
-  background: rgba(4,6,12,.96);
+  background: var(--panel);
   border: 1px solid var(--line-2);
   border-radius: 8px;
-  box-shadow: 0 12px 30px -8px rgba(0,0,0,.8);
+  box-shadow: var(--shadow);
   pointer-events: none;
   white-space: nowrap;
 }
@@ -1333,7 +1373,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 .scene-gl { position: absolute; inset: 0; }
 .scene-gl canvas { display: block; cursor: grab; }
 .scene-gl canvas:active { cursor: grabbing; }
-.scene-nogl { display: grid; place-items: center; padding: 24px; color: var(--text-dim, #9aa3b8); text-align: center; }
+.scene-nogl { display: grid; place-items: center; padding: 24px; color: var(--text-dim); text-align: center; }
 
 /* Print: only the export's image, when there is one (see printImage). */
 .print-sheet { display: none; }

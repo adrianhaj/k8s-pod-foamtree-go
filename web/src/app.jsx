@@ -506,11 +506,6 @@ function App() {
   // In QoS mode node chrome goes neutral, so only the pods carry colour.
   const hueOf = idx => (colorBy === "qos" ? NEUTRAL_HUE : nodeHue(idx, tw.colorScheme));
 
-  // Auto-set accent CSS var
-  useEffect(() => {
-    document.documentElement.style.setProperty("--accent", tw.accent);
-  }, [tw.accent]);
-
   return (
     <div className={`app ${sidebarOpen ? "sidebar-open" : "sidebar-collapsed"}`}>
       <Sidebar
