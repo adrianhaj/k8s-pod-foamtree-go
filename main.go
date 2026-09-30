@@ -24,7 +24,11 @@ import (
 	"github.com/adrianhaj/k8s-pod-foamtree-go/web"
 )
 
+// Set by the Makefile and Dockerfile with -ldflags "-X main.version=...".
+var version = "dev"
+
 type options struct {
+	version              bool
 	host                 string
 	port                 int
 	inCluster            bool
@@ -53,7 +57,9 @@ func parseFlags(args []string) (options, error) {
 	fs.StringVar(&o.emails, "oidc-allowed-emails", "", "comma-separated emails or globs like *@example.com")
 	fs.StringVar(&o.groups, "oidc-allowed-groups", "", "comma-separated groups")
 	fs.StringVar(&o.syntheticSpec, "synthetic", "", "serve a made-up cluster instead, e.g. 100x50 (nodes x pods per node)")
-	if err := fs.Parse(args); err != nil {
+	fs.BoolVar(&o.version, "version", false, "print the version and exit")
+	fs.BoolVar(&o.version, "v", false, "print the version and exit")
+	if err := fs.Parse(args); err != nil || o.version {
 		return o, err
 	}
 	// Secrets come from the environment only: flags show up in `ps`.
@@ -151,6 +157,10 @@ func main() {
 	if err != nil {
 		slog.Error(err.Error())
 		os.Exit(2)
+	}
+	if o.version {
+		fmt.Println(version)
+		return
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
