@@ -1325,7 +1325,6 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 .panel { flex: none; height: 214px; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-top: 1px solid var(--line); }
 .panel.is-collapsed { height: 36px; }
 .panel.is-max { height: 50vh; }
-@media (max-height: 720px) { .panel:not(.is-max) { height: 160px; } }
 .panel-tabs { flex: none; display: flex; align-items: stretch; gap: 22px; height: 36px; padding: 0 14px; border-bottom: 1px solid var(--line); }
 .panel.is-collapsed .panel-tabs { border-bottom: 0; }
 .panel-tabs [role="tab"] { display: flex; align-items: center; gap: 7px; font: 600 11px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); border-bottom: 2px solid transparent; margin-bottom: -1px; }

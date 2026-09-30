@@ -193,7 +193,7 @@ function App() {
     applyThemePref(themePref);
     writePref(safeStorage(), THEME_KEY, themePref);
   }, [themePref]);
-  const [panel, setPanel] = useState(() => readPref(safeStorage(), PANEL_KEY, PANEL_DEFAULT, validPanel));
+  const [panel, setPanel] = useState(() => readPref(safeStorage(), PANEL_KEY, window.innerHeight < 720 ? { ...PANEL_DEFAULT, open: false } : PANEL_DEFAULT, validPanel));
   useEffect(() => { writePref(safeStorage(), PANEL_KEY, panel); }, [panel]);
 
   const [view, setView] = useState("2d");
