@@ -27,8 +27,19 @@ function fit(text, px, width) {
 function exportLook() {
   const t = name => token(name, "#808080");
   const pct = name => parseFloat(token(name, "20%")) / 100;
+  const panel = t("--panel"), roles = new Map(), tints = new Map();
+  // Memoized for this export, so pods never hit getComputedStyle.
+  const role = name => {
+    if (!roles.has(name)) roles.set(name, t(name));
+    return roles.get(name);
+  };
+  const tinted = (roleHex, p) => {
+    const k = `${roleHex}|${p}`;
+    if (!tints.has(k)) tints.set(k, tintHex(roleHex, panel, p));
+    return tints.get(k);
+  };
   return {
-    bg: t("--bg"), panel: t("--panel"), line: t("--line"), text: t("--text"), dim: t("--text-dim"),
+    bg: t("--bg"), panel, line: t("--line"), text: t("--text"), dim: t("--text-dim"),
     accent: t("--accent"),
     tint: { fill: pct("--tint-fill"), edge: pct("--tint-edge"), box: pct("--tint-box") },
     sev: { danger: t("--danger"), warn: t("--warn"), info: t("--info") },
@@ -38,7 +49,7 @@ function exportLook() {
       warn: [t("--hatch-warn-0"), t("--hatch-warn-1"), t("--hatch-warn-text")],
       info: [t("--hatch-info-0"), t("--hatch-info-1"), t("--hatch-info-text")],
     },
-    role: t,
+    role, tinted,
     font: token("--font-mono", "ui-monospace, monospace"),
   };
 }
@@ -128,8 +139,8 @@ function SvgPod({ it, metric, look, matched, dim }) {
   return (
     <g opacity={opacity}>
       <rect x={x} y={y} width={Math.max(0, w - 2)} height={Math.max(0, h - 2)} rx={2}
-        fill={tintHex(role, look.panel, look.tint.fill)}
-        stroke={ring ? look.accent : tintHex(role, look.panel, look.tint.edge)} strokeWidth={ring ? 1.5 : 1} />
+        fill={look.tinted(role, look.tint.fill)}
+        stroke={ring ? look.accent : look.tinted(role, look.tint.edge)} strokeWidth={ring ? 1.5 : 1} />
       {showName && (
         <text x={x + 5} y={y + 7} dominantBaseline="central" fontSize={9} fill={look.text}>{fit(pod.shortName, 9, w - 16)}</text>
       )}
@@ -137,7 +148,7 @@ function SvgPod({ it, metric, look, matched, dim }) {
       {containers.map((c, i) => (
         <g key={i}>
           <rect x={x + c.x} y={y + c.y} width={Math.max(0, c.w - 1)} height={Math.max(0, c.h - 1)} rx={1}
-            fill={tintHex(c.container.init ? neutral : role, look.panel, look.tint.box)} />
+            fill={look.tinted(c.container.init ? neutral : role, look.tint.box)} />
           {c.w > 40 && c.h > 18 && (
             <text x={x + c.x + c.w / 2} y={y + c.y + c.h / 2} textAnchor="middle" dominantBaseline="central"
               fontSize={9} fill={look.text}>{fit(c.container.name, 9, c.w - 6)}</text>
@@ -147,7 +158,6 @@ function SvgPod({ it, metric, look, matched, dim }) {
     </g>
   );
 }
-
 
 function treemapSVG(props) {
   const host = document.createElement("div");

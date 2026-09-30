@@ -4,14 +4,15 @@
 // DOM nodes per pod and fell to 1 fps at 5k pods. Frames are drawn on demand
 // (camera move, data or style change, animation), never in an idle loop.
 //
-// Colours come from the CSS tokens (read live, so the scene follows the theme);
+// Colours come from the CSS tokens (re-read on a theme change, so the scene
+// follows the theme);
 // the CSS filter values for dim / match / workload states are applied here in
 // the same sRGB math.
 
-const { workloadKey } = window.k8sWorkload;
+const { workloadKey, podKey } = window.k8sWorkload;
 const { findingInfo } = window.k8sPodAudit;
 const { worstSeverity } = window.k8sNodeStatus;
-const { podToken, utilTone, shade } = window.k8sPalette;
+const { podToken, utilTone, shade, hexRgb: hex, mixRgb: mix } = window.k8sPalette;
 const { groupNodes, groupUsage } = window.k8sTopology;
 
 const PLATE = 160;
@@ -28,7 +29,6 @@ const footprint = cpu => clamp(18, 10 + Math.sqrt(cpu) * 1.05, 48) * CSS_PX;
 const tall = memMib => clamp(8, Math.sqrt(memMib) * 1.05, 78) * CSS_PX;
 // rotateX(55deg) in the CSS scene is a 35° view elevation.
 const CAMERA = [1, Math.tan((35 * Math.PI) / 180) * Math.SQRT2, 1];
-const podKey = p => `${p.namespace}/${p.name}`;
 const ease = t => 1 - Math.pow(1 - clamp(0, t, 1), 3);
 
 // Palette tokens from styles.css, so the scene follows the stylesheet.
@@ -36,13 +36,6 @@ function token(name, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v || fallback;
 }
-
-// sRGB triples in 0..1 — CSS does its colour math in sRGB, so this does too.
-function hex(h) {
-  const n = parseInt(h.replace("#", ""), 16);
-  return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
-}
-const mix = (under, over, alpha) => under.map((u, i) => u + (over[i] - u) * alpha);
 
 // CSS brightness() then saturate() (Filter Effects spec matrices), clamped
 // after each step like the browser does.
@@ -154,9 +147,9 @@ function patternTexture(T, draw, repeat) {
 
 // The plate label: a chip with the name in --text, utilisation in its tone, and a
 // severity mark when unhealthy. Group labels use the same chip.
-function labelSprite(T, { name, util, sev }, height) {
+function labelSprite(T, { name, util, sev }, height, chip) {
   const px = 44, pad = 18, measure = document.createElement("canvas").getContext("2d");
-  const font = weight => `${weight} ${px}px ${token("--font-mono", "ui-monospace, monospace")}`;
+  const font = weight => `${weight} ${px}px ${chip.font}`;
   const utilText = util == null ? "" : `${Math.round(util * 100)}%`;
   measure.font = font(400);
   const nameW = measure.measureText(name).width;
@@ -167,28 +160,28 @@ function labelSprite(T, { name, util, sev }, height) {
   c.width = Math.ceil(pad + nameW + (utilText ? pad + utilW : 0) + (sev ? pad * 0.6 + markW : 0) + pad);
   c.height = px + 26;
   const g = c.getContext("2d"), mid = c.height / 2;
-  g.fillStyle = token("--panel", "#ffffff");
+  g.fillStyle = chip.panel;
   g.fillRect(0, 0, c.width, c.height);
-  g.strokeStyle = token("--line-2", "#c9ced7");
+  g.strokeStyle = chip.line;
   g.lineWidth = 3;
   g.strokeRect(1.5, 1.5, c.width - 3, c.height - 3);
   let x = pad;
   g.textBaseline = "middle";
   g.font = font(400);
-  g.fillStyle = token("--text", "#1a1e25");
+  g.fillStyle = chip.text;
   g.fillText(name, x, mid);
   x += nameW;
   if (utilText) {
     x += pad;
     g.font = font(600);
     const tone = utilTone(util);
-    g.fillStyle = tone ? token(`--${tone}`, "#e7a50e") : token("--text-dim", "#4b5362");
+    g.fillStyle = tone ? chip[tone] : chip.dim;
     g.fillText(utilText, x, mid);
     x += utilW;
   }
   if (sev) {
     x += pad * 0.6;
-    g.fillStyle = token({ danger: "--danger", warn: "--warn", info: "--info" }[sev], "#f59e0b");
+    g.fillStyle = chip[sev];
     g.beginPath();
     g.moveTo(x + markW / 2, mid - markW / 2);
     g.lineTo(x + markW, mid + markW / 2);
@@ -248,7 +241,12 @@ function Scene3D({
 
     const w = {
       T, renderer, scene, root, cam, controls, grid, hatch, cubes: [], plates: [], labels: [], meshes: null,
-      fit: 1, fittedFor: "", anim: null,
+      fit: 1, fittedFor: "", anim: null, tokens: new Map(),
+    };
+    // Tokens are read once per theme: the build effect clears this on a theme change.
+    w.token = (name, fallback) => {
+      if (!w.tokens.has(name)) w.tokens.set(name, token(name, fallback));
+      return w.tokens.get(name);
     };
     let frame = 0;
     w.render = () => {
@@ -356,6 +354,7 @@ function Scene3D({
     const w = world.current;
     if (!w) return;
     const { T, root } = w;
+    if (w.themeKey !== themeKey) { w.tokens.clear(); w.themeKey = themeKey; }
     const next = layout(nodes, groupBy);
     const before = new Map(w.cubes.filter(c => !c.ghost).map(c => [podKey(c.pod), c]));
     const now = new Set(next.cubes.map(c => podKey(c.pod)));
@@ -373,7 +372,7 @@ function Scene3D({
     const x = new T.InstancedMesh(boxFaces(T, [0, 1]), unlit(), n);
     const z = new T.InstancedMesh(boxFaces(T, [4, 5]), unlit(), n);
     const shells = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), new T.MeshBasicMaterial({
-      color: token("--shell", "#1a1e25"), transparent: true, opacity: 0.12, depthWrite: false,
+      color: w.token("--shell", "#1a1e25"), transparent: true, opacity: 0.12, depthWrite: false,
     }), n);
     const rims = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), unlit(), np);
     const plates = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), unlit(), np);
@@ -385,8 +384,8 @@ function Scene3D({
     for (const mesh of [rims, plates, grids, hatches]) mesh.count = next.plates.length;
     // Group frames: a --floor floor with a --line-2 rim, below the plates.
     const nf = Math.max(1, next.frames.length);
-    const frameRims = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ color: token("--line-2", "#c9ced7") }), nf);
-    const frameFloors = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ color: token("--floor", "#e4e6ea") }), nf);
+    const frameRims = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ color: w.token("--line-2", "#c9ced7") }), nf);
+    const frameFloors = new T.InstancedMesh(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ color: w.token("--floor", "#e4e6ea") }), nf);
     frameRims.count = frameFloors.count = next.frames.length;
     const m = new T.Matrix4();
     next.frames.forEach((f, i) => {
@@ -404,18 +403,24 @@ function Scene3D({
     });
     root.add(frameRims, frameFloors, rims, plates, grids, hatches, z, x, top, shells);
 
+    const chip = {
+      font: w.token("--font-mono", "ui-monospace, monospace"),
+      panel: w.token("--panel", "#ffffff"), line: w.token("--line-2", "#c9ced7"),
+      text: w.token("--text", "#1a1e25"), dim: w.token("--text-dim", "#4b5362"),
+      danger: w.token("--danger", "#ef4444"), warn: w.token("--warn", "#f59e0b"), info: w.token("--info", "#60a5fa"),
+    };
     const labels = [];
     for (const p of next.plates) {
       const util = Math.max(p.node.cpuUsed / (p.node.cpuCapacity || 1), p.node.memUsed / (p.node.memCapacity || 1));
       const s = labelSprite(T, {
         name: p.node.name.replace(/\.ec2\.internal$/, "").toLowerCase(), util,
         sev: worstSeverity(p.node.warnings),
-      }, 11);
+      }, 11, chip);
       s.position.set(p.x, 6, p.z - PLATE / 2 - 10);
       labels.push(s);
     }
     for (const g of next.labels) {
-      const s = labelSprite(T, { name: g.text, util: g.util }, 26);
+      const s = labelSprite(T, { name: g.text, util: g.util }, 26, chip);
       s.position.set(g.x, 10, g.z);
       labels.push(s);
     }
@@ -490,15 +495,15 @@ function Scene3D({
       plateDim: n => queryActive && match.dimNodes.has(n.name),
     };
     const sevColor = {
-      danger: hex(token("--danger", "#ef4444")), warn: hex(token("--warn", "#f59e0b")), info: hex(token("--info", "#60a5fa")),
+      danger: hex(w.token("--danger", "#ef4444")), warn: hex(w.token("--warn", "#f59e0b")), info: hex(w.token("--info", "#60a5fa")),
     };
     w.recolor = () => {
       if (!w.meshes) return;
       const { T } = w, c = new T.Color(), m = new T.Matrix4();
       const set = (mesh, i, rgb) => mesh.setColorAt(i, c.setRGB(rgb[0], rgb[1], rgb[2], T.SRGBColorSpace));
-      const plate = hex(token("--plate", "#ffffff")), edge = hex(token("--line-2", "#c9ced7"));
-      const gridLine = hex(token("--line", "#dde0e6"));
-      const ringRim = hex(token("--accent", "#1f5fd6"));
+      const plate = hex(w.token("--plate", "#ffffff")), edge = hex(w.token("--line-2", "#c9ced7"));
+      const gridLine = hex(w.token("--line", "#dde0e6"));
+      const ringRim = hex(w.token("--accent", "#1f5fd6"));
       // A pod's faces depend only on its colour role and one of six filter
       // states, so compute each combination once, not once per pod.
       const faces = new Map();
@@ -506,7 +511,7 @@ function Scene3D({
         const role = podToken(cube.pod, colorBy, nsMap);
         const f = podFilter(cube, look), key = `${role}|${f}`;
         if (!faces.has(key)) {
-          const base = hex(token(role, "#9aa0a9"));
+          const base = hex(w.token(role, "#9aa0a9"));
           faces.set(key, ["top", "x", "z"].map(face => mix(plate, cssFilter(shade(base, FACE_SHADE[face]), f[0], f[1]), f[2])));
         }
         const [t, fx, fz] = faces.get(key);

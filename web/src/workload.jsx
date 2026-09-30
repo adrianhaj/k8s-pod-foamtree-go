@@ -51,4 +51,6 @@ function workloadKey(podName) {
   return podName;
 }
 
-window.k8sWorkload = { workloadKey };
+const podKey = p => `${p.namespace}/${p.name}`;
+
+window.k8sWorkload = { workloadKey, podKey };

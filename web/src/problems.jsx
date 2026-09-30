@@ -2,7 +2,7 @@
 // data in and out. Labels and severities come from the nodestatus and podaudit
 // vocabularies, so the tab, the badges and the query agree.
 
-const PROBLEM_RANK = { danger: 3, warn: 2, info: 1 };
+const { SEV_RANK } = window.k8sNodeStatus;
 const PRESSURE = { "memory-pressure": "MemoryPressure", "disk-pressure": "DiskPressure", "pid-pressure": "PIDPressure" };
 const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -36,7 +36,7 @@ function buildProblems(nodes) {
       }
     }
   }
-  return rows.sort((a, b) => PROBLEM_RANK[b.sev] - PROBLEM_RANK[a.sev]
+  return rows.sort((a, b) => SEV_RANK[b.sev] - SEV_RANK[a.sev]
     || (a.kind === b.kind ? 0 : a.kind === "node" ? -1 : 1)
     || cmp(a.rule, b.rule) || cmp(a.object, b.object));
 }
@@ -49,7 +49,7 @@ function problemChips(rows) {
     c.count++;
     byQuery.set(r.query, c);
   }
-  return [...byQuery.values()].sort((a, b) => PROBLEM_RANK[b.sev] - PROBLEM_RANK[a.sev] || b.count - a.count || cmp(a.label, b.label));
+  return [...byQuery.values()].sort((a, b) => SEV_RANK[b.sev] - SEV_RANK[a.sev] || b.count - a.count || cmp(a.label, b.label));
 }
 
 window.k8sProblems = { buildProblems, problemChips };

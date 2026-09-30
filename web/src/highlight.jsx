@@ -10,7 +10,7 @@ function pickShown({ match, tab, changes, sim, nodes }) {
     return { ...plain, active: true, pods: changes.pods, dimNodes: new Set(), count: changes.pods.size, lit: "changes" };
   }
   if (tab === "drain" && sim) {
-    if (sim.mode === "fit" && sim.fit) return { ...sim.fit, errors: match.errors, ring: null, lit: "fit" };
+    if (sim.mode === "fit" && sim.fit) return { ...plain, ...sim.fit, errors: match.errors, lit: "fit" };
     if (sim.mode === "drain" && sim.node) {
       const node = nodes.find(n => n.name === sim.node);
       if (node) {

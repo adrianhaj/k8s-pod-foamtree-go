@@ -2,6 +2,7 @@
 // presentation only; App owns the state and hands each tab its data.
 
 const { Icon, SevGlyph } = window.k8sIcons;
+const { clock } = window.k8sFormat;
 
 const TABS = [
   { id: "problems", label: "Problems" },
@@ -14,7 +15,7 @@ function BottomPanel({ panel, setPanel, counts, children }) {
   const pick = id => setPanel(p => ({ ...p, open: true, tab: id }));
   const onKey = e => {
     const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
-    if (!d) return;
+    if (!d || e.target.getAttribute("role") !== "tab") return;
     const i = TABS.findIndex(t => t.id === panel.tab);
     const next = TABS[(i + d + TABS.length) % TABS.length].id;
     pick(next);
@@ -46,8 +47,8 @@ function BottomPanel({ panel, setPanel, counts, children }) {
   );
 }
 
-// Chips toggle the same health:/audit: query tokens the old sidebar rows did,
-// so the map highlight and the query bar show the same thing.
+// Chips toggle health:/audit: query tokens, so the map highlight and the
+// query bar show the same thing.
 function ProblemsTab({ rows, chips, query, setQuery, onPickNode }) {
   if (rows.length === 0) {
     return <div className="panel-empty">No problems found. Every node is schedulable and every pod passes the audit.</div>;
@@ -155,9 +156,20 @@ function DrainTab({ mode, setMode, node, setNode, nodes, busy, error, onRun, dra
 
 const LIT_TEXT = { changes: "Lit: added and resized pods", fit: "Lit: nodes that fit", drain: null };
 
-function MapChips({ lit, ring }) {
+function MapChips({ lit, ring, workload, onClearWorkload, at, onLive }) {
   const text = lit === "drain" ? `Lit: pods on ${ring}` : LIT_TEXT[lit];
-  return <div className="map-chips">{text && <span className="chip chip-lit">{text}</span>}</div>;
+  return (
+    <div className="map-chips">
+      {at != null && <span className="chip">History · {clock(at)}<button onClick={onLive}>Back to live</button></span>}
+      {workload && (
+        <span className="chip chip-wl" title={workload.key}>
+          <span>{workload.key} · {workload.replicas} replica{workload.replicas === 1 ? "" : "s"} · {workload.nodes} node{workload.nodes === 1 ? "" : "s"}</span>
+          <button onClick={onClearWorkload} aria-label="Clear selection (Esc)">×</button>
+        </span>
+      )}
+      {text && <span className="chip chip-lit">{text}</span>}
+    </div>
+  );
 }
 
 window.k8sPanel = { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips };

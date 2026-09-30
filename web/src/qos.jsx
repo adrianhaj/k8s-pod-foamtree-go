@@ -1,8 +1,8 @@
 // QoS vocabulary. The backend passes the pod's status.qosClass through
 // untouched; this file decides how each class looks, so the pod boxes, the
-// cubes and the sidebar panel agree.
+// cubes and the summary strip agree.
 
-// Ordered by eviction risk, highest first — the order the sidebar lists them.
+// Ordered by eviction risk, highest first — the order they are listed in.
 // `sev` picks the matching swatch class.
 const QOS_INFO = {
   BestEffort: { sev: "danger", label: "BestEffort", risk: "no requests or limits — evicted first under memory pressure" },
