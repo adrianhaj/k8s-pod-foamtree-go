@@ -18,6 +18,7 @@ const { fmtMem, shortContext, clock, timeAgo } = window.k8sFormat;
 const { buildProblems, problemChips } = window.k8sProblems;
 const { pickShown } = window.k8sHighlight;
 const { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips } = window.k8sPanel;
+const { TopBar } = window.k8sChrome;
 const THEME_KEY = "k8sfoams.theme";
 
 const METRICS = [
@@ -207,6 +208,7 @@ function App() {
   const [colorBy, setColorBy] = useState("namespace");
   const [memUnit, setMemUnit] = useState("GiB");
   const [refreshInterval, setRefreshInterval] = useState(60);
+  const [hintOpen, setHintOpen] = useState(false);
   const [contexts, setContexts] = useState([]);
   const [contextIdx, setContextIdx] = useState(0);
   const [query, setQuery] = useState("");
@@ -464,6 +466,7 @@ function App() {
 
   // Auto-refresh tick — re-fetch live cluster data every refreshInterval seconds.
   useEffect(() => {
+    if (!refreshInterval) return;
     const id = setInterval(() => {
       if (contexts.length > 0) loadDataRef.current();
     }, refreshInterval * 1000);
@@ -559,37 +562,17 @@ function App() {
           </div>
         )}
 
-        <Header
-          metric={activeMetric} metrics={metrics}
-          view={view} setView={setView}
-          totals={totals}
-          query={query} setQuery={setQuery}
-          match={match}
-          memUnit={memUnit}
-          contexts={contexts}
-          contextIdx={contextIdx}
-          onMenu={() => setSidebarOpen(s => !s)}
-          onRefresh={loadData}
-          refreshing={refreshing}
-          workload={workloadStats}
-          onClearWorkload={() => setSelectedWorkload(null)}
-          me={me}
-          exportMenu={
-            <ExportMenu
-              view={view}
-              context={contexts[contextIdx] && contexts[contextIdx].context}
-              gridRef={gridRef}
-              sceneRef={sceneRef}
-              treemap={{
-                nodes, metric: activeMetric, match: shown, highlight, highlightActive, colorBy, nsMap,
-              }}
-            />
-          }
-          at={at}
-        />
+        <TopBar contexts={contexts} contextIdx={contextIdx} setContextIdx={setContextIdx}
+          queryBar={<QueryBar query={query} setQuery={setQuery} match={match} hintOpen={hintOpen} setHintOpen={setHintOpen} />}
+          error={error} lastRefresh={lastRefresh} refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
+          onRefresh={loadData} refreshing={refreshing} me={me}
+          exportMenu={<ExportMenu view={view} context={context} gridRef={gridRef} sceneRef={sceneRef}
+            treemap={{ nodes, metric: activeMetric, match: shown, highlight, highlightActive, colorBy, nsMap }} />} />
 
         <div className="grid-wrap" ref={gridRef}>
-          <MapChips lit={shown.lit} ring={shown.ring} />
+          <MapChips lit={shown.lit} ring={shown.ring}
+            workload={workloadStats} onClearWorkload={() => setSelectedWorkload(null)}
+            at={at} onLive={() => { setPlaying(false); setAt(null); }} />
           {view === "3d" ? (
             <Scene3D
               nodes={nodes}
@@ -857,98 +840,19 @@ function nodeDeltaText(d, memUnit) {
   return `${d.name}${state} · ${signed(String(d.pods))} pods · ${signed((d.cpu / 1000).toFixed(2))} cores · ${signed(fmtMem(d.mem, memUnit))} ${memUnit}`;
 }
 
-/* ─────────── Header ─────────── */
-
-function Header({
-  metric, metrics, view, setView, totals, query, setQuery, match, memUnit, contexts, contextIdx,
-  onMenu, onRefresh, refreshing, workload, onClearWorkload, me, exportMenu, at,
-}) {
-  const [hintOpen, setHintOpen] = useState(false);
-  const cpuPct = totals.cpuUsed / (totals.cpuCap || 1);
-  const memPct = totals.memUsed / (totals.memCap || 1);
-
-  const currentCtx = contexts[contextIdx];
-  const contextLabel = currentCtx ? shortContext(currentCtx.context) : "No Context";
-
-  const is3d = view === "3d";
-  const titleMain = is3d ? "CPU + Memory" : metrics.find(m => m.id === metric).label;
-  const ext = !is3d && metric !== "cpu" && metric !== "mem";
-
-  return (
-    <header className="header">
-      <button className="icon-btn" onClick={onMenu} aria-label="toggle sidebar">
-        <svg viewBox="0 0 20 20" width="16" height="16"><path d="M3 6h14M3 10h14M3 14h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-      </button>
-
-      <div className="header-title">
-        <div className="title-row">
-          <span className="title-main">{titleMain} Resources</span>
-          <span className="title-chip">{contextLabel}</span>
-          {at != null && <span className="title-chip hist-chip">history · {clock(at)}</span>}
-          {/* Replica spread of the pinned workload — the anti-affinity check. */}
-          {workload && (
-            <span className="title-chip wl-chip" title={workload.key}>
-              <span className="wl-chip-name">{workload.key}</span>
-              <span className="wl-chip-meta">
-                {workload.replicas} replica{workload.replicas === 1 ? "" : "s"} · {workload.nodes} node{workload.nodes === 1 ? "" : "s"}
-              </span>
-              <button className="wl-chip-clear" onClick={onClearWorkload} title="Clear selection (Esc)">×</button>
-            </span>
-          )}
-        </div>
-        <div className="title-sub">
-          {totals.nodes} nodes · {totals.pods} pods · {is3d ? "isometric cube topology" : "live foam-tree topology"}
-        </div>
-      </div>
-
-      <div className="header-stats">
-        <Stat label="CPU" value={`${(totals.cpuUsed / 1000).toFixed(1)} / ${(totals.cpuCap / 1000).toFixed(0)}`} unit="cores" pct={cpuPct} />
-        <Stat label="Memory" value={`${fmtMem(totals.memUsed, memUnit)} / ${fmtMem(totals.memCap, memUnit, true)}`} unit={memUnit} pct={memPct} />
-        {ext && (
-          <Stat label={titleMain} unit={extUnit(metric, memUnit)} pct={totals.extUsed / (totals.extCap || 1)}
-            value={`${fmtExt(totals.extUsed, metric, memUnit)} / ${fmtExt(totals.extCap, metric, memUnit, true)}`} />
-        )}
-        <Stat label="Pods" value={totals.pods} unit={`/ ${totals.nodes * 110} cap`} pct={totals.pods / (totals.nodes * 110 || 1)} />
-      </div>
-
-      <div className="header-tools">
-        <div className="view-pill">
-          {VIEWS.map(v => (
-            <button key={v.id}
-              className={view === v.id ? `view-on ${v.id === "3d" ? "view-3d" : ""}` : ""}
-              onClick={() => setView(v.id)}
-              title={v.label}>
-              {v.id.toUpperCase()}
-            </button>
-          ))}
-        </div>
-        <QueryBar query={query} setQuery={setQuery} match={match}
-          hintOpen={hintOpen} setHintOpen={setHintOpen} />
-        <button className={`icon-btn ${refreshing ? "spinning" : ""}`} onClick={onRefresh} title="Refresh">
-          <svg viewBox="0 0 16 16" width="14" height="14" className="refresh-icon">
-            <path d="M13.5 8 A5.5 5.5 0 1 1 11.5 4 M13.5 2 V5 H10.5"
-              stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        {exportMenu}
-        {me && me.auth === "oidc" && (
-          <form method="post" action="/auth/logout">
-            <button className="icon-btn" type="submit" title={`Sign out ${me.email || me.name}`} aria-label="sign out">
-              <svg viewBox="0 0 16 16" width="14" height="14">
-                <path d="M6 2.5H3.5v11H6 M10 5l3 3-3 3 M13 8H6.5"
-                  stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-          </form>
-        )}
-      </div>
-    </header>
-  );
-}
-
 // Query bar — search input plus live match count, inline token errors and a
 // hint listing the grammar. The grammar itself lives in query.jsx.
 function QueryBar({ query, setQuery, match, hintOpen, setHintOpen }) {
+  const inputRef = useRef(null);
+  useEffect(() => {
+    const onKey = e => {
+      if (e.key !== "/" || e.target.closest("input, textarea, select")) return;
+      e.preventDefault();
+      inputRef.current && inputRef.current.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const errors = (match && match.errors) || [];
   const invalid = errors.length > 0;
   const counting = !!query && !invalid && match;
@@ -957,10 +861,10 @@ function QueryBar({ query, setQuery, match, hintOpen, setHintOpen }) {
     <div className="query-bar">
       <div className={`search ${invalid ? "search-invalid" : ""}`}>
         <svg viewBox="0 0 16 16" width="14" height="14"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" fill="none" /><path d="M11 11l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-        <input value={query} onChange={e => setQuery(e.target.value)}
+        <input id="query" ref={inputRef} value={query} onChange={e => setQuery(e.target.value)}
           onFocus={() => setHintOpen(true)} onBlur={() => setHintOpen(false)}
           spellCheck="false"
-          placeholder="ns:kube-system app=frontend node:worker-*" />
+          placeholder="Filter pods, e.g. ns:payments qos:Burstable app=api" />
         {counting && (
           <span className={`query-count ${match.count === 0 ? "query-count-none" : ""}`}>
             {match.count} / {match.total} pods
@@ -986,22 +890,6 @@ function QueryBar({ query, setQuery, match, hintOpen, setHintOpen }) {
           <div className="query-hint-foot">Quote values with spaces: app="my app"</div>
         </div>
       )}
-    </div>
-  );
-}
-
-function Stat({ label, value, unit, pct }) {
-  const tone = utilTone(pct);
-  return (
-    <div className="stat">
-      <div className="stat-label">{label}</div>
-      <div className="stat-val">
-        <span className="stat-num">{value}</span>
-        <span className="stat-unit">{unit}</span>
-      </div>
-      <div className="stat-bar">
-        <div className={`stat-bar-fill${tone ? ` tone-${tone}` : ""}`} style={{ width: `${Math.min(100, (pct || 0) * 100)}%` }} />
-      </div>
     </div>
   );
 }
