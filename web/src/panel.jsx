@@ -111,12 +111,14 @@ function ChangesTab({ entries, at, atLabel, onScrub, playing, onPlay, onLive, ba
       {base ? (
         <>
           <p className="panel-note">Compared with the snapshot from <b>{baseLabel}</b>. The map lights added and resized pods.</p>
-          <div className="chg-cols">
-            <ChangeCol sev="ok" glyph="+" label="Pods added" items={lists.added} />
-            <ChangeCol sev="danger" glyph="−" label="Pods removed" items={lists.removed} />
-            <ChangeCol sev="warn" glyph="~" label="Workloads resized" items={lists.resized} />
-            <ChangeCol sev="info" glyph="Δ" label="Nodes changed" items={lists.nodes} />
-          </div>
+          {lists ? (
+            <div className="chg-cols">
+              <ChangeCol sev="ok" glyph="+" label="Pods added" items={lists.added} />
+              <ChangeCol sev="danger" glyph="−" label="Pods removed" items={lists.removed} />
+              <ChangeCol sev="warn" glyph="~" label="Workloads resized" items={lists.resized} />
+              <ChangeCol sev="info" glyph="Δ" label="Nodes changed" items={lists.nodes} />
+            </div>
+          ) : <div className="panel-empty">Loading snapshot…</div>}
         </>
       ) : (
         <div className="panel-empty">Pick a snapshot with the slider and press Compare. The comparison survives a context switch, so it also compares two contexts.</div>
