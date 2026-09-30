@@ -79,6 +79,8 @@ Two rules are worth knowing:
 - **`PreferNoSchedule` never marks a node.** It is a soft hint the scheduler is free to ignore, so it is listed in the focus overlay but does not stripe.
 - **The cordon taint is folded into `cordoned`.** Kubernetes adds `node.kubernetes.io/unschedulable:NoSchedule` itself when you cordon; reporting it as a taint too would mark the same node twice for one fact, so it is dropped from the taint list.
 
+The sidebar's **Node health** panel counts nodes per warning. Click a row to highlight those nodes and their pods in 2D and 3D; every other node dims. This sets the query to `health:<warning>`; click the row again to clear it.
+
 Click a node to open the focus overlay: a **Scheduling** section spells out every reason and lists each taint as `key=value` with its effect. Worst reason wins the header pill — a cordoned node under memory pressure reads as `SCHEDULING-DISABLED`, because that is what actually keeps pods off it.
 
 ## Audit & hygiene
@@ -149,6 +151,7 @@ An empty query matches everything. A query that contains a malformed token is **
 | `qos:<class>` | [QoS class](#qos--eviction-risk): `Guaranteed`, `Burstable`, `BestEffort` | case-insensitive; anything else is an error |
 | `has:init-containers` | pods declaring at least one init container | currently the only `has:` field |
 | `audit:<rule>` | pods breaking an [audit rule](#audit--hygiene) | `missing-requests`, `missing-limits`, `monolith`, `ratio-asymmetry` |
+| `health:<warning>` | nodes carrying a [health warning](#node-health), and every pod on them | `cordoned`, `not-ready`, `memory-pressure`, `disk-pressure`, `pid-pressure`, `tainted` |
 | `key=value` | pod label equals value | key and value are **case-sensitive** (Kubernetes labels are) |
 | `key!=value` | pod label differs from value | a **missing** label counts as unequal, so it matches too |
 | `text` | pod name contains `text` | case-insensitive substring |
@@ -210,7 +213,7 @@ Without the quotes, `web:1` is read as an unknown filter prefix and reported as 
 
 - **`!=` wins over `=`.** `env!=prod` is one inequality, never `env!` equals `prod`.
 - **A filter prefix must be a bare word before `:`.** `app=ns:x` is a label selector for key `app`, value `ns:x` — not a namespace filter.
-- **Only `node:` can dim a node.** Node plates and boxes stay in the layout either way; pod-level terms dim pods, never their node.
+- **Only `node:` and `health:` can dim a node.** Node plates and boxes stay in the layout either way; pod-level terms dim pods, never their node.
 - **A missing label matches `!=`.** `env!=prod` highlights pods with `env: staging` *and* pods with no `env` label at all — the Kubernetes selector semantics.
 - **Every problem is reported at once.** The parser never stops on the first bad token, so a three-error query lists three errors.
 
@@ -221,7 +224,7 @@ Without the quotes, `web:1` is read as an unknown filter prefix and reported as 
 | `ns:` | `ns: needs a value` |
 | `qos:Cheap` | `unknown QoS class — use Guaranteed, Burstable or BestEffort` |
 | `has:sidecars` | `unknown has: field — use init-containers` |
-| `zone:eu` | `unknown filter — use ns:, node:, qos:, has:` |
+| `zone:eu` | `unknown filter — use ns:, node:, qos:, has:, audit:, health:` |
 | `=frontend` | `label selector needs a key` |
 | `app=` | `label selector needs a value` |
 | `""` | `empty quoted value` |
@@ -321,6 +324,7 @@ Images: `make image` builds `ghcr.io/adrianhaj/k8sfoams:<git describe>` locally;
 | `--oidc-allowed-groups` | | comma-separated; at least one allow list is required |
 | `--oidc-groups-claim` | `groups` | ID-token claim with group names |
 | `--oidc-scopes` | `openid,email,profile` | add `groups` for Dex/Keycloak |
+| `--version`, `-v` | | print the version (`git describe` of the build) and exit |
 | `--synthetic` | | serve a made-up cluster, e.g. `100x50` (nodes × pods per node), for UI work and scale tests; includes GPU, ephemeral-storage and hugepages nodes |
 
 Secrets come from the environment only: `K8SFOAMS_OIDC_CLIENT_SECRET`, `K8SFOAMS_SESSION_KEY` (32 bytes, base64; unset means a random key, so sessions end on restart).

@@ -28,7 +28,7 @@ $(THREE_JS): web/src/three-entry.js $(wildcard web/vendor/three/*.js)
 		--alias:three=./web/vendor/three/three.module.js --log-level=warning --outfile=$@
 
 build: web
-	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/k8sfoams .
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$(TAG)" -o bin/k8sfoams .
 
 run: web
 	go run . $(ARGS)
@@ -41,10 +41,10 @@ lint:
 	go vet ./...
 
 image:
-	docker build -t $(IMAGE):$(TAG) .
+	docker build --build-arg VERSION=$(TAG) -t $(IMAGE):$(TAG) .
 
 image-push:
-	docker buildx build --platform $(PLATFORMS) -t $(IMAGE):$(TAG) --push .
+	docker buildx build --platform $(PLATFORMS) --build-arg VERSION=$(TAG) -t $(IMAGE):$(TAG) --push .
 
 kind-up:
 	kind get clusters | grep -qx k8sfoams || kind create cluster --name k8sfoams --kubeconfig $(KIND_KUBECONFIG)

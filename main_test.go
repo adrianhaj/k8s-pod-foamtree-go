@@ -131,6 +131,12 @@ func TestFlags(t *testing.T) {
 			t.Errorf("%v: err=%v", tc.args, err)
 		}
 	}
+	// --version skips validation: it must print even with flags that would be refused.
+	for _, args := range [][]string{{"--version"}, {"-v", "--host", "0.0.0.0"}} {
+		if o, err := parseFlags(args); err != nil || !o.version {
+			t.Errorf("%v: version=%v err=%v", args, o.version, err)
+		}
+	}
 	o, _ := parseFlags([]string{"--auth", "oidc", "--oidc-allowed-emails", "a@x.com, *@y.com,"})
 	if fmt.Sprint(o.oidc.AllowedEmails, o.oidc.Scopes) != "[a@x.com *@y.com] [openid email profile]" {
 		t.Fatalf("lists: %v %v", o.oidc.AllowedEmails, o.oidc.Scopes)
