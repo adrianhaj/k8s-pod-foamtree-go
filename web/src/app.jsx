@@ -13,7 +13,11 @@ const { assignNamespaces, utilTone, COLOR_MODES } = window.k8sPalette;
 const { Legend } = window.k8sLegend;
 const { GROUP_BY, groupNodes } = window.k8sTopology;
 const { pack, unpack, record, diff } = window.k8sHistory;
-const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref } = window.k8sPrefs;
+const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY, PANEL_DEFAULT, validPanel } = window.k8sPrefs;
+const { fmtMem, shortContext, clock, timeAgo } = window.k8sFormat;
+const { buildProblems, problemChips } = window.k8sProblems;
+const { pickShown } = window.k8sHighlight;
+const { BottomPanel, ProblemsTab } = window.k8sPanel;
 const THEME_KEY = "k8sfoams.theme";
 
 const METRICS = [
@@ -189,6 +193,8 @@ function App() {
     applyThemePref(themePref);
     writePref(safeStorage(), THEME_KEY, themePref);
   }, [themePref]);
+  const [panel, setPanel] = useState(() => readPref(safeStorage(), PANEL_KEY, PANEL_DEFAULT, validPanel));
+  useEffect(() => { writePref(safeStorage(), PANEL_KEY, panel); }, [panel]);
 
   const [view, setView] = useState("2d");
   const [zoom, setZoom] = useState(0.7);
@@ -392,7 +398,11 @@ function App() {
   }, [nodes, parsedQuery, changes]);
 
   // A fit verdict takes over the map's dimming until it is cleared.
-  const shown = useMemo(() => (fit ? fitMatch(nodes, fit) : match), [fit, nodes, match]);
+  const fitShown = useMemo(() => (fit ? fitMatch(nodes, fit) : null), [fit, nodes]);
+  const shown = useMemo(() => pickShown({
+    match, tab: panel.open ? panel.tab : null, changes, nodes,
+    sim: { mode: fit ? "fit" : "drain", fit: fitShown, node: null },
+  }), [match, panel.open, panel.tab, changes, nodes, fitShown]);
 
   const highlight = selectedWorkload || hoveredWorkload;
   const highlightActive = !!selectedWorkload;
@@ -480,6 +490,9 @@ function App() {
       .sort((a, b) => FINDING_ORDER.indexOf(a.slug) - FINDING_ORDER.indexOf(b.slug));
   }, [nodes]);
 
+  const problems = useMemo(() => buildProblems(nodes), [nodes]);
+  const chips = useMemo(() => problemChips(problems), [problems]);
+
   // Every class gets a row, even at zero — "no BestEffort pods" is the answer
   // an SRE is usually looking for. Pods with no reported class are not counted.
   const qosBreakdown = useMemo(() => {
@@ -511,8 +524,6 @@ function App() {
         doRefresh={loadData} refreshing={refreshing}
         lastRefresh={lastRefresh}
         nodeCount={nodes.length}
-        health={health}
-        audit={audit}
         qosBreakdown={qosBreakdown}
         colorBy={colorBy} setColorBy={setColorBy} nsMap={nsMap}
         query={query} setQuery={setQuery}
@@ -596,6 +607,13 @@ function App() {
             />
           )}
         </div>
+
+        <BottomPanel panel={panel} setPanel={setPanel} counts={{ problems: problems.length }}>
+          {panel.tab === "problems" && (
+            <ProblemsTab rows={problems} chips={chips} query={query} setQuery={setQuery}
+              onPickNode={name => setFocused(nodes.find(n => n.name === name) || null)} />
+          )}
+        </BottomPanel>
       </main>
 
       {focused && (
@@ -611,8 +629,8 @@ function App() {
 function Sidebar({
   open, onToggle, view, setView, zoom, setZoom, groupBy, setGroupBy, metric, setMetric, metrics, memUnit, setMemUnit,
   refreshInterval, setRefreshInterval,
-  contexts, contextIdx, setContextIdx, doRefresh, refreshing, lastRefresh, nodeCount, health,
-  audit, qosBreakdown, colorBy, setColorBy, nsMap, query, setQuery, entries, at, setAt, playing, setPlaying, base, toggleCompare, changes, ctxName, themePref, setThemePref, children
+  contexts, contextIdx, setContextIdx, doRefresh, refreshing, lastRefresh, nodeCount,
+  qosBreakdown, colorBy, setColorBy, nsMap, query, setQuery, entries, at, setAt, playing, setPlaying, base, toggleCompare, changes, ctxName, themePref, setThemePref, children
 }) {
   const is3d = view === "3d";
   return (
@@ -797,31 +815,8 @@ function Sidebar({
 
       {children}
 
-      {/* Only rendered when something is actually wrong, so a healthy cluster
-          looks exactly as it did before this feature existed. A row toggles its
-          health: query, which lights the affected nodes and dims the rest. */}
-      {health.length > 0 && (
-        <div className="sidebar-section">
-          <div className="section-label">Node health</div>
-          <div className="health-rows">
-            {health.map(h => {
-              const token = `health:${h.slug}`;
-              const on = query.trim() === token;
-              return (
-                <button key={h.slug} className={`health-row audit-row ${on ? "audit-on" : ""}`}
-                  onClick={() => setQuery(on ? "" : token)}>
-                  <span className={`health-swatch sev-${h.sev}`} />
-                  <span className="health-name">{h.label}</span>
-                  <span className="health-count">{h.count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Riskiest class first. The swatches double as the legend for Color by →
-          QoS, and a row toggles its qos: query, like the audit panel below. */}
+          QoS, and a row toggles its qos: query, like the Problems chips. */}
       {nodeCount > 0 && (
         <div className="sidebar-section">
           <div className="section-label">QoS &amp; Eviction Risk</div>
@@ -835,29 +830,6 @@ function Sidebar({
                   <span className={`audit-swatch sev-${q.sev}`} />
                   <span className="health-name">{q.label}</span>
                   <span className="health-count">{q.count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Always shown once data is in: "nothing to fix" is an answer too. A row
-          toggles its audit: query, which reuses the match highlight in 2D and 3D. */}
-      {nodeCount > 0 && (
-        <div className="sidebar-section">
-          <div className="section-label">Audit &amp; Hygiene</div>
-          <div className="health-rows">
-            {audit.length === 0 && <div className="audit-clean">No issues found</div>}
-            {audit.map(a => {
-              const token = `audit:${a.slug}`;
-              const on = query.trim() === token;
-              return (
-                <button key={a.slug} className={`health-row audit-row ${on ? "audit-on" : ""}`}
-                  title={a.why} onClick={() => setQuery(on ? "" : token)}>
-                  <span className={`audit-swatch sev-${a.sev}`} />
-                  <span className="health-name">{a.label}</span>
-                  <span className="health-count">{a.count}</span>
                 </button>
               );
             })}
@@ -1309,41 +1281,6 @@ function MetricIcon({ kind }) {
       <path d="M4 4.5v7M6.5 4.5v7M9 4.5v7M11.5 4.5v7" stroke="currentColor" strokeWidth="1.1" />
     </svg>
   );
-}
-
-/* ─────────── Utils ─────────── */
-
-// Format a MiB memory value into the active unit. MiB/GiB keep their original
-// precision (and integer capacity); TiB uses adaptive decimals so a non-zero
-// quantity never renders as a flat "0" (TiB is coarse for node/pod memory).
-function fmtMem(mib, unit, capacity = false) {
-  const div = unit === "TiB" ? 1024 * 1024 : unit === "GiB" ? 1024 : 1;
-  const v = mib / div;
-  if (unit === "MiB") return v.toFixed(0);
-  if (unit === "GiB") return v.toFixed(capacity ? 0 : 1);
-  // TiB: grow decimals (2 → max 6) until the rounded value is non-zero.
-  if (v === 0) return "0";
-  let d = 2;
-  while (d < 6 && Number(v.toFixed(d)) === 0) d++;
-  return v.toFixed(d);
-}
-
-function shortContext(ctx) {
-  const last = ctx.split("/").pop();
-  const region = ctx.match(/(us|eu|ap)-[a-z]+-\d+/);
-  return region ? `${last} · ${region[0]}` : last;
-}
-
-function clock(ts) {
-  return new Date(ts).toLocaleTimeString([], { hour12: false });
-}
-
-function timeAgo(ts) {
-  const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 5) return "just now";
-  if (s < 60) return `${s}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  return `${Math.floor(s / 3600)}h ago`;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
