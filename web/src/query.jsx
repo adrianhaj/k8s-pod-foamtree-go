@@ -20,7 +20,7 @@ const QOS_CLASSES = ["guaranteed", "burstable", "besteffort"];
 const HAS_FIELDS = ["init-containers"];
 // Mirrors the slugs the backend emits in each pod's `findings`.
 const AUDIT_FIELDS = ["missing-requests", "missing-limits", "monolith", "ratio-asymmetry"];
-// Node warning slugs, owned by nodestatus.jsx so the sidebar legend and the
+// Node warning slugs, owned by nodestatus.jsx so the legend and the
 // grammar can't drift apart.
 const HEALTH_FIELDS = window.k8sNodeStatus.WARNING_ORDER;
 const FILTER_PREFIXES = ["ns", "node", "qos", "has", "audit", "health"];

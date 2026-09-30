@@ -47,8 +47,8 @@ function BottomPanel({ panel, setPanel, counts, children }) {
   );
 }
 
-// Chips toggle the same health:/audit: query tokens the old sidebar rows did,
-// so the map highlight and the query bar show the same thing.
+// Chips toggle health:/audit: query tokens, so the map highlight and the
+// query bar show the same thing.
 function ProblemsTab({ rows, chips, query, setQuery, onPickNode }) {
   if (rows.length === 0) {
     return <div className="panel-empty">No problems found. Every node is schedulable and every pod passes the audit.</div>;

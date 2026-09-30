@@ -56,4 +56,4 @@ const shade = (rgb, k) => mixRgb(rgb, [0, 0, 0], k);
 // color-mix(in srgb, role pct, surface), as hex for the SVG export.
 const tintHex = (roleHex, surfaceHex, pct) => rgbHex(mixRgb(hexRgb(surfaceHex), hexRgb(roleHex), pct));
 
-window.k8sPalette = { NS_SLOTS, QOS_ROLE, COLOR_MODES, assignNamespaces, podToken, utilTone, hexRgb, rgbHex, mixRgb, shade, tintHex };
+window.k8sPalette = { QOS_ROLE, COLOR_MODES, assignNamespaces, podToken, utilTone, hexRgb, mixRgb, shade, tintHex };

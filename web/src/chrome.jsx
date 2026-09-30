@@ -249,4 +249,4 @@ function Rail({ view, setView, panel, openTab, findings, settings }) {
   );
 }
 
-window.k8sChrome = { REFRESH_CHOICES, providerOf, refreshLabel, attentionBySev, Menu, TopBar, radio, Metric, SummaryStrip, Toolbar, Rail, SettingsMenu };
+window.k8sChrome = { TopBar, SummaryStrip, Toolbar, Rail, SettingsMenu, attentionBySev };

@@ -177,8 +177,8 @@ function PodBox({
     cls.push(wl === highlight ? "wl-peer" : "wl-dim");
     if (!highlightActive) cls.push("wl-preview");
   }
-  // Labels read top-left like a table cell: name, then the request beneath.
   const inset = 2;
+  // Labels read top-left like a table cell: name, then the request beneath.
   const showName = rect.w >= 52 && rect.h >= 22;
   const showReq = showName && rect.h >= 38;
   const headerH = showReq ? 26 : showName ? 13 : 0;

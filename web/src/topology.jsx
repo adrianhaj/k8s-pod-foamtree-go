@@ -10,15 +10,15 @@ const GROUP_BY = [
   { id: "capacityType", label: "Capacity", missing: "no capacity type" },
 ];
 
-// [{ key, members: [{ node, idx }] }] sorted by key; "none" is one group
-// with an empty key. idx is the node's index in `nodes`, which picks its hue.
+// [{ key, members: [{ node }] }] sorted by key; "none" is one group
+// with an empty key.
 function groupNodes(nodes, groupBy) {
   const opt = GROUP_BY.find(g => g.id === groupBy) || GROUP_BY[0];
   const groups = new Map();
-  nodes.forEach((node, idx) => {
+  nodes.forEach(node => {
     const key = opt.id === "none" ? "" : node[opt.id] || opt.missing;
     if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push({ node, idx });
+    groups.get(key).push({ node });
   });
   return [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([key, members]) => ({ key, members }));
 }

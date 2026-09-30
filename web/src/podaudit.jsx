@@ -1,6 +1,6 @@
 // Pod audit vocabulary. The backend decides *which* best-practice rules a pod
 // breaks and sends slugs; this file is the single place that decides how each
-// slug looks, so the pod badge, the sidebar panel and the query agree.
+// slug looks, so the pod badge, the Problems tab and the query agree.
 
 // Ordered the way the backend emits findings.
 const POD_FINDINGS = {
