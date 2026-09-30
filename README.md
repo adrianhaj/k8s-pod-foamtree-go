@@ -112,6 +112,15 @@ The sidebar's **QoS & Eviction Risk** panel counts pods per class, riskiest firs
 
 The class is read from the pod's `status.qosClass`, which the API server sets when the pod is created. It is not recomputed from requests and limits. A pod with no reported class renders neutral and is not counted.
 
+## History
+
+The browser records every refresh that changed something: in memory, per
+tab, up to 64 MB gzipped (about 300 refreshes of a 5 000-pod cluster); a
+reload starts over. Drag the **History** slider in the sidebar to go back,
+**Play** replays the recording at one snapshot a second, **Live** returns.
+The auto-refresh keeps recording while you look back. In 3D, pods that
+appear or disappear between snapshots grow in and shrink out.
+
 ## Filtering
 
 The query bar in the header is a **highlighter, not a filter of last resort**: matching pods glow, everything else dims. No pod, node or box ever leaves the layout, so the shape of the cluster stays comparable while you narrow down. Once the query is non-empty and valid, a live counter inside the input reads `N / M pods` (and turns red at `0`).
