@@ -51,4 +51,9 @@ function watchTheme(cb) {
   return () => { mq.removeEventListener("change", cb); mo.disconnect(); };
 }
 
-window.k8sPrefs = { THEME_PREFS, safeStorage, readPref, writePref, resolveTheme, applyThemePref, currentTheme, watchTheme };
+const PANEL_KEY = "k8sfoams.panel";
+const PANEL_TABS = ["problems", "changes", "drain"];
+const PANEL_DEFAULT = { open: true, tab: "problems", max: false };
+const validPanel = v => !!v && typeof v.open === "boolean" && typeof v.max === "boolean" && PANEL_TABS.includes(v.tab);
+
+window.k8sPrefs = { PANEL_KEY, PANEL_DEFAULT, validPanel, THEME_PREFS, safeStorage, readPref, writePref, resolveTheme, applyThemePref, currentTheme, watchTheme };

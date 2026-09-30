@@ -7,13 +7,17 @@ const { workloadKey } = window.k8sWorkload;
 const { warnInfo, statusOf, WARNING_ORDER } = window.k8sNodeStatus;
 const { findingInfo, FINDING_ORDER, PodAuditBadge } = window.k8sPodAudit;
 const { ExportMenu } = window.k8sExport;
-const { fitMatch, FitPanel, FitVerdict, DrainSection } = window.k8sSimulate;
+const { getJSON, fitMatch, FitForm, FitSummary, FitVerdict, DrainResults } = window.k8sSimulate;
 const { QOS_INFO, QOS_ORDER } = window.k8sQos;
 const { assignNamespaces, utilTone, COLOR_MODES } = window.k8sPalette;
 const { Legend } = window.k8sLegend;
 const { GROUP_BY, groupNodes } = window.k8sTopology;
 const { pack, unpack, record, diff } = window.k8sHistory;
-const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref } = window.k8sPrefs;
+const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY, PANEL_DEFAULT, validPanel } = window.k8sPrefs;
+const { fmtMem, shortContext, clock, timeAgo } = window.k8sFormat;
+const { buildProblems, problemChips } = window.k8sProblems;
+const { pickShown } = window.k8sHighlight;
+const { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips } = window.k8sPanel;
 const THEME_KEY = "k8sfoams.theme";
 
 const METRICS = [
@@ -189,6 +193,12 @@ function App() {
     applyThemePref(themePref);
     writePref(safeStorage(), THEME_KEY, themePref);
   }, [themePref]);
+  const [panel, setPanel] = useState(() => readPref(safeStorage(), PANEL_KEY, window.innerHeight < 720 ? { ...PANEL_DEFAULT, open: false } : PANEL_DEFAULT, validPanel));
+  const panelSaved = useRef(false);
+  useEffect(() => {
+    if (!panelSaved.current) { panelSaved.current = true; return; }
+    writePref(safeStorage(), PANEL_KEY, panel);
+  }, [panel]);
 
   const [view, setView] = useState("2d");
   const [zoom, setZoom] = useState(0.7);
@@ -214,6 +224,20 @@ function App() {
   const sceneRef = useRef(null);
   // Last "Can I fit this pod?" answer: one verdict per node, or null.
   const [fit, setFit] = useState(null);
+  const SIM_IDLE = { mode: "drain", node: null, result: null, error: null, busy: false };
+  const [sim, setSim] = useState(SIM_IDLE);
+  // ponytail: the drain answer is a snapshot; a refresh does not re-run it.
+  const runDrain = async (name) => {
+    if (!name) return;
+    setSim(s => ({ ...s, mode: "drain", node: name, result: s.node === name ? s.result : null, busy: true, error: null }));
+    try {
+      const result = await getJSON(`/api/drain?${new URLSearchParams({ context, node: name })}`);
+      setSim(s => (s.node === name ? { ...s, result, busy: false } : s));
+    } catch (err) {
+      setSim(s => (s.node === name ? { ...s, result: null, error: err.message, busy: false } : s));
+    }
+  };
+  const podsByKey = useMemo(() => new Map(nodes.flatMap(n => n.pods.map(p => [`${p.namespace}/${p.name}`, p]))), [nodes]);
   const context = contexts[contextIdx] ? contexts[contextIdx].context : "";
   // Every refresh is recorded; `at` is the snapshot on screen (null = live).
   const [history, setHistory] = useState([]);
@@ -308,6 +332,7 @@ function App() {
     setSelectedWorkload(null);
     setHoveredWorkload(null);
     setFit(null);
+    setSim(SIM_IDLE);
     setAt(null);
     setPlaying(false);
     nsRef.current = new Map();
@@ -384,15 +409,22 @@ function App() {
         if (window.k8sQuery.podMatches(p, parsedQuery, n)) pods.add(p);
       }
     }
-    // Comparing highlights the added and resized pods, unless a query is typed.
-    if (!active && changes && changes.pods.size > 0) {
-      return { active: true, pods: changes.pods, dimNodes: new Set(), count: changes.pods.size, total, errors: parsedQuery.errors };
-    }
     return { active, pods, dimNodes, count: active ? pods.size : total, total, errors: parsedQuery.errors };
-  }, [nodes, parsedQuery, changes]);
+  }, [nodes, parsedQuery]);
+
+  const changeLists = useMemo(() => changes ? {
+    added: changes.added.map(x => `${x.pod.namespace}/${x.pod.name}`),
+    removed: changes.removed.map(x => `${x.pod.namespace}/${x.pod.name}`),
+    resized: changes.resized.map(r => resizeText(r, memUnit)),
+    nodes: changes.nodes.map(d => nodeDeltaText(d, memUnit)),
+  } : null, [changes, memUnit]);
 
   // A fit verdict takes over the map's dimming until it is cleared.
-  const shown = useMemo(() => (fit ? fitMatch(nodes, fit) : match), [fit, nodes, match]);
+  const fitShown = useMemo(() => (fit ? fitMatch(nodes, fit) : null), [fit, nodes]);
+  const shown = useMemo(() => pickShown({
+    match, tab: panel.open ? panel.tab : null, changes, nodes,
+    sim: { mode: sim.mode, fit: fitShown, node: sim.node },
+  }), [match, panel.open, panel.tab, changes, nodes, fitShown, sim.mode, sim.node]);
 
   const highlight = selectedWorkload || hoveredWorkload;
   const highlightActive = !!selectedWorkload;
@@ -480,6 +512,9 @@ function App() {
       .sort((a, b) => FINDING_ORDER.indexOf(a.slug) - FINDING_ORDER.indexOf(b.slug));
   }, [nodes]);
 
+  const problems = useMemo(() => buildProblems(nodes), [nodes]);
+  const chips = useMemo(() => problemChips(problems), [problems]);
+
   // Every class gets a row, even at zero — "no BestEffort pods" is the answer
   // an SRE is usually looking for. Pods with no reported class are not counted.
   const qosBreakdown = useMemo(() => {
@@ -511,18 +546,11 @@ function App() {
         doRefresh={loadData} refreshing={refreshing}
         lastRefresh={lastRefresh}
         nodeCount={nodes.length}
-        health={health}
-        audit={audit}
         qosBreakdown={qosBreakdown}
         colorBy={colorBy} setColorBy={setColorBy} nsMap={nsMap}
         query={query} setQuery={setQuery}
-        entries={entries} at={at} setAt={setAt}
-        playing={playing} setPlaying={setPlaying}
-        base={base} toggleCompare={toggleCompare} changes={changes} ctxName={ctxName}
         themePref={themePref} setThemePref={setThemePref}
-      >
-        <FitPanel context={context} result={fit} onResult={setFit} />
-      </Sidebar>
+      />
 
       <main className="main">
         {error && (
@@ -561,6 +589,7 @@ function App() {
         />
 
         <div className="grid-wrap" ref={gridRef}>
+          <MapChips lit={shown.lit} ring={shown.ring} />
           {view === "3d" ? (
             <Scene3D
               nodes={nodes}
@@ -596,11 +625,34 @@ function App() {
             />
           )}
         </div>
+
+        <BottomPanel panel={panel} setPanel={setPanel} counts={{ problems: problems.length, changes: changes ? changes.added.length + changes.removed.length + changes.resized.length : 0 }}>
+          {panel.tab === "problems" && (
+            <ProblemsTab rows={problems} chips={chips} query={query} setQuery={setQuery}
+              onPickNode={name => setFocused(nodes.find(n => n.name === name) || null)} />
+          )}
+          {panel.tab === "changes" && (
+            <ChangesTab entries={entries} at={at} atLabel={at == null ? "Live" : clock(at)}
+              onScrub={i => { setPlaying(false); setAt(i === entries.length - 1 ? null : entries[i].t); }}
+              playing={playing} onPlay={() => setPlaying(p => !p)} onLive={() => { setPlaying(false); setAt(null); }}
+              base={base} onCompare={toggleCompare}
+              baseLabel={base ? `${clock(base.t)}${base.context !== ctxName ? ` of ${shortContext(base.context)}` : ""}` : ""}
+              lists={changeLists} />
+          )}
+          {panel.tab === "drain" && (
+            <DrainTab mode={sim.mode} setMode={mode => setSim(s => ({ ...s, mode }))}
+              node={sim.node} setNode={name => setSim(s => ({ ...s, node: name, result: null, error: null, busy: false }))}
+              nodes={nodes} busy={sim.busy} error={sim.error} onRun={() => runDrain(sim.node)}
+              drainBody={sim.result && <DrainResults result={sim.result} podsByKey={podsByKey} fmtReq={fmtReq} />}
+              fitBody={<><FitForm context={context} onResult={setFit} />{fit && <FitSummary result={fit} onClear={() => setFit(null)} />}</>} />
+          )}
+        </BottomPanel>
       </main>
 
       {focused && (
-        <FocusOverlay node={focused} onClose={() => setFocused(null)} metric={metric} memUnit={memUnit} context={context}
-          fitReasons={fit && (fit.find(v => v.node === focused.name) || {}).reasons} />
+        <FocusOverlay node={focused} onClose={() => setFocused(null)} metric={metric} memUnit={memUnit}
+          fitReasons={fit && (fit.find(v => v.node === focused.name) || {}).reasons}
+          onDrain={name => { setPanel(p => ({ ...p, open: true, tab: "drain" })); setFocused(null); runDrain(name); }} />
       )}
     </div>
   );
@@ -611,8 +663,8 @@ function App() {
 function Sidebar({
   open, onToggle, view, setView, zoom, setZoom, groupBy, setGroupBy, metric, setMetric, metrics, memUnit, setMemUnit,
   refreshInterval, setRefreshInterval,
-  contexts, contextIdx, setContextIdx, doRefresh, refreshing, lastRefresh, nodeCount, health,
-  audit, qosBreakdown, colorBy, setColorBy, nsMap, query, setQuery, entries, at, setAt, playing, setPlaying, base, toggleCompare, changes, ctxName, themePref, setThemePref, children
+  contexts, contextIdx, setContextIdx, doRefresh, refreshing, lastRefresh, nodeCount,
+  qosBreakdown, colorBy, setColorBy, nsMap, query, setQuery, themePref, setThemePref
 }) {
   const is3d = view === "3d";
   return (
@@ -734,49 +786,6 @@ function Sidebar({
         </button>
       </div>
 
-      {entries.length > 0 && (
-        <div className="sidebar-section">
-          <div className="section-label">
-            <span>History</span>
-            <span className="section-value">{entries.length} snapshot{entries.length === 1 ? "" : "s"}</span>
-          </div>
-          <input type="range" min="0" max={entries.length - 1} step="1"
-            value={at == null ? entries.length - 1 : entries.findIndex(e => e.t === at)}
-            onChange={e => {
-              const i = +e.target.value;
-              setPlaying(false);
-              setAt(i === entries.length - 1 ? null : entries[i].t);
-            }}
-            className="slider" />
-          <div className="seg-note">
-            {at == null ? "live" : `${clock(at)} · ${timeAgo(at)}`} · recording since {clock(entries[0].t)}
-          </div>
-          <div className="seg seg-3">
-            <button className={playing ? "seg-on" : ""} onClick={() => setPlaying(p => !p)}>{playing ? "Pause" : "Play"}</button>
-            <button className={base ? "seg-on" : ""} onClick={toggleCompare}
-              title="Compare what is on screen from now on with this snapshot">Compare</button>
-            <button className={at == null ? "seg-on" : ""} onClick={() => { setPlaying(false); setAt(null); }}>Live</button>
-          </div>
-        </div>
-      )}
-
-      {changes && (
-        <div className="sidebar-section">
-          <div className="section-label">
-            <span>Changes</span>
-            <span className="section-value">
-              since {clock(base.t)}{base.context !== ctxName ? ` · ${shortContext(base.context)}` : ""}
-            </span>
-          </div>
-          <div className="health-rows">
-            <DiffList sev="ok" label="Pods added" items={changes.added.map(x => `${x.pod.namespace}/${x.pod.name}`)} />
-            <DiffList sev="danger" label="Pods removed" items={changes.removed.map(x => `${x.pod.namespace}/${x.pod.name}`)} />
-            <DiffList sev="warn" label="Workloads resized" items={changes.resized.map(r => resizeText(r, memUnit))} />
-            <DiffList sev="info" label="Nodes changed" items={changes.nodes.map(d => nodeDeltaText(d, memUnit))} />
-          </div>
-        </div>
-      )}
-
       <div className="sidebar-section">
         <div className="section-label">Memory unit</div>
         <div className="seg seg-3">
@@ -795,33 +804,8 @@ function Sidebar({
         </div>
       </div>
 
-      {children}
-
-      {/* Only rendered when something is actually wrong, so a healthy cluster
-          looks exactly as it did before this feature existed. A row toggles its
-          health: query, which lights the affected nodes and dims the rest. */}
-      {health.length > 0 && (
-        <div className="sidebar-section">
-          <div className="section-label">Node health</div>
-          <div className="health-rows">
-            {health.map(h => {
-              const token = `health:${h.slug}`;
-              const on = query.trim() === token;
-              return (
-                <button key={h.slug} className={`health-row audit-row ${on ? "audit-on" : ""}`}
-                  onClick={() => setQuery(on ? "" : token)}>
-                  <span className={`health-swatch sev-${h.sev}`} />
-                  <span className="health-name">{h.label}</span>
-                  <span className="health-count">{h.count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Riskiest class first. The swatches double as the legend for Color by →
-          QoS, and a row toggles its qos: query, like the audit panel below. */}
+          QoS, and a row toggles its qos: query, like the Problems chips. */}
       {nodeCount > 0 && (
         <div className="sidebar-section">
           <div className="section-label">QoS &amp; Eviction Risk</div>
@@ -842,29 +826,6 @@ function Sidebar({
         </div>
       )}
 
-      {/* Always shown once data is in: "nothing to fix" is an answer too. A row
-          toggles its audit: query, which reuses the match highlight in 2D and 3D. */}
-      {nodeCount > 0 && (
-        <div className="sidebar-section">
-          <div className="section-label">Audit &amp; Hygiene</div>
-          <div className="health-rows">
-            {audit.length === 0 && <div className="audit-clean">No issues found</div>}
-            {audit.map(a => {
-              const token = `audit:${a.slug}`;
-              const on = query.trim() === token;
-              return (
-                <button key={a.slug} className={`health-row audit-row ${on ? "audit-on" : ""}`}
-                  title={a.why} onClick={() => setQuery(on ? "" : token)}>
-                  <span className={`audit-swatch sev-${a.sev}`} />
-                  <span className="health-name">{a.label}</span>
-                  <span className="health-count">{a.count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       <div className="sidebar-footer">
         <div className="footer-row">
           <span className="dot dot-ok" />
@@ -877,22 +838,6 @@ function Sidebar({
         </div>
       </div>
     </aside>
-  );
-}
-
-// ponytail: lists stop at 100 rows; the counts stay exact. A virtual list if
-// someone needs to read a whole cluster-vs-cluster diff here.
-function DiffList({ sev, label, items }) {
-  return (
-    <details className="diff-list">
-      <summary className="health-row">
-        <span className={`audit-swatch sev-${sev}`} />
-        <span className="health-name">{label}</span>
-        <span className="health-count">{items.length}</span>
-      </summary>
-      {items.slice(0, 100).map(s => <div key={s} className="diff-item">{s}</div>)}
-      {items.length > 100 && <div className="diff-item">+{items.length - 100} more</div>}
-    </details>
   );
 }
 
@@ -1145,7 +1090,7 @@ function TreemapGrid({
 
 /* ─────────── Focus overlay ─────────── */
 
-function FocusOverlay({ node, onClose, metric, memUnit, context, fitReasons }) {
+function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain }) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card" onClick={e => e.stopPropagation()}>
@@ -1217,7 +1162,10 @@ function FocusOverlay({ node, onClose, metric, memUnit, context, fitReasons }) {
           </div>
         )}
         {fitReasons && <FitVerdict reasons={fitReasons} />}
-        <DrainSection context={context} node={node.name} />
+        <div className="overlay-sched">
+          <div className="ov-section-title">Drain simulation</div>
+          <button className="btn-primary" onClick={() => onDrain(node.name)}>Simulate drain</button>
+        </div>
         <div className="overlay-pods">
           <div className="ov-section-title">Workloads</div>
           {node.pods.length === 0 && <div className="empty-state">Node has no scheduled pods.</div>}
@@ -1309,41 +1257,6 @@ function MetricIcon({ kind }) {
       <path d="M4 4.5v7M6.5 4.5v7M9 4.5v7M11.5 4.5v7" stroke="currentColor" strokeWidth="1.1" />
     </svg>
   );
-}
-
-/* ─────────── Utils ─────────── */
-
-// Format a MiB memory value into the active unit. MiB/GiB keep their original
-// precision (and integer capacity); TiB uses adaptive decimals so a non-zero
-// quantity never renders as a flat "0" (TiB is coarse for node/pod memory).
-function fmtMem(mib, unit, capacity = false) {
-  const div = unit === "TiB" ? 1024 * 1024 : unit === "GiB" ? 1024 : 1;
-  const v = mib / div;
-  if (unit === "MiB") return v.toFixed(0);
-  if (unit === "GiB") return v.toFixed(capacity ? 0 : 1);
-  // TiB: grow decimals (2 → max 6) until the rounded value is non-zero.
-  if (v === 0) return "0";
-  let d = 2;
-  while (d < 6 && Number(v.toFixed(d)) === 0) d++;
-  return v.toFixed(d);
-}
-
-function shortContext(ctx) {
-  const last = ctx.split("/").pop();
-  const region = ctx.match(/(us|eu|ap)-[a-z]+-\d+/);
-  return region ? `${last} · ${region[0]}` : last;
-}
-
-function clock(ts) {
-  return new Date(ts).toLocaleTimeString([], { hour12: false });
-}
-
-function timeAgo(ts) {
-  const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 5) return "just now";
-  if (s < 60) return `${s}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  return `${Math.floor(s / 3600)}h ago`;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
