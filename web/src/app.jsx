@@ -17,7 +17,7 @@ const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY
 const { fmtMem, shortContext, clock, timeAgo } = window.k8sFormat;
 const { buildProblems, problemChips } = window.k8sProblems;
 const { pickShown } = window.k8sHighlight;
-const { BottomPanel, ProblemsTab } = window.k8sPanel;
+const { BottomPanel, ProblemsTab, ChangesTab } = window.k8sPanel;
 const THEME_KEY = "k8sfoams.theme";
 
 const METRICS = [
@@ -390,12 +390,15 @@ function App() {
         if (window.k8sQuery.podMatches(p, parsedQuery, n)) pods.add(p);
       }
     }
-    // Comparing highlights the added and resized pods, unless a query is typed.
-    if (!active && changes && changes.pods.size > 0) {
-      return { active: true, pods: changes.pods, dimNodes: new Set(), count: changes.pods.size, total, errors: parsedQuery.errors };
-    }
     return { active, pods, dimNodes, count: active ? pods.size : total, total, errors: parsedQuery.errors };
-  }, [nodes, parsedQuery, changes]);
+  }, [nodes, parsedQuery]);
+
+  const changeLists = useMemo(() => changes ? {
+    added: changes.added.map(x => `${x.pod.namespace}/${x.pod.name}`),
+    removed: changes.removed.map(x => `${x.pod.namespace}/${x.pod.name}`),
+    resized: changes.resized.map(r => resizeText(r, memUnit)),
+    nodes: changes.nodes.map(d => nodeDeltaText(d, memUnit)),
+  } : null, [changes, memUnit]);
 
   // A fit verdict takes over the map's dimming until it is cleared.
   const fitShown = useMemo(() => (fit ? fitMatch(nodes, fit) : null), [fit, nodes]);
@@ -527,9 +530,6 @@ function App() {
         qosBreakdown={qosBreakdown}
         colorBy={colorBy} setColorBy={setColorBy} nsMap={nsMap}
         query={query} setQuery={setQuery}
-        entries={entries} at={at} setAt={setAt}
-        playing={playing} setPlaying={setPlaying}
-        base={base} toggleCompare={toggleCompare} changes={changes} ctxName={ctxName}
         themePref={themePref} setThemePref={setThemePref}
       >
         <FitPanel context={context} result={fit} onResult={setFit} />
@@ -608,10 +608,18 @@ function App() {
           )}
         </div>
 
-        <BottomPanel panel={panel} setPanel={setPanel} counts={{ problems: problems.length }}>
+        <BottomPanel panel={panel} setPanel={setPanel} counts={{ problems: problems.length, changes: changes ? changes.added.length + changes.removed.length + changes.resized.length : 0 }}>
           {panel.tab === "problems" && (
             <ProblemsTab rows={problems} chips={chips} query={query} setQuery={setQuery}
               onPickNode={name => setFocused(nodes.find(n => n.name === name) || null)} />
+          )}
+          {panel.tab === "changes" && (
+            <ChangesTab entries={entries} at={at} atLabel={at == null ? "Live" : clock(at)}
+              onScrub={i => { setPlaying(false); setAt(i === entries.length - 1 ? null : entries[i].t); }}
+              playing={playing} onPlay={() => setPlaying(p => !p)} onLive={() => { setPlaying(false); setAt(null); }}
+              base={base} onCompare={toggleCompare}
+              baseLabel={base ? `${clock(base.t)}${base.context !== ctxName ? ` of ${shortContext(base.context)}` : ""}` : ""}
+              lists={changeLists} />
           )}
         </BottomPanel>
       </main>
@@ -630,7 +638,7 @@ function Sidebar({
   open, onToggle, view, setView, zoom, setZoom, groupBy, setGroupBy, metric, setMetric, metrics, memUnit, setMemUnit,
   refreshInterval, setRefreshInterval,
   contexts, contextIdx, setContextIdx, doRefresh, refreshing, lastRefresh, nodeCount,
-  qosBreakdown, colorBy, setColorBy, nsMap, query, setQuery, entries, at, setAt, playing, setPlaying, base, toggleCompare, changes, ctxName, themePref, setThemePref, children
+  qosBreakdown, colorBy, setColorBy, nsMap, query, setQuery, themePref, setThemePref, children
 }) {
   const is3d = view === "3d";
   return (
@@ -752,49 +760,6 @@ function Sidebar({
         </button>
       </div>
 
-      {entries.length > 0 && (
-        <div className="sidebar-section">
-          <div className="section-label">
-            <span>History</span>
-            <span className="section-value">{entries.length} snapshot{entries.length === 1 ? "" : "s"}</span>
-          </div>
-          <input type="range" min="0" max={entries.length - 1} step="1"
-            value={at == null ? entries.length - 1 : entries.findIndex(e => e.t === at)}
-            onChange={e => {
-              const i = +e.target.value;
-              setPlaying(false);
-              setAt(i === entries.length - 1 ? null : entries[i].t);
-            }}
-            className="slider" />
-          <div className="seg-note">
-            {at == null ? "live" : `${clock(at)} · ${timeAgo(at)}`} · recording since {clock(entries[0].t)}
-          </div>
-          <div className="seg seg-3">
-            <button className={playing ? "seg-on" : ""} onClick={() => setPlaying(p => !p)}>{playing ? "Pause" : "Play"}</button>
-            <button className={base ? "seg-on" : ""} onClick={toggleCompare}
-              title="Compare what is on screen from now on with this snapshot">Compare</button>
-            <button className={at == null ? "seg-on" : ""} onClick={() => { setPlaying(false); setAt(null); }}>Live</button>
-          </div>
-        </div>
-      )}
-
-      {changes && (
-        <div className="sidebar-section">
-          <div className="section-label">
-            <span>Changes</span>
-            <span className="section-value">
-              since {clock(base.t)}{base.context !== ctxName ? ` · ${shortContext(base.context)}` : ""}
-            </span>
-          </div>
-          <div className="health-rows">
-            <DiffList sev="ok" label="Pods added" items={changes.added.map(x => `${x.pod.namespace}/${x.pod.name}`)} />
-            <DiffList sev="danger" label="Pods removed" items={changes.removed.map(x => `${x.pod.namespace}/${x.pod.name}`)} />
-            <DiffList sev="warn" label="Workloads resized" items={changes.resized.map(r => resizeText(r, memUnit))} />
-            <DiffList sev="info" label="Nodes changed" items={changes.nodes.map(d => nodeDeltaText(d, memUnit))} />
-          </div>
-        </div>
-      )}
-
       <div className="sidebar-section">
         <div className="section-label">Memory unit</div>
         <div className="seg seg-3">
@@ -849,22 +814,6 @@ function Sidebar({
         </div>
       </div>
     </aside>
-  );
-}
-
-// ponytail: lists stop at 100 rows; the counts stay exact. A virtual list if
-// someone needs to read a whole cluster-vs-cluster diff here.
-function DiffList({ sev, label, items }) {
-  return (
-    <details className="diff-list">
-      <summary className="health-row">
-        <span className={`audit-swatch sev-${sev}`} />
-        <span className="health-name">{label}</span>
-        <span className="health-count">{items.length}</span>
-      </summary>
-      {items.slice(0, 100).map(s => <div key={s} className="diff-item">{s}</div>)}
-      {items.length > 100 && <div className="diff-item">+{items.length - 100} more</div>}
-    </details>
   );
 }
 

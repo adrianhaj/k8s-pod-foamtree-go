@@ -79,4 +79,50 @@ function ProblemsTab({ rows, chips, query, setQuery, onPickNode }) {
   );
 }
 
-window.k8sPanel = { BottomPanel, ProblemsTab };
+function ChangeCol({ sev, glyph, label, items }) {
+  return (
+    <div className="chg-col">
+      <div className="chg-h"><SevGlyph sev={sev} glyph={glyph} />{label}<em>{items.length}</em></div>
+      <div className="chg-list">
+        {items.slice(0, ROW_CAP).map(s => <div key={s} className="chg-it" title={s}>{s}</div>)}
+        {items.length > ROW_CAP && <div className="chg-it mut">+{items.length - ROW_CAP} more</div>}
+      </div>
+    </div>
+  );
+}
+
+function ChangesTab({ entries, at, atLabel, onScrub, playing, onPlay, onLive, base, onCompare, baseLabel, lists }) {
+  if (entries.length === 0) {
+    return <div className="panel-empty">Recording starts with the first refresh. Changes appear once there are two snapshots.</div>;
+  }
+  const idx = at == null ? entries.length - 1 : entries.findIndex(e => e.t === at);
+  return (
+    <>
+      <div className="panel-bar">
+        <input type="range" id="history-scrub" aria-label="History" min="0" max={entries.length - 1} step="1"
+          value={idx} onChange={e => onScrub(+e.target.value)} />
+        <span>{atLabel} · {entries.length} snapshot{entries.length === 1 ? "" : "s"}</span>
+        <div className="seg">
+          <button className={playing ? "seg-on" : ""} onClick={onPlay}>{playing ? "Pause" : "Play"}</button>
+          <button className={at == null ? "seg-on" : ""} onClick={onLive}>Live</button>
+        </div>
+        <button className="btn" onClick={onCompare}>{base ? "Stop comparing" : "Compare with this snapshot"}</button>
+      </div>
+      {base ? (
+        <>
+          <p className="panel-note">Compared with the snapshot from <b>{baseLabel}</b>. The map lights added and resized pods.</p>
+          <div className="chg-cols">
+            <ChangeCol sev="ok" glyph="+" label="Pods added" items={lists.added} />
+            <ChangeCol sev="danger" glyph="−" label="Pods removed" items={lists.removed} />
+            <ChangeCol sev="warn" glyph="~" label="Workloads resized" items={lists.resized} />
+            <ChangeCol sev="info" glyph="Δ" label="Nodes changed" items={lists.nodes} />
+          </div>
+        </>
+      ) : (
+        <div className="panel-empty">Pick a snapshot with the slider and press Compare. The comparison survives a context switch, so it also compares two contexts.</div>
+      )}
+    </>
+  );
+}
+
+window.k8sPanel = { BottomPanel, ProblemsTab, ChangesTab };
