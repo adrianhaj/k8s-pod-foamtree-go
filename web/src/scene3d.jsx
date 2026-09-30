@@ -4,9 +4,9 @@
 // DOM nodes per pod and fell to 1 fps at 5k pods. Frames are drawn on demand
 // (camera move, data or style change, animation), never in an idle loop.
 //
-// Colours are the CSS view's, unchanged: unlit faces coloured like its cube
-// faces, its plate and label styling, its warning hatch, and its CSS filter
-// values for dim / match / workload states, applied here in the same sRGB math.
+// Colours come from the CSS tokens (read live, so the scene follows the theme);
+// the CSS filter values for dim / match / workload states are applied here in
+// the same sRGB math.
 
 const { workloadKey } = window.k8sWorkload;
 const { findingInfo } = window.k8sPodAudit;
@@ -90,11 +90,11 @@ function layout(nodes, groupBy) {
   let x0 = 0, maxZ = 0;
   for (const { key, members } of groupNodes(nodes, groupBy)) {
     const cols = Math.ceil(Math.sqrt(members.length));
-    members.forEach(({ node, idx }, i) => {
+    members.forEach(({ node }, i) => {
       const x = x0 + (i % cols) * (PLATE + PLATE_GAP);
       const z = Math.floor(i / cols) * (PLATE + PLATE_GAP);
       maxZ = Math.max(maxZ, z);
-      plates.push({ node, idx, x, z });
+      plates.push({ node, x, z });
       const pods = [...node.pods].sort((a, b) => b.cpu - a.cpu);
       const per = Math.max(1, Math.ceil(Math.sqrt(pods.length)));
       const cell = PLATE / per;
@@ -102,7 +102,7 @@ function layout(nodes, groupBy) {
         const w = Math.min(cell * 0.86, footprint(pod.cpu));
         const h = tall(pod.mem);
         cubes.push({
-          pod, node, nodeIdx: idx, w, h, wl: workloadKey(pod.name),
+          pod, node, w, h, wl: workloadKey(pod.name),
           x: x - PLATE / 2 + cell * ((j % per) + 0.5),
           z: z - PLATE / 2 + cell * (Math.floor(j / per) + 0.5),
           // A shell only grows on the axes that have a limit.
@@ -152,7 +152,7 @@ function patternTexture(T, draw, repeat) {
   return tex;
 }
 
-// The plate label: a chip with the dim name, utilisation in its tone, and a
+// The plate label: a chip with the name in --text, utilisation in its tone, and a
 // severity mark when unhealthy. Group labels use the same chip.
 function labelSprite(T, { name, util, sev }, height) {
   const px = 44, pad = 18, measure = document.createElement("canvas").getContext("2d");
@@ -562,6 +562,11 @@ function Scene3D({
 function SceneLegend() {
   return (
     <div className="scene-legend">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" aria-hidden="true">
+        <polygon points="12,3 20,7.5 12,12 4,7.5" fill="var(--accent)" fillOpacity=".5" />
+        <polygon points="4,7.5 12,12 12,21 4,16.5" />
+        <polygon points="20,7.5 12,12 12,21 20,16.5" />
+      </svg>
       <div>Footprint = CPU request</div>
       <div>Height = memory request</div>
       <div>Outline = limits, where set</div>

@@ -1125,7 +1125,7 @@ function TreemapGrid({
 
   return (
     <div className="grid" ref={containerRef}>
-      {ready && groupBy === "none" && cards(nodes.map((node, idx) => ({ node, idx })), 0, 0, box.w, box.h)}
+      {ready && groupBy === "none" && cards(nodes.map(node => ({ node })), 0, 0, box.w, box.h)}
       {groups.map(g => {
         const u = g.members.reduce((s, m) => s + used(m.node), 0) / (g.value || 1), n = g.members.length;
         return (

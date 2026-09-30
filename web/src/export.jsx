@@ -2,8 +2,10 @@
 //
 // The 2D SVG is drawn from the data with the treemap's own squarify layout and
 // colours instead of rasterising the page: it stays vector for decks, needs no
-// library, and the PNG is that SVG drawn onto a canvas. It mirrors NodeCard and
-// PodBox in treemap.jsx, so a change to their look belongs in both.
+// library, and the PNG is that SVG drawn onto a canvas. It mirrors the colours
+// and states of NodeCard and PodBox in treemap.jsx, so a change to those belongs
+// in both; the node header omits the instance type and mini utilization bar, and
+// pods omit the request line.
 
 const { squarify, cardItems, metricCap, metricValue } = window.k8sTreemap;
 const { worstSeverity, WarnIcon } = window.k8sNodeStatus;
@@ -27,7 +29,7 @@ function exportLook() {
   const pct = name => parseFloat(token(name, "20%")) / 100;
   return {
     bg: t("--bg"), panel: t("--panel"), line: t("--line"), text: t("--text"), dim: t("--text-dim"),
-    soft: t("--text-soft"), accent: t("--accent"), track: t("--bg-3"),
+    accent: t("--accent"),
     tint: { fill: pct("--tint-fill"), edge: pct("--tint-edge"), box: pct("--tint-box") },
     sev: { danger: t("--danger"), warn: t("--warn"), info: t("--info") },
     hatch: {
@@ -44,7 +46,7 @@ function exportLook() {
 function TreemapSVG({ nodes, width, height, metric, colorBy, nsMap, match, highlight, highlightActive }) {
   const pad = 14; // .grid-wrap padding
   const slots = squarify(
-    nodes.map((node, idx) => ({ node, idx, value: metricCap(node, metric) })),
+    nodes.map((node, idx) => ({ node, value: metricCap(node, metric) })),
     pad, pad, width - pad * 2, height - pad * 2
   );
   const look = { ...exportLook(), queryActive: !!(match && match.active), match, highlight, pinned: highlightActive, colorBy, nsMap };

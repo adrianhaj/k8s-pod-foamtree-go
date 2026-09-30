@@ -254,15 +254,15 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   display: flex; align-items: center; justify-content: center;
   gap: 8px;
   padding: 9px 12px;
-  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  background: var(--accent);
   color: var(--on-accent);
   border-radius: var(--r-md);
   font-weight: 600;
   font-size: 12px;
-  box-shadow: 0 4px 14px -4px var(--accent), inset 0 1px 0 color-mix(in srgb, var(--text) 20%, transparent);
+  box-shadow: none;
   transition: transform .1s;
 }
-.btn-primary:hover { transform: translateY(-1px); }
+.btn-primary:hover { background: var(--accent-2); transform: translateY(-1px); }
 .btn-primary:active { transform: translateY(0); }
 .btn-primary.spinning .refresh-icon { animation: spin .6s linear infinite; }
 
@@ -517,6 +517,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 
 /* Pods + containers */
 .pod-box { position: absolute; border-radius: 2px; overflow: hidden;
+  transition: opacity .18s, box-shadow .18s;
   background: color-mix(in srgb, var(--pod-c) var(--tint-fill), var(--panel));
   border: 1px solid color-mix(in srgb, var(--pod-c) var(--tint-edge), var(--panel)); }
 .pod-label, .pod-req { position: absolute; left: 5px; right: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -878,7 +879,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   color: var(--text);
 }
 .view-pill button.view-on.view-3d {
-  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  background: var(--accent);
   color: var(--on-accent);
 }
 
@@ -1136,7 +1137,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   pointer-events: none;
 }
 
-.scene-legend { position: absolute; left: 14px; bottom: 14px; z-index: 2; display: grid; gap: 2px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; font-size: 11px; line-height: 1.45; color: var(--text-dim); }
+.scene-legend { position: absolute; left: 14px; bottom: 14px; z-index: 2; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 10px; padding: 8px 12px; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); font-size: 11px; line-height: 1.45; color: var(--text-dim); }
 
 .cube-tip {
   position: fixed;
@@ -1177,7 +1178,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
    Placed last on purpose: the 3D rules have to out-order .plate:hover, which
    they tie with on specificity. */
 
-/* outline rather than border-color: PodBox sets its border colour inline.
+/* outline rather than border-color: the pod border is CSS (tinted by --pod-c).
    z-index 1 lifts a peer over its sibling pods but stays under .node-header
    (z-index 2), so the glow never bleeds across the node name. */
 .pod-box.wl-peer {
