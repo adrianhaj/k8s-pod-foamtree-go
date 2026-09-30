@@ -587,53 +587,35 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 .pod-empty {
   position: absolute;
   border-radius: 6px;
-  background: repeating-linear-gradient(
-    45deg,
-    color-mix(in srgb, var(--text) 4%, transparent),
-    color-mix(in srgb, var(--text) 4%, transparent) 4px,
-    color-mix(in srgb, var(--text) 8%, transparent) 4px,
-    color-mix(in srgb, var(--text) 8%, transparent) 8px
-  );
+  background: repeating-linear-gradient(135deg, var(--hatch-0) 0 5px, var(--hatch-1) 5px 7px);
   border: 1px dashed color-mix(in srgb, var(--text) 12%, transparent);
   display: flex; align-items: center; justify-content: center;
   font-family: var(--font-mono);
   font-size: 10px;
-  color: color-mix(in srgb, var(--text) 45%, transparent);
+  color: var(--text-dim);
   letter-spacing: -0.01em;
 }
 
-/* Free capacity on a node that refuses pods is not really free. Same 45deg
+/* Free capacity on a node that refuses pods is not really free. Same 135deg
    recipe as .pod-empty above, dialled up and tinted by severity so a full node
    and an unusable one never look alike. */
 .pod-empty.warn-danger, .pod-empty.warn-warn, .pod-empty.warn-info {
   border-style: solid;
 }
 .pod-empty.warn-danger {
-  background: repeating-linear-gradient(
-    45deg,
-    color-mix(in srgb, var(--danger) 10%, transparent), color-mix(in srgb, var(--danger) 10%, transparent) 5px,
-    color-mix(in srgb, var(--danger) 28%, transparent) 5px, color-mix(in srgb, var(--danger) 28%, transparent) 10px
-  );
+  background: repeating-linear-gradient(135deg, var(--hatch-danger-0) 0 5px, var(--hatch-danger-1) 5px 7px);
   border-color: color-mix(in srgb, var(--danger) 55%, transparent);
-  color: color-mix(in srgb, var(--text) 70%, transparent);
+  color: var(--hatch-danger-text);
 }
 .pod-empty.warn-warn {
-  background: repeating-linear-gradient(
-    45deg,
-    color-mix(in srgb, var(--warn) 10%, transparent), color-mix(in srgb, var(--warn) 10%, transparent) 5px,
-    color-mix(in srgb, var(--warn) 26%, transparent) 5px, color-mix(in srgb, var(--warn) 26%, transparent) 10px
-  );
+  background: repeating-linear-gradient(135deg, var(--hatch-warn-0) 0 5px, var(--hatch-warn-1) 5px 7px);
   border-color: color-mix(in srgb, var(--warn) 50%, transparent);
-  color: color-mix(in srgb, var(--text) 70%, transparent);
+  color: var(--hatch-warn-text);
 }
 .pod-empty.warn-info {
-  background: repeating-linear-gradient(
-    45deg,
-    color-mix(in srgb, var(--info) 8%, transparent), color-mix(in srgb, var(--info) 8%, transparent) 5px,
-    color-mix(in srgb, var(--info) 20%, transparent) 5px, color-mix(in srgb, var(--info) 20%, transparent) 10px
-  );
+  background: repeating-linear-gradient(135deg, var(--hatch-info-0) 0 5px, var(--hatch-info-1) 5px 7px);
   border-color: color-mix(in srgb, var(--info) 45%, transparent);
-  color: color-mix(in srgb, var(--text) 65%, transparent);
+  color: var(--hatch-info-text);
 }
 
 /* Node warning badge, shared by the 2D header and the 3D plate label. */
@@ -656,7 +638,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 
 .overlay {
   position: fixed; inset: 0;
-  background: var(--panel);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
   display: grid; place-items: center;
   z-index: 100;
   animation: fadeIn .2s;
@@ -1120,27 +1102,15 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
    in plate space would land axis-parallel on screen. This angle is what reads
    as diagonal to the eye, matching the 2D card. */
 .plate.warn-danger::before {
-  background-image: repeating-linear-gradient(
-    0deg,
-    color-mix(in srgb, var(--danger) 6%, transparent), color-mix(in srgb, var(--danger) 6%, transparent) 6px,
-    color-mix(in srgb, var(--danger) 24%, transparent) 6px, color-mix(in srgb, var(--danger) 24%, transparent) 12px
-  );
+  background-image: repeating-linear-gradient(0deg, var(--hatch-danger-0) 0 6px, var(--hatch-danger-1) 6px 12px);
   background-size: auto;
 }
 .plate.warn-warn::before {
-  background-image: repeating-linear-gradient(
-    0deg,
-    color-mix(in srgb, var(--warn) 6%, transparent), color-mix(in srgb, var(--warn) 6%, transparent) 6px,
-    color-mix(in srgb, var(--warn) 22%, transparent) 6px, color-mix(in srgb, var(--warn) 22%, transparent) 12px
-  );
+  background-image: repeating-linear-gradient(0deg, var(--hatch-warn-0) 0 6px, var(--hatch-warn-1) 6px 12px);
   background-size: auto;
 }
 .plate.warn-info::before {
-  background-image: repeating-linear-gradient(
-    0deg,
-    color-mix(in srgb, var(--info) 5%, transparent), color-mix(in srgb, var(--info) 5%, transparent) 6px,
-    color-mix(in srgb, var(--info) 16%, transparent) 6px, color-mix(in srgb, var(--info) 16%, transparent) 12px
-  );
+  background-image: repeating-linear-gradient(0deg, var(--hatch-info-0) 0 6px, var(--hatch-info-1) 6px 12px);
   background-size: auto;
 }
 
