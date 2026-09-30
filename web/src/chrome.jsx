@@ -46,7 +46,10 @@ function Menu({ className = "", label, title, children }) {
     const close = e => {
       const d = ref.current;
       if (!d || !d.open) return;
-      if (e.type === "keydown" ? e.key === "Escape" : !d.contains(e.target)) d.open = false;
+      if (e.type === "keydown" ? e.key === "Escape" : !d.contains(e.target)) {
+        if (d.contains(document.activeElement)) d.querySelector("summary").focus();
+        d.open = false;
+      }
     };
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", close);
@@ -55,7 +58,12 @@ function Menu({ className = "", label, title, children }) {
   return (
     <details className={`menu ${className}`} ref={ref}>
       <summary title={title}>{label}</summary>
-      <div className="menu-pop" role="menu" onClick={e => { if (e.target.closest("[role^=menuitem]")) ref.current.open = false; }}>
+      <div className="menu-pop" role="menu" onClick={e => {
+        if (!e.target.closest("[role^=menuitem]")) return;
+        const d = ref.current;
+        if (d.contains(document.activeElement)) d.querySelector("summary").focus();
+        d.open = false;
+      }}>
         {children}
       </div>
     </details>
@@ -93,7 +101,7 @@ function TopBar({
       {queryBar}
       <div className="topbar-right">
         <span className={`status${error ? " is-error" : ""}`} title={error || ""}>
-          <i className="status-dot" />{error ? "Cluster unreachable" : `Updated ${timeAgo(lastRefresh)}`}
+          <i className="status-dot" /><span className="status-text">{error ? "Cluster unreachable" : `Updated ${timeAgo(lastRefresh)}`}</span>
         </span>
         <Menu className="refresh-menu" title="Auto-refresh" label={<>Auto-refresh {refreshLabel(refreshInterval)}<Icon name="chev" size={12} /></>}>
           {REFRESH_CHOICES.map(([s, l]) => (
@@ -154,7 +162,7 @@ function SummaryStrip({ totals, memUnit, qosBreakdown, attention, extCell, query
         <div className="metric-v">{totals.nodes} <small>· {needy ? `${needy} need attention` : "all schedulable"}</small></div>
         <div className="metric-glyphs">
           {attention.map(a => (
-            <button key={a.sev} aria-pressed={q === a.query} onClick={() => toggle(a.query)} title={`Highlight ${a.query}`}>
+            <button key={a.sev} aria-label={`${a.count} nodes, ${a.query}`} aria-pressed={q === a.query} onClick={() => toggle(a.query)} title={`Highlight ${a.query}`}>
               <SevGlyph sev={a.sev} />{a.count}
             </button>
           ))}

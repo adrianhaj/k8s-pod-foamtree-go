@@ -59,7 +59,7 @@ A node without the label goes to its own group, `no zone`, `no pool`, and so on.
 - **Memory unit**: MiB, GiB (default), or TiB, under Settings on the rail.
 - **Size by**: CPU or Memory, in the toolbar (in 3D, a **Zoom** slider takes its place).
 - **Color by**: in the toolbar. *Namespace* (default) colors each pod by its namespace; *QoS* by its QoS class (see [QoS & eviction risk](#qos--eviction-risk)); *Problems* by the severity of its audit findings. A legend sits beside it.
-- **Context**: the context picker in the top bar lists every context from your kubeconfig, active one first, tagged by provider. **Switching only changes the context inside the k8sfoams web server — your ~/.kube/config file is never modified.**
+- **Context**: the context picker in the top bar lists every context from your kubeconfig, in kubeconfig order, the active one checked, tagged by provider. **Switching only changes the context inside the k8sfoams web server — your ~/.kube/config file is never modified.**
 - **Refresh**: the Auto-refresh menu in the top bar (Off, 15 s … 10 min), plus a *Refresh now* button beside it.
 - **Filter**: the query bar in the top bar highlights matching pods and dims the rest — nothing is removed from the view. See [Filtering](#filtering) for the full grammar.
 - **Focus**: click a node to open an overlay listing its pods with per-pod CPU/memory and container breakdown, plus its instance type, zone and pool.
