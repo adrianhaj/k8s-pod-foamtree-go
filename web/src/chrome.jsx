@@ -21,7 +21,7 @@ function refreshLabel(sec) {
 // Nodes needing attention, one entry per severity present, worst first. Each
 // carries the most common warning of its severity, which its glyph toggles.
 function attentionBySev(nodes) {
-  const { worstSeverity, warnInfo } = window.k8sNodeStatus;
+  const { worstSeverity, warnInfo, SEV_RANK } = window.k8sNodeStatus;
   const by = new Map();
   for (const n of nodes) {
     const sev = worstSeverity(n.warnings);
@@ -32,8 +32,7 @@ function attentionBySev(nodes) {
     e.slugs.set(slug, (e.slugs.get(slug) || 0) + 1);
     by.set(sev, e);
   }
-  return ["danger", "warn", "info"].filter(s => by.has(s)).map(s => {
-    const e = by.get(s);
+  return [...by].sort(([a], [b]) => SEV_RANK[b] - SEV_RANK[a]).map(([s, e]) => {
     const [slug] = [...e.slugs].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0];
     return { sev: s, count: e.count, query: `health:${slug}` };
   });
@@ -42,27 +41,26 @@ function attentionBySev(nodes) {
 // A <details> dropdown that closes on a pick, an outside click or Escape.
 function Menu({ className = "", label, title, children }) {
   const ref = useRef(null);
+  const close = () => {
+    const d = ref.current;
+    if (d.contains(document.activeElement)) d.querySelector("summary").focus();
+    d.open = false;
+  };
   useEffect(() => {
-    const close = e => {
+    const onDoc = e => {
       const d = ref.current;
       if (!d || !d.open) return;
-      if (e.type === "keydown" ? e.key === "Escape" : !d.contains(e.target)) {
-        if (d.contains(document.activeElement)) d.querySelector("summary").focus();
-        d.open = false;
-      }
+      if (e.type === "keydown" ? e.key === "Escape" : !d.contains(e.target)) close();
     };
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", close);
-    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", close); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onDoc);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onDoc); };
   }, []);
   return (
     <details className={`menu ${className}`} ref={ref}>
       <summary title={title}>{label}</summary>
       <div className="menu-pop" role="menu" onClick={e => {
-        if (!e.target.closest("[role^=menuitem]")) return;
-        const d = ref.current;
-        if (d.contains(document.activeElement)) d.querySelector("summary").focus();
-        d.open = false;
+        if (e.target.closest("[role^=menuitem]")) close();
       }}>
         {children}
       </div>
@@ -70,8 +68,8 @@ function Menu({ className = "", label, title, children }) {
   );
 }
 
-const radio = (on, onPick, label, extra = null) => (
-  <button role="menuitemradio" aria-checked={on} onClick={onPick}>
+const radio = (key, on, onPick, label, extra = null) => (
+  <button key={key} role="menuitemradio" aria-checked={on} onClick={onPick}>
     <span className="menu-check">{on ? "✓" : ""}</span>{label}{extra}
   </button>
 );
@@ -91,11 +89,7 @@ function TopBar({
           <span className="ctx-k">Context</span><b>{shortContext(cur.context)}</b>
           <span className="tag">{providerOf(cur.context)}</span><Icon name="chev" size={12} />
         </>}>
-          {contexts.map((c, i) => (
-            <React.Fragment key={c.context}>
-              {radio(i === contextIdx, () => setContextIdx(i), shortContext(c.context), <span className="tag">{providerOf(c.context)}</span>)}
-            </React.Fragment>
-          ))}
+          {contexts.map((c, i) => radio(c.context, i === contextIdx, () => setContextIdx(i), shortContext(c.context), <span className="tag">{providerOf(c.context)}</span>))}
         </Menu>
       )}
       {queryBar}
@@ -104,9 +98,7 @@ function TopBar({
           <i className="status-dot" /><span className="status-text">{error ? "Cluster unreachable" : `Updated ${timeAgo(lastRefresh)}`}</span>
         </span>
         <Menu className="refresh-menu" title="Auto-refresh" label={<>Auto-refresh {refreshLabel(refreshInterval)}<Icon name="chev" size={12} /></>}>
-          {REFRESH_CHOICES.map(([s, l]) => (
-            <React.Fragment key={s}>{radio(s === refreshInterval, () => setRefreshInterval(s), l)}</React.Fragment>
-          ))}
+          {REFRESH_CHOICES.map(([s, l]) => radio(s, s === refreshInterval, () => setRefreshInterval(s), l))}
         </Menu>
         <button className={`icon-btn${refreshing ? " spinning" : ""}`} onClick={onRefresh} title="Refresh now" aria-label="Refresh now">
           <Icon name="refresh" size={14} />
@@ -210,11 +202,9 @@ function SettingsMenu({ themePref, setThemePref, memUnit, setMemUnit }) {
   return (
     <Menu className="settings" title="Settings" label={<Icon name="gear" />}>
       <div className="menu-h">Theme</div>
-      {[["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(([id, l]) => (
-        <React.Fragment key={id}>{radio(themePref === id, () => setThemePref(id), l)}</React.Fragment>
-      ))}
+      {[["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(([id, l]) => radio(id, themePref === id, () => setThemePref(id), l))}
       <div className="menu-h">Memory unit</div>
-      {["MiB", "GiB", "TiB"].map(u => <React.Fragment key={u}>{radio(memUnit === u, () => setMemUnit(u), u)}</React.Fragment>)}
+      {["MiB", "GiB", "TiB"].map(u => radio(u, memUnit === u, () => setMemUnit(u), u))}
     </Menu>
   );
 }

@@ -3,7 +3,7 @@
 const { useState, useEffect, useMemo, useRef } = React;
 const { NodeCard, metricCap, metricValue } = window.k8sTreemap;
 const { Scene3D } = window.k8sScene3D;
-const { workloadKey } = window.k8sWorkload;
+const { workloadKey, podKey } = window.k8sWorkload;
 const { warnInfo, statusOf } = window.k8sNodeStatus;
 const { findingInfo, PodAuditBadge } = window.k8sPodAudit;
 const { ExportMenu } = window.k8sExport;
@@ -20,6 +20,7 @@ const { pickShown } = window.k8sHighlight;
 const { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips } = window.k8sPanel;
 const { TopBar, SummaryStrip, Toolbar, Rail, SettingsMenu, attentionBySev } = window.k8sChrome;
 const THEME_KEY = "k8sfoams.theme";
+const SIM_IDLE = { mode: "drain", node: null, result: null, error: null, busy: false };
 
 const METRICS = [
   { id: "cpu", label: "CPU" },
@@ -220,7 +221,6 @@ function App() {
   const sceneRef = useRef(null);
   // Last "Can I fit this pod?" answer: one verdict per node, or null.
   const [fit, setFit] = useState(null);
-  const SIM_IDLE = { mode: "drain", node: null, result: null, error: null, busy: false };
   const [sim, setSim] = useState(SIM_IDLE);
   // ponytail: the drain answer is a snapshot; a refresh does not re-run it.
   const runDrain = async (name) => {
@@ -233,7 +233,7 @@ function App() {
       setSim(s => (s.node === name ? { ...s, result: null, error: err.message, busy: false } : s));
     }
   };
-  const podsByKey = useMemo(() => new Map(nodes.flatMap(n => n.pods.map(p => [`${p.namespace}/${p.name}`, p]))), [nodes]);
+  const podsByKey = useMemo(() => sim.result ? new Map(nodes.flatMap(n => n.pods.map(p => [podKey(p), p]))) : null, [nodes, sim.result]);
   const context = contexts[contextIdx] ? contexts[contextIdx].context : "";
   // Every refresh is recorded; `at` is the snapshot on screen (null = live).
   const [history, setHistory] = useState([]);
@@ -379,6 +379,7 @@ function App() {
 
   const changes = useMemo(() => (base && baseNodes ? diff(baseNodes, nodes) : null), [base, baseNodes, nodes]);
   const toggleCompare = () => setBase(b => (b ? null : at == null ? entries[entries.length - 1] : entries.find(e => e.t === at)));
+  const goLive = () => { setPlaying(false); setAt(null); };
 
   const metrics = useMemo(() => {
     const keys = new Set(nodes.flatMap(n => Object.keys(n.ext)));
@@ -409,8 +410,8 @@ function App() {
   }, [nodes, parsedQuery]);
 
   const changeLists = useMemo(() => changes ? {
-    added: changes.added.map(x => `${x.pod.namespace}/${x.pod.name}`),
-    removed: changes.removed.map(x => `${x.pod.namespace}/${x.pod.name}`),
+    added: changes.added.map(x => podKey(x.pod)),
+    removed: changes.removed.map(x => podKey(x.pod)),
     resized: changes.resized.map(r => resizeText(r, memUnit)),
     nodes: changes.nodes.map(d => nodeDeltaText(d, memUnit)),
   } : null, [changes, memUnit]);
@@ -535,7 +536,7 @@ function App() {
           settings={<SettingsMenu themePref={themePref} setThemePref={setThemePref} memUnit={memUnit} setMemUnit={setMemUnit} />} />
         <MapChips lit={shown.lit} ring={shown.ring}
           workload={workloadStats} onClearWorkload={() => setSelectedWorkload(null)}
-          at={at} onLive={() => { setPlaying(false); setAt(null); }} />
+          at={at} onLive={goLive} />
         {view === "3d" ? (
           <Scene3D
             nodes={nodes}
@@ -580,14 +581,14 @@ function App() {
         {panel.tab === "changes" && (
           <ChangesTab entries={entries} at={at} atLabel={at == null ? "Live" : clock(at)}
             onScrub={i => { setPlaying(false); setAt(i === entries.length - 1 ? null : entries[i].t); }}
-            playing={playing} onPlay={() => setPlaying(p => !p)} onLive={() => { setPlaying(false); setAt(null); }}
+            playing={playing} onPlay={() => setPlaying(p => !p)} onLive={goLive}
             base={base} onCompare={toggleCompare}
             baseLabel={base ? `${clock(base.t)}${base.context !== ctxName ? ` of ${shortContext(base.context)}` : ""}` : ""}
             lists={changeLists} />
         )}
         {panel.tab === "drain" && (
           <DrainTab mode={sim.mode} setMode={mode => setSim(s => ({ ...s, mode }))}
-            node={sim.node} setNode={name => setSim(s => ({ ...s, node: name, result: null, error: null, busy: false }))}
+            node={sim.node} setNode={name => setSim(s => ({ ...SIM_IDLE, mode: s.mode, node: name }))}
             nodes={nodes} busy={sim.busy} error={sim.error} onRun={() => runDrain(sim.node)}
             drainBody={sim.result && <DrainResults result={sim.result} podsByKey={podsByKey} fmtReq={fmtReq} />}
             fitBody={<><FitForm context={context} onResult={setFit} />{fit && <FitSummary result={fit} onClear={() => setFit(null)} />}</>} />

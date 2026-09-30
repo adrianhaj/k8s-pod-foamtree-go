@@ -8,10 +8,10 @@
 // the CSS filter values for dim / match / workload states are applied here in
 // the same sRGB math.
 
-const { workloadKey } = window.k8sWorkload;
+const { workloadKey, podKey } = window.k8sWorkload;
 const { findingInfo } = window.k8sPodAudit;
 const { worstSeverity } = window.k8sNodeStatus;
-const { podToken, utilTone, shade } = window.k8sPalette;
+const { podToken, utilTone, shade, hexRgb: hex, mixRgb: mix } = window.k8sPalette;
 const { groupNodes, groupUsage } = window.k8sTopology;
 
 const PLATE = 160;
@@ -28,7 +28,6 @@ const footprint = cpu => clamp(18, 10 + Math.sqrt(cpu) * 1.05, 48) * CSS_PX;
 const tall = memMib => clamp(8, Math.sqrt(memMib) * 1.05, 78) * CSS_PX;
 // rotateX(55deg) in the CSS scene is a 35° view elevation.
 const CAMERA = [1, Math.tan((35 * Math.PI) / 180) * Math.SQRT2, 1];
-const podKey = p => `${p.namespace}/${p.name}`;
 const ease = t => 1 - Math.pow(1 - clamp(0, t, 1), 3);
 
 // Palette tokens from styles.css, so the scene follows the stylesheet.
@@ -36,13 +35,6 @@ function token(name, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return v || fallback;
 }
-
-// sRGB triples in 0..1 — CSS does its colour math in sRGB, so this does too.
-function hex(h) {
-  const n = parseInt(h.replace("#", ""), 16);
-  return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
-}
-const mix = (under, over, alpha) => under.map((u, i) => u + (over[i] - u) * alpha);
 
 // CSS brightness() then saturate() (Filter Effects spec matrices), clamped
 // after each step like the browser does.
