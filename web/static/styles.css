@@ -262,7 +262,8 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   box-shadow: none;
   transition: transform .1s;
 }
-.btn-primary:hover { background: var(--accent-2); transform: translateY(-1px); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-2); transform: translateY(-1px); }
+.btn-primary:disabled { opacity: .5; cursor: default; }
 .btn-primary:active { transform: translateY(0); }
 .btn-primary.spinning .refresh-icon { animation: spin .6s linear infinite; }
 
@@ -1310,6 +1311,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 /* History comparison: one collapsible list per kind of change. */
 .sev-ok { color: var(--ok); }
 /* ─────────── Bottom panel ─────────── */
+.panel-bar .seg { grid-auto-flow: column; }
 .panel { flex: none; height: 214px; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-top: 1px solid var(--line); }
 .panel.is-collapsed { height: 36px; }
 .panel.is-max { height: 50vh; }

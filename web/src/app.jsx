@@ -194,7 +194,11 @@ function App() {
     writePref(safeStorage(), THEME_KEY, themePref);
   }, [themePref]);
   const [panel, setPanel] = useState(() => readPref(safeStorage(), PANEL_KEY, window.innerHeight < 720 ? { ...PANEL_DEFAULT, open: false } : PANEL_DEFAULT, validPanel));
-  useEffect(() => { writePref(safeStorage(), PANEL_KEY, panel); }, [panel]);
+  const panelSaved = useRef(false);
+  useEffect(() => {
+    if (!panelSaved.current) { panelSaved.current = true; return; }
+    writePref(safeStorage(), PANEL_KEY, panel);
+  }, [panel]);
 
   const [view, setView] = useState("2d");
   const [zoom, setZoom] = useState(0.7);
@@ -225,7 +229,7 @@ function App() {
   // ponytail: the drain answer is a snapshot; a refresh does not re-run it.
   const runDrain = async (name) => {
     if (!name) return;
-    setSim(s => ({ ...s, mode: "drain", node: name, busy: true, error: null }));
+    setSim(s => ({ ...s, mode: "drain", node: name, result: s.node === name ? s.result : null, busy: true, error: null }));
     try {
       const result = await getJSON(`/api/drain?${new URLSearchParams({ context, node: name })}`);
       setSim(s => (s.node === name ? { ...s, result, busy: false } : s));
@@ -646,7 +650,7 @@ function App() {
       </main>
 
       {focused && (
-        <FocusOverlay node={focused} onClose={() => setFocused(null)} metric={metric} memUnit={memUnit} context={context}
+        <FocusOverlay node={focused} onClose={() => setFocused(null)} metric={metric} memUnit={memUnit}
           fitReasons={fit && (fit.find(v => v.node === focused.name) || {}).reasons}
           onDrain={name => { setPanel(p => ({ ...p, open: true, tab: "drain" })); setFocused(null); runDrain(name); }} />
       )}
@@ -1086,7 +1090,7 @@ function TreemapGrid({
 
 /* ─────────── Focus overlay ─────────── */
 
-function FocusOverlay({ node, onClose, metric, memUnit, context, fitReasons, onDrain }) {
+function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain }) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card" onClick={e => e.stopPropagation()}>
