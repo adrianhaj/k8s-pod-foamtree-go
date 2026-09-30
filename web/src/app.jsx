@@ -637,7 +637,7 @@ function App() {
           )}
           {panel.tab === "drain" && (
             <DrainTab mode={sim.mode} setMode={mode => setSim(s => ({ ...s, mode }))}
-              node={sim.node} setNode={name => setSim(s => ({ ...s, node: name, result: null, error: null }))}
+              node={sim.node} setNode={name => setSim(s => ({ ...s, node: name, result: null, error: null, busy: false }))}
               nodes={nodes} busy={sim.busy} error={sim.error} onRun={() => runDrain(sim.node)}
               drainBody={sim.result && <DrainResults result={sim.result} podsByKey={podsByKey} fmtReq={fmtReq} />}
               fitBody={<><FitForm context={context} onResult={setFit} />{fit && <FitSummary result={fit} onClear={() => setFit(null)} />}</>} />
