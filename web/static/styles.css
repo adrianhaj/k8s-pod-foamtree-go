@@ -505,7 +505,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   pointer-events: none;
 }
 
-.node-header { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 6px; padding: 0 8px; white-space: nowrap; overflow: hidden; font-size: 11.5px; }
+.node-header { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 6px; padding: 0 8px; white-space: nowrap; overflow: hidden; font-size: 11.5px; z-index: 2; }
 .node-name { font: 500 11.5px/1 var(--font-mono); color: var(--text); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
 .node-type { font-size: 11px; color: var(--text-dim); flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .node-meta { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; }
@@ -522,9 +522,9 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 .pod-label, .pod-req { position: absolute; left: 5px; right: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pod-label { top: 3px; font-size: 10.5px; color: var(--text); }
 .pod-req { top: 15px; font: 10px/1.2 var(--font-mono); color: var(--text-dim); }
-.container-box { position: absolute; border-radius: 1px; background: color-mix(in srgb, var(--pod-c) var(--tint-box), var(--panel)); }
+.container-box { position: absolute; border-radius: 1px; overflow: hidden; background: color-mix(in srgb, var(--pod-c) var(--tint-box), var(--panel)); }
 .container-box.is-init { --pod-c: var(--pod-neutral); }
-.container-box span { font-size: 9px; color: var(--text); padding: 1px 3px; }
+.container-box span { display: block; font-size: 9px; color: var(--text); padding: 1px 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 11.5px; color: var(--text-dim); }
 .legend .lg { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 .legend i { width: 10px; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--pod-c) var(--tint-fill), var(--panel)); border: 1px solid color-mix(in srgb, var(--pod-c) var(--tint-edge), var(--panel)); }

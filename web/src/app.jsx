@@ -544,7 +544,7 @@ function App() {
               gridRef={gridRef}
               sceneRef={sceneRef}
               treemap={{
-                nodes, metric: activeMetric, match, highlight, highlightActive, colorBy, nsMap,
+                nodes, metric: activeMetric, match: shown, highlight, highlightActive, colorBy, nsMap,
               }}
             />
           }
