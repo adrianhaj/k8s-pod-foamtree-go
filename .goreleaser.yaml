@@ -1,0 +1,42 @@
+version: 2
+project_name: k8sfoams
+
+before:
+  hooks:
+    - make web
+
+builds:
+  - env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    # {{.Tag}} keeps the leading v, matching `git describe` in the Makefile and image.
+    ldflags: ["-s -w -X main.version={{.Tag}}"]
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+changelog:
+  use: github-native
+
+release:
+  prerelease: auto
+
+homebrew_casks:
+  - repository:
+      owner: adrianhaj
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/adrianhaj/k8s-pod-foamtree-go
+    description: Read-only dashboard of Kubernetes CPU and memory requests per node
+    skip_upload: auto
+    # The binary is not signed or notarized.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/k8sfoams"]
+          end

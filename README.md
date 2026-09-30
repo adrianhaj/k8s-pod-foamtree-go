@@ -245,6 +245,17 @@ Focusing the input opens a popover with the same token list; it is replaced by t
 
 An unknown `context` returns 400; an unreachable cluster or rejected credentials return 503 with the error text.
 
+## Install
+
+```bash
+brew install adrianhaj/tap/k8sfoams   # macOS
+k8sfoams                              # http://127.0.0.1:8080, uses ~/.kube/config (or $KUBECONFIG)
+```
+
+On Linux and Windows, download the archive for your OS and CPU (amd64 or arm64) from [Releases](https://github.com/adrianhaj/k8s-pod-foamtree-go/releases) and check it against `k8sfoams_<version>_checksums.txt`. The macOS binary is not signed: Homebrew clears the quarantine flag itself, but after a browser download run `xattr -d com.apple.quarantine k8sfoams` once.
+
+The image `ghcr.io/adrianhaj/k8sfoams:<version>` (amd64 and arm64) is for running in a cluster, see [Run in a cluster](#run-in-a-cluster).
+
 ## Run
 
 Requires Go 1.27.1. No Node: the JSX is compiled by `go tool esbuild` and React is vendored in `web/static/vendor/`.
@@ -297,7 +308,7 @@ make kind-down
 
 `make kind-up` keeps the kind cluster's credentials in `./kind.kubeconfig` (gitignored) and never touches *~/.kube/config*; every kind target passes that file explicitly. To run the binary against the same cluster: `KUBECONFIG="$PWD/kind.kubeconfig" make run`.
 
-For a real cluster, write an overlay on `deploy/base` that sets your image, OIDC issuer, client id, redirect URL, allowed groups/emails and Ingress host, then create the secret and apply:
+For a real cluster, write an overlay on `deploy/base` that sets your image (pin a release, e.g. `newTag: v1.0.0`), OIDC issuer, client id, redirect URL, allowed groups/emails and Ingress host, then create the secret and apply:
 
 ```bash
 kubectl create namespace k8sfoams
@@ -309,7 +320,9 @@ kubectl apply -k <your-overlay>
 
 Register `https://<host>/auth/callback` as the redirect URI in your IdP. The service account can only `get`/`list`/`watch` nodes and pods; every allowed user sees the whole cluster through it. On Microsoft Entra ID, prefer `--oidc-allowed-groups` or a single-tenant issuer: Entra omits `email_verified`, and an email glob would trust an unverified address.
 
-Images: `make image` builds `ghcr.io/adrianhaj/k8sfoams:<git describe>` locally; `make image-push IMAGE=<registry>/k8sfoams` pushes amd64 and arm64. CI (`.github/workflows/go.yaml`) lints, tests and builds both on every PR and on `main`; it does not publish images.
+Images: `make image` builds `ghcr.io/adrianhaj/k8sfoams:<git describe>` locally; `make image-push IMAGE=<registry>/k8sfoams` pushes amd64 and arm64. CI (`.github/workflows/go.yaml`) lints, tests and builds both on every PR and on `main`.
+
+Releases: an admin pushes a `v*` tag (`git tag v1.0.0 && git push origin v1.0.0`; the `protect-release-tags` ruleset blocks everyone else). `.github/workflows/release.yaml` then runs GoReleaser (`.goreleaser.yaml`), which attaches the archives and their checksums to a GitHub Release and pushes the Homebrew cask to [adrianhaj/homebrew-tap](https://github.com/adrianhaj/homebrew-tap), and pushes the image as `:<tag>` and `:latest`. Pre-release tags such as `v1.1.0-rc.1` skip the cask and `:latest`. The tap token is a fine-grained PAT (Contents read/write on `homebrew-tap` only), stored as the `HOMEBREW_TAP_TOKEN` secret of the `release` environment, which only `v*` tags may deploy to.
 
 ## Flags
 
