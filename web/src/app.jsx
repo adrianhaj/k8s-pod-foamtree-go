@@ -385,9 +385,9 @@ function App() {
     for (const n of nodes) {
       total += n.pods.length;
       if (!active) continue;
-      if (!window.k8sQuery.nodeMatches(n.name, parsedQuery)) dimNodes.add(n.name);
+      if (!window.k8sQuery.nodeMatches(n, parsedQuery)) dimNodes.add(n.name);
       for (const p of n.pods) {
-        if (window.k8sQuery.podMatches(p, parsedQuery, n.name)) pods.add(p);
+        if (window.k8sQuery.podMatches(p, parsedQuery, n)) pods.add(p);
       }
     }
     // Comparing highlights the added and resized pods, unless a query is typed.
@@ -830,18 +830,24 @@ function Sidebar({
       {children}
 
       {/* Only rendered when something is actually wrong, so a healthy cluster
-          looks exactly as it did before this feature existed. */}
+          looks exactly as it did before this feature existed. A row toggles its
+          health: query, which lights the affected nodes and dims the rest. */}
       {health.length > 0 && (
         <div className="sidebar-section">
           <div className="section-label">Node health</div>
           <div className="health-rows">
-            {health.map(h => (
-              <div key={h.slug} className="health-row">
-                <span className={`health-swatch sev-${h.sev}`} />
-                <span className="health-name">{h.label}</span>
-                <span className="health-count">{h.count}</span>
-              </div>
-            ))}
+            {health.map(h => {
+              const token = `health:${h.slug}`;
+              const on = query.trim() === token;
+              return (
+                <button key={h.slug} className={`health-row audit-row ${on ? "audit-on" : ""}`}
+                  onClick={() => setQuery(on ? "" : token)}>
+                  <span className={`health-swatch sev-${h.sev}`} />
+                  <span className="health-name">{h.label}</span>
+                  <span className="health-count">{h.count}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
