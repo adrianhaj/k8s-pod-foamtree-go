@@ -1355,3 +1355,5 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 .sim-field input::placeholder { color: var(--text-soft); }
 .sim-error { font-family: var(--font-mono); font-size: 11px; color: var(--danger); }
 .sim-ok { color: var(--ok); }
+/* QoS panel swatch for Guaranteed; danger and warn already exist above. */
+.sev-ok { color: var(--ok); }

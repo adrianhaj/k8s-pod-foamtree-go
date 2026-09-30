@@ -4,6 +4,7 @@
 const { workloadKey } = window.k8sWorkload;
 const { worstSeverity, NodeWarnBadge } = window.k8sNodeStatus;
 const { PodAuditBadge } = window.k8sPodAudit;
+const { qosHue } = window.k8sQos;
 
 function squarify(items, x, y, w, h) {
   const sorted = items.filter(i => i.value > 0).sort((a, b) => b.value - a.value);
@@ -88,7 +89,7 @@ function cardItems(node, metric, podMatched) {
 
 // Render a node card: header + nested treemap of pods (each pod = treemap of containers).
 function NodeCard({
-  node, match, metric, hue, style: nodeStyle, showLabels, density, onClick,
+  node, match, metric, hue, colorBy, style: nodeStyle, showLabels, density, onClick,
   highlight, highlightActive, onPodSelect, onPodHover,
 }) {
   const ref = React.useRef(null);
@@ -119,11 +120,12 @@ function NodeCard({
   const innerW = Math.max(0, box.w - padding * 2);
   const innerH = Math.max(0, box.h - headerH - padding);
   // Memoised because a highlight change re-renders every card: `items` is a
-  // pure function of node + metric, so those two plus the box are the whole
-  // input to the layout, and hovering a pod must not redo this math per card.
+  // pure function of node, metric and match (the sliver), so those plus the
+  // box are the whole input to the layout, and hovering a pod must not redo
+  // this math per card.
   const laid = React.useMemo(
     () => (innerW > 0 && innerH > 0 ? squarify(items, padding, headerH, innerW, innerH) : []),
-    [node, metric, innerW, innerH, padding, headerH]
+    [node, metric, match, innerW, innerH, padding, headerH]
   );
 
   // Free capacity on a node that refuses pods is not really free, so the idle
@@ -180,7 +182,8 @@ function NodeCard({
           );
         }
         return (
-          <PodBox key={`pod-${i}`} pod={it.pod} rect={it} hue={hue}
+          <PodBox key={`pod-${i}`} pod={it.pod} rect={it}
+                  hue={colorBy === "qos" ? qosHue(it.pod.qos) : hue}
                   metric={metric} showLabels={showLabels} nodeStyle={nodeStyle}
                   matched={podMatched(it.pod)}
                   dim={queryActive && !nodeDim && !podMatched(it.pod)}
