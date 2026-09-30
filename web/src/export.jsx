@@ -5,7 +5,7 @@
 // library, and the PNG is that SVG drawn onto a canvas. It mirrors NodeCard and
 // PodBox in treemap.jsx, so a change to their look belongs in both.
 
-const { squarify, cardItems } = window.k8sTreemap;
+const { squarify, cardItems, metricCap, metricValue } = window.k8sTreemap;
 const { worstSeverity, WarnIcon } = window.k8sNodeStatus;
 const { worstFindingSeverity } = window.k8sPodAudit;
 const { hsl, token } = window.k8sScene3D;
@@ -37,7 +37,7 @@ const EMPTY = {
 function TreemapSVG({ nodes, width, height, metric, hueOf, nodeStyle, density, showLabels, match, highlight, highlightActive }) {
   const pad = 14; // .grid-wrap padding
   const slots = squarify(
-    nodes.map((node, idx) => ({ node, idx, value: metric === "cpu" ? node.cpuCapacity : node.memCapacity })),
+    nodes.map((node, idx) => ({ node, idx, value: metricCap(node, metric) })),
     pad, pad, width - pad * 2, height - pad * 2
   );
   const look = {
@@ -146,7 +146,7 @@ function SvgPod({ it, hue, metric, showLabels, podBg, look, matched, dim }) {
   const ring = !dim && (matched || peer);
   const headerH = h > 28 ? 12 : 0;
   const containers = squarify(
-    pod.containers.map(c => ({ container: c, value: metric === "cpu" ? c.cpu : c.mem })),
+    pod.containers.map(c => ({ container: c, value: metricValue(c, metric) })),
     3, headerH + 3, Math.max(0, w - 4), Math.max(0, h - headerH - 4)
   );
   const sev = w > 24 && h > 16 && worstFindingSeverity(pod.findings);
