@@ -2,6 +2,7 @@
 // this file only asks and shows the answer.
 
 const { useState } = React;
+const { SevGlyph } = window.k8sIcons;
 
 async function getJSON(url) {
   const r = await fetch(url);
@@ -23,7 +24,7 @@ function fitMatch(nodes, verdicts) {
 }
 
 // ponytail: the verdict is a snapshot; a refresh does not re-run it.
-function FitPanel({ context, result, onResult }) {
+function FitForm({ context, onResult }) {
   const [form, setForm] = useState({ cpu: "500m", memory: "1Gi", nodeSelector: "", tolerations: "" });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -50,43 +51,31 @@ function FitPanel({ context, result, onResult }) {
     </label>
   );
 
-  // Why nodes said no, by reason kind, most common first.
-  const kinds = new Map();
-  for (const v of result || []) {
-    for (const r of v.reasons) {
-      const kind = r.split(":")[0];
-      kinds.set(kind, (kinds.get(kind) || 0) + 1);
-    }
-  }
-  const fits = (result || []).filter(v => v.reasons.length === 0).length;
-
   return (
-    <div className="sidebar-section">
-      <div className="section-label">Can I fit this pod?</div>
-      <form className="sim-form" onSubmit={check}>
-        {field("cpu", "CPU request", "500m")}
-        {field("memory", "Memory request", "1Gi")}
-        {field("nodeSelector", "Node selector", "disk=ssd,zone=a")}
-        {field("tolerations", "Tolerations", "spot=true:NoSchedule")}
-        <button className="btn-primary" type="submit" disabled={busy}>Check</button>
-      </form>
+    <form className="sim-form sim-row" onSubmit={check}>
+      {field("cpu", "CPU request", "500m")}
+      {field("memory", "Memory request", "1Gi")}
+      {field("nodeSelector", "Node selector", "disk=ssd,zone=a")}
+      {field("tolerations", "Tolerations", "spot=true:NoSchedule")}
+      <button className="btn-primary" type="submit" disabled={busy}>Check</button>
       {error && <div className="sim-error">{error}</div>}
-      {result && (
-        <div className="health-rows">
-          <div className="health-row">
-            <span className={`audit-swatch ${fits ? "sim-ok" : "sev-danger"}`} />
-            <span className="health-name">{fits} / {result.length} nodes fit</span>
-            <button className="search-clear" onClick={() => onResult(null)} title="Clear">×</button>
-          </div>
-          {[...kinds].sort((a, b) => b[1] - a[1]).map(([kind, count]) => (
-            <div key={kind} className="health-row">
-              <span className="audit-swatch sev-danger" />
-              <span className="health-name">{kind}</span>
-              <span className="health-count">{count}</span>
-            </div>
-          ))}
-        </div>
-      )}
+    </form>
+  );
+}
+
+// Why nodes said no, by reason kind, most common first.
+function FitSummary({ result, onClear }) {
+  const kinds = new Map();
+  for (const v of result) for (const r of v.reasons) {
+    const kind = r.split(":")[0];
+    kinds.set(kind, (kinds.get(kind) || 0) + 1);
+  }
+  const fits = result.filter(v => v.reasons.length === 0).length;
+  return (
+    <div className="panel-bar">
+      <span className="chip"><SevGlyph sev={fits ? "ok" : "danger"} />{fits} / {result.length} nodes fit</span>
+      {[...kinds].sort((a, b) => b[1] - a[1]).map(([kind, n]) => <span key={kind} className="chip">{kind} · {n}</span>)}
+      <button className="btn" onClick={onClear}>Clear</button>
     </div>
   );
 }
@@ -103,60 +92,33 @@ function FitVerdict({ reasons }) {
   );
 }
 
-// What evicting every pod on this node would do, as `kubectl drain` or a node failure would.
-function DrainSection({ context, node }) {
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
-
-  const run = async () => {
-    setBusy(true);
-    try {
-      setResult(await getJSON(`/api/drain?${new URLSearchParams({ context, node })}`));
-      setError(null);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
+// Pending first: that is the answer an operator is looking for.
+function DrainResults({ result, podsByKey, fmtReq }) {
+  const rows = [
+    ...result.pending.map(p => ({ pod: p.pod, sev: "danger", label: "Pending", why: p.reason })),
+    ...result.unmanaged.map(p => ({ pod: p, sev: "warn", label: "Not recreated", why: "no controller owns it" })),
+    ...result.moved.map(p => ({ pod: p.pod, sev: null, label: "lands on", why: p.node })),
+  ];
+  const req = (key, metric) => { const p = podsByKey.get(key); return p ? fmtReq(p[metric], metric) : "–"; };
   return (
-    <div className="overlay-sched">
-      <div className="ov-section-title">Drain simulation</div>
-      {!result && <button className="btn-primary" onClick={run} disabled={busy}>Simulate drain</button>}
-      {error && <div className="sim-error">{error}</div>}
-      {result && (
-        <>
-          <div className="ov-chips">
-            <span className="status-pill status-ready">{result.moved.length} rescheduled</span>
-            <span className={`status-pill ${result.pending.length ? "status-scheduling-disabled" : "status-ready"}`}>
-              {result.pending.length} pending
-            </span>
-            {result.unmanaged.length > 0 && (
-              <span className="status-pill status-pressure">{result.unmanaged.length} unmanaged · not recreated</span>
-            )}
-            {result.ignored.length > 0 && (
-              <span className="status-pill status-tainted">{result.ignored.length} daemonset / static</span>
-            )}
+    <>
+      <div className="panel-bar">
+        <span className="chip"><SevGlyph sev="ok" />{result.moved.length} rescheduled</span>
+        <span className="chip"><SevGlyph sev={result.pending.length ? "danger" : "ok"} />{result.pending.length} Pending</span>
+        {result.unmanaged.length > 0 && <span className="chip"><SevGlyph sev="warn" />{result.unmanaged.length} not recreated</span>}
+        {result.ignored.length > 0 && <span className="chip">{result.ignored.length} DaemonSet / static</span>}
+      </div>
+      <div className="ptable drain" role="table" aria-label="Drain simulation">
+        <div className="ptr th" role="row"><span>Pod</span><span>CPU request</span><span>Memory request</span><span>Result</span></div>
+        {rows.map(r => (
+          <div key={r.pod} className="ptr" role="row">
+            <span>{r.pod}</span><span>{req(r.pod, "cpu")}</span><span>{req(r.pod, "mem")}</span>
+            <span>{r.sev && <SevGlyph sev={r.sev} />}<b>{r.label}</b><span className="mut">{r.why}</span></span>
           </div>
-          <div className="taint-rows">
-            {result.pending.map(p => (
-              <div key={p.pod} className="taint-row" title={p.reason}>
-                <code>{p.pod}</code><span className="sim-error">{p.reason}</span>
-              </div>
-            ))}
-            {result.unmanaged.map(p => (
-              <div key={p} className="taint-row"><code>{p}</code><span className="taint-effect">deleted</span></div>
-            ))}
-            {result.moved.map(p => (
-              <div key={p.pod} className="taint-row"><code>{p.pod}</code><span className="taint-effect">→ {p.node}</span></div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+        ))}
+      </div>
+    </>
   );
 }
 
-window.k8sSimulate = { fitMatch, FitPanel, FitVerdict, DrainSection };
+window.k8sSimulate = { getJSON, fitMatch, FitForm, FitSummary, FitVerdict, DrainResults };

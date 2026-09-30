@@ -127,4 +127,37 @@ function ChangesTab({ entries, at, atLabel, onScrub, playing, onPlay, onLive, ba
   );
 }
 
-window.k8sPanel = { BottomPanel, ProblemsTab, ChangesTab };
+function DrainTab({ mode, setMode, node, setNode, nodes, busy, error, onRun, drainBody, fitBody }) {
+  return (
+    <>
+      <div className="panel-bar">
+        <div className="seg" role="radiogroup" aria-label="Simulation">
+          <button role="radio" aria-checked={mode === "drain"} className={mode === "drain" ? "seg-on" : ""} onClick={() => setMode("drain")}>Drain a node</button>
+          <button role="radio" aria-checked={mode === "fit"} className={mode === "fit" ? "seg-on" : ""} onClick={() => setMode("fit")}>Fit a pod</button>
+        </div>
+        {mode === "drain" && (
+          <>
+            <select id="drain-node" aria-label="Node to drain" value={node || ""} onChange={e => setNode(e.target.value || null)}>
+              <option value="">Pick a node</option>
+              {nodes.map(n => <option key={n.name} value={n.name}>{n.name}</option>)}
+            </select>
+            <button className="btn-primary" disabled={!node || busy} onClick={onRun}>Simulate drain</button>
+            <span>Dry run. Nothing is evicted or cordoned.</span>
+          </>
+        )}
+      </div>
+      {mode === "fit" ? fitBody
+        : error ? <div className="panel-empty sim-error">{error}</div>
+        : drainBody || <div className="panel-empty">Pick a node to see where its pods would land. The map lights that node while you choose.</div>}
+    </>
+  );
+}
+
+const LIT_TEXT = { changes: "Lit: added and resized pods", fit: "Lit: nodes that fit", drain: null };
+
+function MapChips({ lit, ring }) {
+  const text = lit === "drain" ? `Lit: pods on ${ring}` : LIT_TEXT[lit];
+  return <div className="map-chips">{text && <span className="chip chip-lit">{text}</span>}</div>;
+}
+
+window.k8sPanel = { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips };

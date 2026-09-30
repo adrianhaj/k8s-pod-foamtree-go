@@ -498,6 +498,7 @@ function Scene3D({
       const set = (mesh, i, rgb) => mesh.setColorAt(i, c.setRGB(rgb[0], rgb[1], rgb[2], T.SRGBColorSpace));
       const plate = hex(token("--plate", "#ffffff")), edge = hex(token("--line-2", "#c9ced7"));
       const gridLine = hex(token("--line", "#dde0e6"));
+      const ringRim = hex(token("--accent", "#1f5fd6"));
       // A pod's faces depend only on its colour role and one of six filter
       // states, so compute each combination once, not once per pod.
       const faces = new Map();
@@ -516,7 +517,7 @@ function Scene3D({
       w.plates.forEach((p, i) => {
         const dim = look.plateDim(p.node), sev = worstSeverity(p.node.warnings);
         set(w.meshes.plates, i, plate);
-        set(w.meshes.rims, i, edge);
+        set(w.meshes.rims, i, match && match.ring === p.node.name ? ringRim : edge);
         // A plate the query ruled out drops its inlay, warning hatch included.
         m.makeScale(dim || sev ? 0 : PLATE, 1, dim || sev ? 0 : PLATE).setPosition(p.x, 0.05, p.z);
         w.meshes.grids.setMatrixAt(i, m);

@@ -139,7 +139,7 @@ function NodeCard({
   const tone = utilTone(utilization);
 
   return (
-    <div ref={ref} onClick={onClick} className={`node-card${nodeDim ? " is-dim" : ""}`}>
+    <div ref={ref} onClick={onClick} className={`node-card${nodeDim ? " is-dim" : ""}${match && match.ring === node.name ? " is-ring" : ""}`}>
       <div className="node-header" style={{ height: headerH }}>
         <span className="node-name">{node.name}</span>
         {node.instanceType && <span className="node-type">{node.instanceType}</span>}

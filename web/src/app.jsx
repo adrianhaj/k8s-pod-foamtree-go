@@ -7,7 +7,7 @@ const { workloadKey } = window.k8sWorkload;
 const { warnInfo, statusOf, WARNING_ORDER } = window.k8sNodeStatus;
 const { findingInfo, FINDING_ORDER, PodAuditBadge } = window.k8sPodAudit;
 const { ExportMenu } = window.k8sExport;
-const { fitMatch, FitPanel, FitVerdict, DrainSection } = window.k8sSimulate;
+const { getJSON, fitMatch, FitForm, FitSummary, FitVerdict, DrainResults } = window.k8sSimulate;
 const { QOS_INFO, QOS_ORDER } = window.k8sQos;
 const { assignNamespaces, utilTone, COLOR_MODES } = window.k8sPalette;
 const { Legend } = window.k8sLegend;
@@ -17,7 +17,7 @@ const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY
 const { fmtMem, shortContext, clock, timeAgo } = window.k8sFormat;
 const { buildProblems, problemChips } = window.k8sProblems;
 const { pickShown } = window.k8sHighlight;
-const { BottomPanel, ProblemsTab, ChangesTab } = window.k8sPanel;
+const { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips } = window.k8sPanel;
 const THEME_KEY = "k8sfoams.theme";
 
 const METRICS = [
@@ -220,6 +220,20 @@ function App() {
   const sceneRef = useRef(null);
   // Last "Can I fit this pod?" answer: one verdict per node, or null.
   const [fit, setFit] = useState(null);
+  const SIM_IDLE = { mode: "drain", node: null, result: null, error: null, busy: false };
+  const [sim, setSim] = useState(SIM_IDLE);
+  // ponytail: the drain answer is a snapshot; a refresh does not re-run it.
+  const runDrain = async (name) => {
+    if (!name) return;
+    setSim(s => ({ ...s, mode: "drain", node: name, busy: true, error: null }));
+    try {
+      const result = await getJSON(`/api/drain?${new URLSearchParams({ context, node: name })}`);
+      setSim(s => (s.node === name ? { ...s, result, busy: false } : s));
+    } catch (err) {
+      setSim(s => (s.node === name ? { ...s, result: null, error: err.message, busy: false } : s));
+    }
+  };
+  const podsByKey = useMemo(() => new Map(nodes.flatMap(n => n.pods.map(p => [`${p.namespace}/${p.name}`, p]))), [nodes]);
   const context = contexts[contextIdx] ? contexts[contextIdx].context : "";
   // Every refresh is recorded; `at` is the snapshot on screen (null = live).
   const [history, setHistory] = useState([]);
@@ -314,6 +328,7 @@ function App() {
     setSelectedWorkload(null);
     setHoveredWorkload(null);
     setFit(null);
+    setSim(SIM_IDLE);
     setAt(null);
     setPlaying(false);
     nsRef.current = new Map();
@@ -404,8 +419,8 @@ function App() {
   const fitShown = useMemo(() => (fit ? fitMatch(nodes, fit) : null), [fit, nodes]);
   const shown = useMemo(() => pickShown({
     match, tab: panel.open ? panel.tab : null, changes, nodes,
-    sim: { mode: fit ? "fit" : "drain", fit: fitShown, node: null },
-  }), [match, panel.open, panel.tab, changes, nodes, fitShown]);
+    sim: { mode: sim.mode, fit: fitShown, node: sim.node },
+  }), [match, panel.open, panel.tab, changes, nodes, fitShown, sim.mode, sim.node]);
 
   const highlight = selectedWorkload || hoveredWorkload;
   const highlightActive = !!selectedWorkload;
@@ -531,9 +546,7 @@ function App() {
         colorBy={colorBy} setColorBy={setColorBy} nsMap={nsMap}
         query={query} setQuery={setQuery}
         themePref={themePref} setThemePref={setThemePref}
-      >
-        <FitPanel context={context} result={fit} onResult={setFit} />
-      </Sidebar>
+      />
 
       <main className="main">
         {error && (
@@ -572,6 +585,7 @@ function App() {
         />
 
         <div className="grid-wrap" ref={gridRef}>
+          <MapChips lit={shown.lit} ring={shown.ring} />
           {view === "3d" ? (
             <Scene3D
               nodes={nodes}
@@ -621,12 +635,20 @@ function App() {
               baseLabel={base ? `${clock(base.t)}${base.context !== ctxName ? ` of ${shortContext(base.context)}` : ""}` : ""}
               lists={changeLists} />
           )}
+          {panel.tab === "drain" && (
+            <DrainTab mode={sim.mode} setMode={mode => setSim(s => ({ ...s, mode }))}
+              node={sim.node} setNode={name => setSim(s => ({ ...s, node: name, result: null, error: null }))}
+              nodes={nodes} busy={sim.busy} error={sim.error} onRun={() => runDrain(sim.node)}
+              drainBody={sim.result && <DrainResults result={sim.result} podsByKey={podsByKey} fmtReq={fmtReq} />}
+              fitBody={<><FitForm context={context} onResult={setFit} />{fit && <FitSummary result={fit} onClear={() => setFit(null)} />}</>} />
+          )}
         </BottomPanel>
       </main>
 
       {focused && (
         <FocusOverlay node={focused} onClose={() => setFocused(null)} metric={metric} memUnit={memUnit} context={context}
-          fitReasons={fit && (fit.find(v => v.node === focused.name) || {}).reasons} />
+          fitReasons={fit && (fit.find(v => v.node === focused.name) || {}).reasons}
+          onDrain={name => { setPanel(p => ({ ...p, open: true, tab: "drain" })); setFocused(null); runDrain(name); }} />
       )}
     </div>
   );
@@ -638,7 +660,7 @@ function Sidebar({
   open, onToggle, view, setView, zoom, setZoom, groupBy, setGroupBy, metric, setMetric, metrics, memUnit, setMemUnit,
   refreshInterval, setRefreshInterval,
   contexts, contextIdx, setContextIdx, doRefresh, refreshing, lastRefresh, nodeCount,
-  qosBreakdown, colorBy, setColorBy, nsMap, query, setQuery, themePref, setThemePref, children
+  qosBreakdown, colorBy, setColorBy, nsMap, query, setQuery, themePref, setThemePref
 }) {
   const is3d = view === "3d";
   return (
@@ -777,8 +799,6 @@ function Sidebar({
           ))}
         </div>
       </div>
-
-      {children}
 
       {/* Riskiest class first. The swatches double as the legend for Color by →
           QoS, and a row toggles its qos: query, like the Problems chips. */}
@@ -1066,7 +1086,7 @@ function TreemapGrid({
 
 /* ─────────── Focus overlay ─────────── */
 
-function FocusOverlay({ node, onClose, metric, memUnit, context, fitReasons }) {
+function FocusOverlay({ node, onClose, metric, memUnit, context, fitReasons, onDrain }) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card" onClick={e => e.stopPropagation()}>
@@ -1138,7 +1158,10 @@ function FocusOverlay({ node, onClose, metric, memUnit, context, fitReasons }) {
           </div>
         )}
         {fitReasons && <FitVerdict reasons={fitReasons} />}
-        <DrainSection context={context} node={node.name} />
+        <div className="overlay-sched">
+          <div className="ov-section-title">Drain simulation</div>
+          <button className="btn-primary" onClick={() => onDrain(node.name)}>Simulate drain</button>
+        </div>
         <div className="overlay-pods">
           <div className="ov-section-title">Workloads</div>
           {node.pods.length === 0 && <div className="empty-state">Node has no scheduled pods.</div>}
