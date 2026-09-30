@@ -21,7 +21,7 @@ It visualizes **resource requests** — what the scheduler reserves — not live
 
 ![k8sfoams 2D treemap view](k8s-foam-tree.png)
 
-A squarified treemap. Each node is a square box, each pod is a foam inside it. A pod with more than one container is split into sub-foams. The empty foam is unused (free) capacity on that node. Pick **CPU** or **Memory** with the Resource control; **Group by** boxes the nodes by zone, region, pool, instance type or capacity type — see [Topology](#topology). Nodes that offer GPUs, ephemeral storage or hugepages add them to that control: the map then sizes nodes and pods by that resource, nodes without it drop out, and the node overlay shows how much of each is requested.
+A squarified treemap. Each node is a square box, each pod is a foam inside it. A pod with more than one container is split into sub-foams. The empty foam is unused (free) capacity on that node. Pick **CPU** or **Memory** with **Size by** in the toolbar; **Group by** boxes the nodes by zone, region, pool, instance type or capacity type — see [Topology](#topology). Nodes that offer GPUs, ephemeral storage or hugepages add them to that control: the map then sizes nodes and pods by that resource, nodes without it drop out, and the node overlay shows how much of each is requested.
 
 ## 3D view
 
@@ -31,18 +31,18 @@ A WebGL (Three.js) scene: one plate per node, one cube per pod. A cube encodes b
 
 - **width × depth** (footprint) → CPU request
 - **height** → memory request
-- **color** → node, or the pod's QoS class with **Color by → QoS**
+- **color** → namespace, or the pod's QoS class or audit findings with **Color by** (QoS, Problems)
 - **translucent shell** → the pod's limits, grown only on the axes that have one (footprint from the CPU limit, height from the memory limit). A pod without a limit on an axis has no ceiling to draw there.
 
-Both dimensions are square-root scaled, so a 10× larger pod is not 10× wider. Because a cube already shows both resources, the CPU/Memory picker is disabled in 3D and a **Zoom** slider takes its place. Drag to orbit, scroll to zoom; hover a pod for its requests and limits, click it to pin its workload, click a plate to open the node.
+Both dimensions are square-root scaled, so a 10× larger pod is not 10× wider. Because a cube already shows both resources, the **Size by** control is disabled in 3D and a **Zoom** slider takes its place. Drag to orbit, scroll to zoom; hover a pod for its requests and limits, click it to pin its workload, click a plate to open the node.
 
 **Group by** splits the plates into framed blocks — see [Topology](#topology). On refresh, new pods grow in and removed ones shrink out; the camera stays where you left it unless nodes join or leave.
 
-Switch views with the sidebar *View* control or the `2D`/`3D` pill in the header. Frames render only when something changes, so an idle dashboard costs nothing. Without WebGL, a notice points to the 2D map.
+Switch views with the Map and 3D buttons on the rail at the map's left edge. Frames render only when something changes, so an idle dashboard costs nothing. Without WebGL, a notice points to the 2D map.
 
 ## Topology
 
-**Group by** in the sidebar — None, Zone, Region, Pool, Type or Capacity — frames the nodes of each availability zone, region, node pool, instance type or capacity type (spot vs on-demand): in the 2D map as a box of node cards sized by the group's total capacity, in the 3D scene as a block of plates on a shared floor. Each group's label reads its name, node count and the requested share of its capacity (the selected resource in 2D, the tighter one in 3D), so a zone or pool running hotter than its siblings stands out.
+**Group by** in the toolbar — None, Zone, Region, Pool, Type or Capacity — frames the nodes of each availability zone, region, node pool, instance type or capacity type (spot vs on-demand): in the 2D map as a box of node cards sized by the group's total capacity, in the 3D scene as a block of plates on a shared floor. Each group's label reads its name, node count and the requested share of its capacity (the selected resource in 2D, the tighter one in 3D), so a zone or pool running hotter than its siblings stands out.
 
 | Group by | Node label |
 | --- | --- |
@@ -56,16 +56,21 @@ A node without the label goes to its own group, `no zone`, `no pool`, and so on.
 
 ## Controls
 
-- **Memory unit**: MiB, GiB (default), or TiB.
-- **Color by**: *Node* (default) gives each node its own hue; *QoS* colors each pod by its QoS class. See [QoS & eviction risk](#qos--eviction-risk).
-- **Context**: the sidebar lists every context from your kubeconfig, active one first, tagged by provider. **Switching only changes the context inside the k8sfoams web server — your ~/.kube/config file is never modified.**
-- **Refresh**: slider from 5 to 600 seconds, plus a *Refresh now* button.
-- **Filter**: the header query bar highlights matching pods and dims the rest — nothing is removed from the view. See [Filtering](#filtering) for the full grammar.
+- **Memory unit**: MiB, GiB (default), or TiB, under Settings on the rail.
+- **Size by**: CPU or Memory, in the toolbar (in 3D, a **Zoom** slider takes its place).
+- **Color by**: in the toolbar. *Namespace* (default) colors each pod by its namespace; *QoS* by its QoS class (see [QoS & eviction risk](#qos--eviction-risk)); *Problems* by the severity of its audit findings. A legend sits beside it.
+- **Context**: the context picker in the top bar lists every context from your kubeconfig, active one first, tagged by provider. **Switching only changes the context inside the k8sfoams web server — your ~/.kube/config file is never modified.**
+- **Refresh**: the Auto-refresh menu in the top bar (Off, 15 s … 10 min), plus a *Refresh now* button beside it.
+- **Filter**: the query bar in the top bar highlights matching pods and dims the rest — nothing is removed from the view. See [Filtering](#filtering) for the full grammar.
 - **Focus**: click a node to open an overlay listing its pods with per-pod CPU/memory and container breakdown, plus its instance type, zone and pool.
+
+## Themes
+
+The dashboard follows the OS light or dark setting by default. **Settings → Theme** on the rail (System, Light, Dark) overrides it, and the choice is remembered per browser.
 
 ## Node health
 
-Free capacity on a node that refuses pods is not really free. A node that is cordoned, under pressure, or carrying a `NoSchedule` taint has its **idle foam hatched with diagonal warning stripes** (the plate surface in 3D), gets a warning badge next to the utilization percentage, and lists a **Node health** key in the sidebar counting how many nodes are affected by each reason. A healthy cluster looks exactly as it did before — nothing is added.
+Free capacity on a node that refuses pods is not really free. A node that is cordoned, under pressure, or carrying a `NoSchedule` taint has its **idle foam hatched with diagonal warning stripes** (the plate surface in 3D), gets a warning badge next to the utilization percentage, and is counted in the **Problems** tab of the bottom panel, which lists how many nodes are affected by each reason. A healthy cluster looks exactly as it did before — nothing is added.
 
 | Marker | Reason | Meaning |
 | --- | --- | --- |
@@ -79,13 +84,13 @@ Two rules are worth knowing:
 - **`PreferNoSchedule` never marks a node.** It is a soft hint the scheduler is free to ignore, so it is listed in the focus overlay but does not stripe.
 - **The cordon taint is folded into `cordoned`.** Kubernetes adds `node.kubernetes.io/unschedulable:NoSchedule` itself when you cordon; reporting it as a taint too would mark the same node twice for one fact, so it is dropped from the taint list.
 
-The sidebar's **Node health** panel counts nodes per warning. Click a row to highlight those nodes and their pods in 2D and 3D; every other node dims. This sets the query to `health:<warning>`; click the row again to clear it.
+The **Problems** tab of the bottom panel counts nodes per warning. Click a chip to highlight those nodes and their pods in 2D and 3D; every other node dims. This sets the query to `health:<warning>`; click the chip again to clear it. The glyphs in the Nodes cell of the summary strip toggle the same query.
 
-Click a node to open the focus overlay: a **Scheduling** section spells out every reason and lists each taint as `key=value` with its effect. Worst reason wins the header pill — a cordoned node under memory pressure reads as `SCHEDULING-DISABLED`, because that is what actually keeps pods off it.
+Click a node to open the focus overlay: a **Scheduling** section spells out every reason and lists each taint as `key=value` with its effect. Worst reason wins the overlay's status pill — a cordoned node under memory pressure reads as `SCHEDULING-DISABLED`, because that is what actually keeps pods off it.
 
 ## Audit & hygiene
 
-Every pod is checked against four best-practice rules. A pod that breaks one gets a **small warning glyph in the top-right corner** of its box (hover it for the reasons). The sidebar's **Audit & Hygiene** panel counts the affected pods per rule. Click a row to highlight those pods in 2D and 3D. This sets the query to `audit:<rule>`; click the row again to clear it. A clean cluster reads `No issues found`.
+Every pod is checked against four best-practice rules. A pod that breaks one gets a **small warning glyph in the top-right corner** of its box (hover it for the reasons). The **Problems** tab of the bottom panel counts the affected pods per rule. Click a chip to highlight those pods in 2D and 3D. This sets the query to `audit:<rule>`; click the chip again to clear it. A clean cluster reads `No issues found`.
 
 | Marker | Rule | Flagged when |
 | --- | --- | --- |
@@ -102,7 +107,7 @@ Three details are worth knowing:
 
 ## QoS & eviction risk
 
-Under memory pressure the kubelet evicts pods by QoS class. Set **Color by → QoS** in the sidebar to color every pod box (2D) and cube (3D) by its class. Node cards and plates turn a neutral slate, so only the pods carry color.
+Under memory pressure the kubelet evicts pods by QoS class. Set **Color by → QoS** in the toolbar to color every pod box (2D) and cube (3D) by its class. Node cards and plates turn a neutral slate, so only the pods carry color.
 
 | Color | Class | Eviction order |
 | --- | --- | --- |
@@ -110,7 +115,7 @@ Under memory pressure the kubelet evicts pods by QoS class. Set **Color by → Q
 | amber | `Burstable` | second — requests are set but lower than limits |
 | green | `Guaranteed` | last — every container's requests equal its limits |
 
-The sidebar's **QoS & Eviction Risk** panel counts pods per class, riskiest first. It is shown in either color mode, and a class with no pods still reads `0`. Click a row to highlight those pods; this sets the query to `qos:<Class>`. Click it again to clear. A `BestEffort` pod requests nothing, so in 2D it takes no room until it is highlighted, then it shows as a thin sliver.
+The Pods cell of the summary strip shows pods per class as a segmented bar, riskiest first, in every color mode. Hover a segment for its count. Click a segment to highlight those pods; this sets the query to `qos:<Class>`. Click it again to clear. A `BestEffort` pod requests nothing, so in 2D it takes no room until it is highlighted, then it shows as a thin sliver.
 
 The class is read from the pod's `status.qosClass`, which the API server sets when the pod is created. It is not recomputed from requests and limits. A pod with no reported class renders neutral and is not counted.
 
@@ -118,13 +123,13 @@ The class is read from the pod's `status.qosClass`, which the API server sets wh
 
 The browser records every refresh that changed something: in memory, per
 tab, up to 64 MB gzipped (about 300 refreshes of a 5 000-pod cluster); a
-reload starts over. Drag the **History** slider in the sidebar to go back,
+reload starts over. Open the **Changes** tab of the bottom panel and drag the **History** slider to go back,
 **Play** replays the recording at one snapshot a second, **Live** returns.
 The auto-refresh keeps recording while you look back. In 3D, pods that
 appear or disappear between snapshots grow in and shrink out.
 
 **Compare** takes the snapshot on screen as a baseline; from then on the
-**Changes** panel lists pods added (green) and removed (red), workloads whose
+**Changes** tab lists pods added (green) and removed (red), workloads whose
 per-pod requests changed (amber) and per-node deltas, and the map highlights
 the added and resized pods (a typed query takes precedence). The baseline
 survives a context switch, so it also compares two contexts: record one,
@@ -132,7 +137,7 @@ press Compare, switch to the other.
 
 ## Filtering
 
-The query bar in the header is a **highlighter, not a filter of last resort**: matching pods glow, everything else dims. No pod, node or box ever leaves the layout, so the shape of the cluster stays comparable while you narrow down. Once the query is non-empty and valid, a live counter inside the input reads `N / M pods` (and turns red at `0`).
+The query bar in the top bar is a **highlighter, not a filter of last resort**: matching pods glow, everything else dims. No pod, node or box ever leaves the layout, so the shape of the cluster stays comparable while you narrow down. Once the query is non-empty and valid, a live counter inside the input reads `N / M pods` (and turns red at `0`).
 
 Type whitespace-separated tokens. **All tokens are ANDed** — a pod must satisfy every one of them:
 
@@ -269,7 +274,7 @@ make build                    # bin/k8sfoams
 
 ## Export
 
-The header's download button saves the 2D map as SVG or PNG, the 3D view as
+The download button in the top bar saves the 2D map as SVG or PNG, the 3D view as
 PNG, either as PDF through the print dialog (pick *Save as PDF*), and
 downloads both reports.
 
@@ -285,11 +290,11 @@ curl -o pods.csv 'http://127.0.0.1:8080/report.csv?context=kind-k8sfoams'
 Read-only dry runs of the scheduler's filters on the cached cluster: nothing
 is created, evicted or cordoned.
 
-- **Can I fit this pod?** (sidebar): CPU and memory requests, a node selector
+- **Can I fit this pod?** (**Drain simulation** tab, *Fit a pod*): CPU and memory requests, a node selector
   (`disk=ssd,zone=a`) and tolerations (`spot=true:NoSchedule,gpu`). Nodes that
   cannot take the pod are dimmed; the node overlay says why, e.g.
   `insufficient cpu: requires 4000m, available 1200m`. `GET /api/fit?cpu=&memory=&nodeSelector=&tolerations=`.
-- **Simulate drain** (node overlay): where each pod would land if the node
+- **Simulate drain** (**Drain simulation** tab, *Drain a node*; the node overlay's button opens it): where each pod would land if the node
   were drained or lost, and which would stay Pending. DaemonSet and static pods
   are skipped, pods without a controller are reported as not recreated.
   `GET /api/drain?node=`.
