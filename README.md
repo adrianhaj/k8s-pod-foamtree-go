@@ -34,7 +34,7 @@ A WebGL (Three.js) scene: one plate per node, one cube per pod. A cube encodes b
 - **color** → namespace, or the pod's QoS class or audit findings with **Color by** (QoS, Problems)
 - **translucent shell** → the pod's limits, grown only on the axes that have one (footprint from the CPU limit, height from the memory limit). A pod without a limit on an axis has no ceiling to draw there.
 
-Both dimensions are square-root scaled, so a 10× larger pod is not 10× wider. Because a cube already shows both resources, the **Size by** control is disabled in 3D and a **Zoom** slider takes its place. Drag to orbit, scroll to zoom; hover a pod for its requests and limits, click it to pin its workload, click a plate to open the node.
+Both dimensions are square-root scaled, so a 10× larger pod is not 10× wider. Because a cube already shows both resources, the **Size by** control is replaced in 3D by a **Zoom** slider. Drag to orbit, scroll to zoom; hover a pod for its requests and limits, click it to pin its workload, click a plate to open the node.
 
 **Group by** splits the plates into framed blocks — see [Topology](#topology). On refresh, new pods grow in and removed ones shrink out; the camera stays where you left it unless nodes join or leave.
 
@@ -90,7 +90,7 @@ Click a node to open the focus overlay: a **Scheduling** section spells out ever
 
 ## Audit & hygiene
 
-Every pod is checked against four best-practice rules. A pod that breaks one gets a **small warning glyph in the top-right corner** of its box (hover it for the reasons). The **Problems** tab of the bottom panel counts the affected pods per rule. Click a chip to highlight those pods in 2D and 3D. This sets the query to `audit:<rule>`; click the chip again to clear it. A clean cluster reads `No issues found`.
+Every pod is checked against four best-practice rules. A pod that breaks one gets a **small warning glyph in the top-right corner** of its box (hover it for the reasons). The **Problems** tab of the bottom panel counts the affected pods per rule. Click a chip to highlight those pods in 2D and 3D. This sets the query to `audit:<rule>`; click the chip again to clear it. A clean cluster reads `No problems found`.
 
 | Marker | Rule | Flagged when |
 | --- | --- | --- |
