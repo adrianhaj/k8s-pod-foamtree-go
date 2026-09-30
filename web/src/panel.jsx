@@ -162,8 +162,8 @@ function MapChips({ lit, ring, workload, onClearWorkload, at, onLive }) {
     <div className="map-chips">
       {at != null && <span className="chip">History · {clock(at)}<button onClick={onLive}>Back to live</button></span>}
       {workload && (
-        <span className="chip" title={workload.key}>
-          {workload.key} · {workload.replicas} replica{workload.replicas === 1 ? "" : "s"} · {workload.nodes} node{workload.nodes === 1 ? "" : "s"}
+        <span className="chip chip-wl" title={workload.key}>
+          <span>{workload.key} · {workload.replicas} replica{workload.replicas === 1 ? "" : "s"} · {workload.nodes} node{workload.nodes === 1 ? "" : "s"}</span>
           <button onClick={onClearWorkload} aria-label="Clear selection (Esc)">×</button>
         </span>
       )}

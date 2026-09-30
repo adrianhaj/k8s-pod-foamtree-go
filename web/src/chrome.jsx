@@ -1,9 +1,11 @@
-// Console chrome around the map: top bar now; summary strip, toolbar, rail and
-// settings in the next task. Layout only: App owns the state.
+// Console chrome around the map: top bar, summary strip, toolbar, rail and
+// settings. Layout only: App owns the state.
 
 const { useState, useEffect, useRef } = React;
 const { Icon, SevGlyph } = window.k8sIcons;
-const { shortContext, timeAgo } = window.k8sFormat;
+const { shortContext, timeAgo, fmtMem } = window.k8sFormat;
+const { utilTone, COLOR_MODES } = window.k8sPalette;
+const { GROUP_BY } = window.k8sTopology;
 
 const REFRESH_CHOICES = [[0, "Off"], [15, "15 s"], [30, "30 s"], [60, "1 min"], [300, "5 min"], [600, "10 min"]];
 
@@ -52,7 +54,7 @@ function Menu({ className = "", label, title, children }) {
   }, []);
   return (
     <details className={`menu ${className}`} ref={ref}>
-      <summary title={title} aria-label={title}>{label}</summary>
+      <summary title={title}>{label}</summary>
       <div className="menu-pop" role="menu" onClick={e => { if (e.target.closest("[role^=menuitem]")) ref.current.open = false; }}>
         {children}
       </div>
@@ -112,4 +114,131 @@ function TopBar({
   );
 }
 
-window.k8sChrome = { REFRESH_CHOICES, providerOf, refreshLabel, attentionBySev, Menu, TopBar, radio };
+// One summary cell: label + figure, value, indicator. The fixed third row keeps
+// every indicator on one line across cells, clear of the toolbar (spec §2).
+function Metric({ label, u, value, of }) {
+  const tone = utilTone(u);
+  return (
+    <div className="metric">
+      <div className="metric-l">{label}<b>{Math.round(u * 100)}%</b></div>
+      <div className="metric-v">{value} <small>{of}</small></div>
+      <div className="metric-bar"><i className={tone ? `tone-${tone}` : ""} style={{ width: `${Math.min(100, u * 100)}%` }} /></div>
+    </div>
+  );
+}
+
+function SummaryStrip({ totals, memUnit, qosBreakdown, attention, extCell, query, setQuery }) {
+  const q = query.trim();
+  const toggle = token => setQuery(q === token ? "" : token);
+  const be = qosBreakdown.find(x => x.qos === "BestEffort");
+  const needy = attention.reduce((s, a) => s + a.count, 0);
+  return (
+    <section className="summary" aria-label="Cluster totals">
+      <Metric label="CPU requested" u={totals.cpuUsed / (totals.cpuCap || 1)}
+        value={(totals.cpuUsed / 1000).toFixed(1)} of={`of ${(totals.cpuCap / 1000).toFixed(1)} cores`} />
+      <Metric label="Memory requested" u={totals.memUsed / (totals.memCap || 1)}
+        value={fmtMem(totals.memUsed, memUnit)} of={`of ${fmtMem(totals.memCap, memUnit, true)} ${memUnit}`} />
+      {extCell && <Metric {...extCell} />}
+      <div className="metric">
+        <div className="metric-l">Pods by QoS<b>{be ? be.count : 0} BestEffort</b></div>
+        <div className="metric-v">{totals.pods} <small>of {totals.nodes * 110} slots</small></div>
+        <div className="qos-bar">
+          {qosBreakdown.filter(x => x.count > 0).map(x => (
+            <button key={x.qos} className={`sev-${x.sev}`} style={{ flexGrow: x.count }} title={`${x.label}: ${x.count}. ${x.risk}`}
+              aria-label={`${x.label}: ${x.count} pods`} aria-pressed={q === `qos:${x.qos}`} onClick={() => toggle(`qos:${x.qos}`)} />
+          ))}
+        </div>
+      </div>
+      <div className="metric">
+        <div className="metric-l">Nodes</div>
+        <div className="metric-v">{totals.nodes} <small>· {needy ? `${needy} need attention` : "all schedulable"}</small></div>
+        <div className="metric-glyphs">
+          {attention.map(a => (
+            <button key={a.sev} aria-pressed={q === a.query} onClick={() => toggle(a.query)} title={`Highlight ${a.query}`}>
+              <SevGlyph sev={a.sev} />{a.count}
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Toolbar({ view, metric, metrics, setMetric, zoom, setZoom, groupBy, setGroupBy, showGroupBy, colorBy, setColorBy, legend }) {
+  return (
+    <div className="toolbar">
+      {view === "3d" ? (
+        <label className="tb-f" htmlFor="zoom">Zoom
+          <input type="range" id="zoom" min="0.4" max="1.6" step="0.05" value={zoom} onChange={e => setZoom(+e.target.value)} />
+          <span className="mono">{Math.round(zoom * 100)}%</span>
+        </label>
+      ) : (
+        <div className="tb-f">Size by
+          <div className="seg" role="radiogroup" aria-label="Size by">
+            {metrics.map(m => (
+              <button key={m.id} role="radio" aria-checked={metric === m.id} className={metric === m.id ? "seg-on" : ""} onClick={() => setMetric(m.id)}>{m.label}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {showGroupBy && (
+        <label className="tb-f" htmlFor="group-by">Group by
+          <select id="group-by" value={groupBy} onChange={e => setGroupBy(e.target.value)}>
+            {GROUP_BY.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+          </select>
+        </label>
+      )}
+      <label className="tb-f" htmlFor="color-by">Color by
+        <select id="color-by" value={colorBy} onChange={e => setColorBy(e.target.value)}>
+          {COLOR_MODES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+      </label>
+      <div className="legend">{legend}</div>
+    </div>
+  );
+}
+
+function SettingsMenu({ themePref, setThemePref, memUnit, setMemUnit }) {
+  return (
+    <Menu className="settings" title="Settings" label={<Icon name="gear" />}>
+      <div className="menu-h">Theme</div>
+      {[["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(([id, l]) => (
+        <React.Fragment key={id}>{radio(themePref === id, () => setThemePref(id), l)}</React.Fragment>
+      ))}
+      <div className="menu-h">Memory unit</div>
+      {["MiB", "GiB", "TiB"].map(u => <React.Fragment key={u}>{radio(memUnit === u, () => setMemUnit(u), u)}</React.Fragment>)}
+    </Menu>
+  );
+}
+
+// Floats over the map's left edge. The panel buttons also work while the panel
+// is collapsed: pressing the open tab's button collapses it again.
+function Rail({ view, setView, panel, openTab, findings, settings }) {
+  const viewBtn = (id, icon, label) => (
+    <button className={view === id ? "on" : ""} aria-pressed={view === id} title={label} aria-label={label} onClick={() => setView(id)}>
+      <Icon name={icon} />
+    </button>
+  );
+  const tabBtn = (id, icon, label, badge) => {
+    const on = panel.open && panel.tab === id;
+    return (
+      <button className={on ? "on" : ""} aria-pressed={on} title={label} aria-label={label} onClick={() => openTab(id)}>
+        <Icon name={icon} />{badge ? <span className="badge">{badge}</span> : null}
+      </button>
+    );
+  };
+  return (
+    <nav className="rail" aria-label="Views and panels">
+      {viewBtn("2d", "logo", "Map")}
+      {viewBtn("3d", "cube", "3D view")}
+      <span className="rail-div" />
+      {tabBtn("problems", "alert", "Problems", findings)}
+      {tabBtn("changes", "clock", "Changes")}
+      {tabBtn("drain", "flask", "Drain simulation")}
+      <span className="rail-div" />
+      {settings}
+    </nav>
+  );
+}
+
+window.k8sChrome = { REFRESH_CHOICES, providerOf, refreshLabel, attentionBySev, Menu, TopBar, radio, Metric, SummaryStrip, Toolbar, Rail, SettingsMenu };

@@ -1,29 +1,29 @@
-// Main app — sidebar + treemap grid for the k8sfoams dashboard.
+// Main app — console chrome + treemap grid for the k8sfoams dashboard.
 
 const { useState, useEffect, useMemo, useRef } = React;
 const { NodeCard, metricCap, metricValue } = window.k8sTreemap;
 const { Scene3D } = window.k8sScene3D;
 const { workloadKey } = window.k8sWorkload;
-const { warnInfo, statusOf, WARNING_ORDER } = window.k8sNodeStatus;
-const { findingInfo, FINDING_ORDER, PodAuditBadge } = window.k8sPodAudit;
+const { warnInfo, statusOf } = window.k8sNodeStatus;
+const { findingInfo, PodAuditBadge } = window.k8sPodAudit;
 const { ExportMenu } = window.k8sExport;
 const { getJSON, fitMatch, FitForm, FitSummary, FitVerdict, DrainResults } = window.k8sSimulate;
 const { QOS_INFO, QOS_ORDER } = window.k8sQos;
-const { assignNamespaces, utilTone, COLOR_MODES } = window.k8sPalette;
+const { assignNamespaces, utilTone } = window.k8sPalette;
 const { Legend } = window.k8sLegend;
-const { GROUP_BY, groupNodes } = window.k8sTopology;
+const { groupNodes } = window.k8sTopology;
 const { pack, unpack, record, diff } = window.k8sHistory;
 const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY, PANEL_DEFAULT, validPanel } = window.k8sPrefs;
-const { fmtMem, shortContext, clock, timeAgo } = window.k8sFormat;
+const { fmtMem, shortContext, clock } = window.k8sFormat;
 const { buildProblems, problemChips } = window.k8sProblems;
 const { pickShown } = window.k8sHighlight;
 const { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips } = window.k8sPanel;
-const { TopBar } = window.k8sChrome;
+const { TopBar, SummaryStrip, Toolbar, Rail, SettingsMenu, attentionBySev } = window.k8sChrome;
 const THEME_KEY = "k8sfoams.theme";
 
 const METRICS = [
-  { id: "cpu", label: "CPU", icon: "cpu" },
-  { id: "mem", label: "Memory", icon: "mem" },
+  { id: "cpu", label: "CPU" },
+  { id: "mem", label: "Memory" },
 ];
 
 // Extended resources become metrics when a node offers them. Byte-sized ones
@@ -33,7 +33,7 @@ const isBytes = key => key === "ephemeral-storage" || key.startsWith("hugepages-
 
 function extMetric(key) {
   const label = EXT_LABELS[key] || (key.startsWith("hugepages-") ? `HugePages ${key.slice(10)}` : key.split("/").pop());
-  return { id: key, label, icon: isBytes(key) ? "mem" : "cpu" };
+  return { id: key, label };
 }
 
 function fmtExt(v, key, memUnit, capacity = false) {
@@ -41,11 +41,6 @@ function fmtExt(v, key, memUnit, capacity = false) {
 }
 
 const extUnit = (key, memUnit) => (isBytes(key) ? memUnit : extMetric(key).label);
-
-const VIEWS = [
-  { id: "2d", label: "2D Map", icon: "rect" },
-  { id: "3d", label: "3D Cubes", icon: "cube" },
-];
 
 // Backend memory weights are decimal kB (bitmath .kB, 1 kB = 1000 bytes),
 // so MiB = kB * 1000 / 1024^2 — not a plain /1024, which would treat kB as KiB.
@@ -219,7 +214,6 @@ function App() {
   // previews one, so a pinned selection always wins over the pointer.
   const [selectedWorkload, setSelectedWorkload] = useState(null);
   const [hoveredWorkload, setHoveredWorkload] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [nodes, setNodes] = useState([]);
   const [error, setError] = useState(null);
   const gridRef = useRef(null);
@@ -490,31 +484,6 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // One row per distinct warning present in the cluster, worst first. Empty on
-  // a healthy cluster, which is what hides the legend entirely.
-  const health = useMemo(() => {
-    const counts = new Map();
-    for (const n of nodes) {
-      for (const w of n.warnings || []) counts.set(w, (counts.get(w) || 0) + 1);
-    }
-    return [...counts.entries()]
-      .map(([slug, count]) => ({ slug, count, ...warnInfo(slug) }))
-      .sort((a, b) => WARNING_ORDER.indexOf(a.slug) - WARNING_ORDER.indexOf(b.slug));
-  }, [nodes]);
-
-  // One row per audit rule broken anywhere in the cluster, counted in pods.
-  const audit = useMemo(() => {
-    const counts = new Map();
-    for (const n of nodes) {
-      for (const p of n.pods) {
-        for (const f of p.findings || []) counts.set(f, (counts.get(f) || 0) + 1);
-      }
-    }
-    return [...counts.entries()]
-      .map(([slug, count]) => ({ slug, count, ...findingInfo(slug) }))
-      .sort((a, b) => FINDING_ORDER.indexOf(a.slug) - FINDING_ORDER.indexOf(b.slug));
-  }, [nodes]);
-
   const problems = useMemo(() => buildProblems(nodes), [nodes]);
   const chips = useMemo(() => problemChips(problems), [problems]);
 
@@ -533,104 +502,97 @@ function App() {
   const nsMap = useMemo(() => (nsRef.current = assignNamespaces(nodes, nsRef.current)), [nodes]);
   const fmtReq = (v, m) => (m === "cpu" ? `${Math.round(v)}m` : m === "mem" ? `${fmtMem(v, memUnit)} ${memUnit}` : fmtExt(v, m, memUnit));
 
-  return (
-    <div className={`app ${sidebarOpen ? "sidebar-open" : "sidebar-collapsed"}`}>
-      <Sidebar
-        open={sidebarOpen}
-        onToggle={() => setSidebarOpen(s => !s)}
-        view={view} setView={setView}
-        zoom={zoom} setZoom={setZoom}
-        groupBy={groupBy} setGroupBy={setGroupBy}
-        metric={activeMetric} setMetric={setMetric} metrics={metrics}
-        memUnit={memUnit} setMemUnit={setMemUnit}
-        refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
-        contexts={contexts}
-        contextIdx={contextIdx} setContextIdx={setContextIdx}
-        doRefresh={loadData} refreshing={refreshing}
-        lastRefresh={lastRefresh}
-        nodeCount={nodes.length}
-        qosBreakdown={qosBreakdown}
-        colorBy={colorBy} setColorBy={setColorBy} nsMap={nsMap}
-        query={query} setQuery={setQuery}
-        themePref={themePref} setThemePref={setThemePref}
-      />
+  const attention = useMemo(() => attentionBySev(nodes), [nodes]);
+  const showGroupBy = useMemo(() => nodes.some(n => n.zone || n.region || n.pool || n.instanceType || n.capacityType), [nodes]);
+  const ext = activeMetric !== "cpu" && activeMetric !== "mem" && metrics.find(m => m.id === activeMetric);
+  const extCell = ext && {
+    label: `${ext.label} requested`, u: totals.extUsed / (totals.extCap || 1),
+    value: fmtExt(totals.extUsed, activeMetric, memUnit), of: `of ${fmtExt(totals.extCap, activeMetric, memUnit, true)} ${extUnit(activeMetric, memUnit)}`,
+  };
+  const openTab = id => setPanel(p => (p.open && p.tab === id ? { ...p, open: false } : { ...p, open: true, tab: id }));
 
-      <main className="main">
+  return (
+    <div className="app">
+      <TopBar contexts={contexts} contextIdx={contextIdx} setContextIdx={setContextIdx}
+        queryBar={<QueryBar query={query} setQuery={setQuery} match={match} hintOpen={hintOpen} setHintOpen={setHintOpen} />}
+        error={error} lastRefresh={lastRefresh} refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
+        onRefresh={loadData} refreshing={refreshing} me={me}
+        exportMenu={<ExportMenu view={view} context={context} gridRef={gridRef} sceneRef={sceneRef}
+          treemap={{ nodes, metric: activeMetric, match: shown, highlight, highlightActive, colorBy, nsMap }} />} />
+      <SummaryStrip totals={totals} memUnit={memUnit} qosBreakdown={qosBreakdown} attention={attention}
+        extCell={extCell} query={query} setQuery={setQuery} />
+      <Toolbar view={view} metric={activeMetric} metrics={metrics} setMetric={setMetric} zoom={zoom} setZoom={setZoom}
+        groupBy={groupBy} setGroupBy={setGroupBy} showGroupBy={showGroupBy} colorBy={colorBy} setColorBy={setColorBy}
+        legend={<Legend colorBy={colorBy} nsMap={nsMap} view={view} />} />
+
+      <div className="grid-wrap has-rail" ref={gridRef}>
         {error && (
           <div className="error-banner">
             <span>Failed to connect to cluster: {error}</span>
           </div>
         )}
+        <Rail view={view} setView={setView} panel={panel} openTab={openTab} findings={problems.length}
+          settings={<SettingsMenu themePref={themePref} setThemePref={setThemePref} memUnit={memUnit} setMemUnit={setMemUnit} />} />
+        <MapChips lit={shown.lit} ring={shown.ring}
+          workload={workloadStats} onClearWorkload={() => setSelectedWorkload(null)}
+          at={at} onLive={() => { setPlaying(false); setAt(null); }} />
+        {view === "3d" ? (
+          <Scene3D
+            nodes={nodes}
+            match={shown}
+            zoom={zoom}
+            groupBy={groupBy}
+            nsMap={nsMap}
+            themeKey={themeKey}
+            colorBy={colorBy}
+            memUnit={memUnit}
+            fmtMem={fmtMem}
+            onFocus={setFocused}
+            highlight={highlight}
+            highlightActive={highlightActive}
+            onPodSelect={toggleWorkload}
+            onPodHover={setHoveredWorkload}
+            snapshotRef={sceneRef}
+          />
+        ) : (
+          <TreemapGrid
+            nodes={nodes}
+            match={shown}
+            metric={activeMetric}
+            groupBy={groupBy}
+            colorBy={colorBy}
+            nsMap={nsMap}
+            fmtReq={fmtReq}
+            onFocus={setFocused}
+            highlight={highlight}
+            highlightActive={highlightActive}
+            onPodSelect={toggleWorkload}
+            onPodHover={setHoveredWorkload}
+          />
+        )}
+      </div>
 
-        <TopBar contexts={contexts} contextIdx={contextIdx} setContextIdx={setContextIdx}
-          queryBar={<QueryBar query={query} setQuery={setQuery} match={match} hintOpen={hintOpen} setHintOpen={setHintOpen} />}
-          error={error} lastRefresh={lastRefresh} refreshInterval={refreshInterval} setRefreshInterval={setRefreshInterval}
-          onRefresh={loadData} refreshing={refreshing} me={me}
-          exportMenu={<ExportMenu view={view} context={context} gridRef={gridRef} sceneRef={sceneRef}
-            treemap={{ nodes, metric: activeMetric, match: shown, highlight, highlightActive, colorBy, nsMap }} />} />
-
-        <div className="grid-wrap" ref={gridRef}>
-          <MapChips lit={shown.lit} ring={shown.ring}
-            workload={workloadStats} onClearWorkload={() => setSelectedWorkload(null)}
-            at={at} onLive={() => { setPlaying(false); setAt(null); }} />
-          {view === "3d" ? (
-            <Scene3D
-              nodes={nodes}
-              match={shown}
-              zoom={zoom}
-              groupBy={groupBy}
-              nsMap={nsMap}
-              themeKey={themeKey}
-              colorBy={colorBy}
-              memUnit={memUnit}
-              fmtMem={fmtMem}
-              onFocus={setFocused}
-              highlight={highlight}
-              highlightActive={highlightActive}
-              onPodSelect={toggleWorkload}
-              onPodHover={setHoveredWorkload}
-              snapshotRef={sceneRef}
-            />
-          ) : (
-            <TreemapGrid
-              nodes={nodes}
-              match={shown}
-              metric={activeMetric}
-              groupBy={groupBy}
-              colorBy={colorBy}
-              nsMap={nsMap}
-              fmtReq={fmtReq}
-              onFocus={setFocused}
-              highlight={highlight}
-              highlightActive={highlightActive}
-              onPodSelect={toggleWorkload}
-              onPodHover={setHoveredWorkload}
-            />
-          )}
-        </div>
-
-        <BottomPanel panel={panel} setPanel={setPanel} counts={{ problems: problems.length, changes: changes ? changes.added.length + changes.removed.length + changes.resized.length : 0 }}>
-          {panel.tab === "problems" && (
-            <ProblemsTab rows={problems} chips={chips} query={query} setQuery={setQuery}
-              onPickNode={name => setFocused(nodes.find(n => n.name === name) || null)} />
-          )}
-          {panel.tab === "changes" && (
-            <ChangesTab entries={entries} at={at} atLabel={at == null ? "Live" : clock(at)}
-              onScrub={i => { setPlaying(false); setAt(i === entries.length - 1 ? null : entries[i].t); }}
-              playing={playing} onPlay={() => setPlaying(p => !p)} onLive={() => { setPlaying(false); setAt(null); }}
-              base={base} onCompare={toggleCompare}
-              baseLabel={base ? `${clock(base.t)}${base.context !== ctxName ? ` of ${shortContext(base.context)}` : ""}` : ""}
-              lists={changeLists} />
-          )}
-          {panel.tab === "drain" && (
-            <DrainTab mode={sim.mode} setMode={mode => setSim(s => ({ ...s, mode }))}
-              node={sim.node} setNode={name => setSim(s => ({ ...s, node: name, result: null, error: null, busy: false }))}
-              nodes={nodes} busy={sim.busy} error={sim.error} onRun={() => runDrain(sim.node)}
-              drainBody={sim.result && <DrainResults result={sim.result} podsByKey={podsByKey} fmtReq={fmtReq} />}
-              fitBody={<><FitForm context={context} onResult={setFit} />{fit && <FitSummary result={fit} onClear={() => setFit(null)} />}</>} />
-          )}
-        </BottomPanel>
-      </main>
+      <BottomPanel panel={panel} setPanel={setPanel} counts={{ problems: problems.length, changes: changes ? changes.added.length + changes.removed.length + changes.resized.length : 0 }}>
+        {panel.tab === "problems" && (
+          <ProblemsTab rows={problems} chips={chips} query={query} setQuery={setQuery}
+            onPickNode={name => setFocused(nodes.find(n => n.name === name) || null)} />
+        )}
+        {panel.tab === "changes" && (
+          <ChangesTab entries={entries} at={at} atLabel={at == null ? "Live" : clock(at)}
+            onScrub={i => { setPlaying(false); setAt(i === entries.length - 1 ? null : entries[i].t); }}
+            playing={playing} onPlay={() => setPlaying(p => !p)} onLive={() => { setPlaying(false); setAt(null); }}
+            base={base} onCompare={toggleCompare}
+            baseLabel={base ? `${clock(base.t)}${base.context !== ctxName ? ` of ${shortContext(base.context)}` : ""}` : ""}
+            lists={changeLists} />
+        )}
+        {panel.tab === "drain" && (
+          <DrainTab mode={sim.mode} setMode={mode => setSim(s => ({ ...s, mode }))}
+            node={sim.node} setNode={name => setSim(s => ({ ...s, node: name, result: null, error: null, busy: false }))}
+            nodes={nodes} busy={sim.busy} error={sim.error} onRun={() => runDrain(sim.node)}
+            drainBody={sim.result && <DrainResults result={sim.result} podsByKey={podsByKey} fmtReq={fmtReq} />}
+            fitBody={<><FitForm context={context} onResult={setFit} />{fit && <FitSummary result={fit} onClear={() => setFit(null)} />}</>} />
+        )}
+      </BottomPanel>
 
       {focused && (
         <FocusOverlay node={focused} onClose={() => setFocused(null)} metric={metric} memUnit={memUnit}
@@ -638,189 +600,6 @@ function App() {
           onDrain={name => { setPanel(p => ({ ...p, open: true, tab: "drain" })); setFocused(null); runDrain(name); }} />
       )}
     </div>
-  );
-}
-
-/* ─────────── Sidebar ─────────── */
-
-function Sidebar({
-  open, onToggle, view, setView, zoom, setZoom, groupBy, setGroupBy, metric, setMetric, metrics, memUnit, setMemUnit,
-  refreshInterval, setRefreshInterval,
-  contexts, contextIdx, setContextIdx, doRefresh, refreshing, lastRefresh, nodeCount,
-  qosBreakdown, colorBy, setColorBy, nsMap, query, setQuery, themePref, setThemePref
-}) {
-  const is3d = view === "3d";
-  return (
-    <aside className="sidebar" data-screen-label="sidebar">
-      <div className="brand">
-        <div className="brand-mark">
-          <svg viewBox="0 0 32 32" width="22" height="22" fill="none">
-            <path d="M6 14 L16 6 L26 14 L26 26 L18 26 L18 19 L14 19 L14 26 L6 26 Z"
-              stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" fill="none" />
-            <circle cx="11" cy="11" r="1.5" fill="currentColor" />
-            <circle cx="21" cy="11" r="1.5" fill="currentColor" />
-          </svg>
-        </div>
-        <div className="brand-text">
-          <div className="brand-title">k8sfoams</div>
-          <div className="brand-sub">cluster topology</div>
-        </div>
-        <button className="icon-btn brand-collapse" onClick={onToggle} title="Collapse">
-          <svg viewBox="0 0 16 16" width="14" height="14"><path d="M10 4 L6 8 L10 12" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" /></svg>
-        </button>
-      </div>
-
-      <div className="sidebar-section">
-        <div className="section-label">View</div>
-        <div className="seg seg-2">
-          {VIEWS.map(v => (
-            <button key={v.id} className={view === v.id ? "seg-on" : ""}
-              onClick={() => setView(v.id)}>
-              <ViewIcon kind={v.icon} /> {v.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {is3d && (
-        <div className="sidebar-section">
-          <div className="section-label">
-            <span>Zoom</span>
-            <span className="section-value">{Math.round(zoom * 100)}%</span>
-          </div>
-          <input type="range" min="0.4" max="1.6" step="0.05" value={zoom}
-            onChange={e => setZoom(+e.target.value)} className="slider" />
-        </div>
-      )}
-
-      <div className="sidebar-section">
-        <div className="section-label">Group by</div>
-        <div className="seg seg-3">
-          {GROUP_BY.map(g => (
-            <button key={g.id} className={groupBy === g.id ? "seg-on" : ""} onClick={() => setGroupBy(g.id)}>{g.label}</button>
-          ))}
-        </div>
-      </div>
-
-      <div className="sidebar-section">
-        <div className="section-label">Resource</div>
-        {/* Cubes plot CPU and Memory on separate axes, so there is nothing for
-            this control to switch between in 3D. */}
-        <div className={`seg seg-2 ${is3d ? "seg-disabled" : ""}`}>
-          {metrics.map(m => (
-            <button key={m.id} className={!is3d && metric === m.id ? "seg-on" : ""}
-              disabled={is3d} title={m.id}
-              onClick={() => !is3d && setMetric(m.id)}>
-              <MetricIcon kind={m.icon} /> {m.label}
-            </button>
-          ))}
-        </div>
-        {is3d && (
-          <div className="seg-note">Cubes encode both — footprint is CPU, height is Memory.</div>
-        )}
-      </div>
-
-      <div className="sidebar-section">
-        <div className="section-label">Color by</div>
-        <div className="seg seg-3">
-          {COLOR_MODES.map(c => (
-            <button key={c.id} className={colorBy === c.id ? "seg-on" : ""}
-              onClick={() => setColorBy(c.id)}>
-              {c.label}
-            </button>
-          ))}
-        </div>
-        <div className="legend"><Legend colorBy={colorBy} nsMap={nsMap} view={view} /></div>
-      </div>
-
-      <div className="sidebar-section">
-        <div className="section-label">Context</div>
-        <div className="ctx-list">
-          {contexts
-            .map((c, i) => ({ c, i }))
-            .sort((a, b) => (a.i === contextIdx ? -1 : b.i === contextIdx ? 1 : 0))
-            .map(o => (
-              <button key={o.i}
-                className={`ctx-item ${o.i === contextIdx ? "ctx-on" : ""}`}
-                onClick={() => setContextIdx(o.i)}>
-                <span className="ctx-dot" style={{
-                  background: o.i === contextIdx ? "var(--accent)" : "var(--line)"
-                }} />
-                <span className="ctx-name">{o.c.context.split("/").pop()}</span>
-                <span className="ctx-tail">{o.c.context.includes("eks") ? "eks" : o.c.context.includes("gke") ? "gke" : "k8s"}</span>
-              </button>
-            ))}
-        </div>
-      </div>
-
-      <div className="sidebar-section">
-        <div className="section-label">
-          <span>Refresh</span>
-          <span className="section-value">{refreshInterval}s</span>
-        </div>
-        <input type="range" min="5" max="600" step="5" value={refreshInterval}
-          onChange={e => setRefreshInterval(+e.target.value)} className="slider" />
-        <button className={`btn-primary ${refreshing ? "spinning" : ""}`} onClick={doRefresh}>
-          <svg viewBox="0 0 16 16" width="14" height="14" className="refresh-icon">
-            <path d="M13.5 8 A5.5 5.5 0 1 1 11.5 4 M13.5 2 V5 H10.5"
-              stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Refresh now
-        </button>
-      </div>
-
-      <div className="sidebar-section">
-        <div className="section-label">Memory unit</div>
-        <div className="seg seg-3">
-          {["MiB", "GiB", "TiB"].map(u => (
-            <button key={u} className={memUnit === u ? "seg-on" : ""} onClick={() => setMemUnit(u)}>{u}</button>
-          ))}
-        </div>
-      </div>
-
-      <div className="sidebar-section">
-        <div className="section-label">Theme</div>
-        <div className="seg seg-3">
-          {[["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(([id, label]) => (
-            <button key={id} className={themePref === id ? "seg-on" : ""} onClick={() => setThemePref(id)}>{label}</button>
-          ))}
-        </div>
-      </div>
-
-      {/* Riskiest class first. The swatches double as the legend for Color by →
-          QoS, and a row toggles its qos: query, like the Problems chips. */}
-      {nodeCount > 0 && (
-        <div className="sidebar-section">
-          <div className="section-label">QoS &amp; Eviction Risk</div>
-          <div className="health-rows">
-            {qosBreakdown.map(q => {
-              const token = `qos:${q.qos}`;
-              const on = query.trim() === token;
-              return (
-                <button key={q.qos} className={`health-row audit-row ${on ? "audit-on" : ""}`}
-                  title={q.risk} onClick={() => setQuery(on ? "" : token)}>
-                  <span className={`audit-swatch sev-${q.sev}`} />
-                  <span className="health-name">{q.label}</span>
-                  <span className="health-count">{q.count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <div className="sidebar-footer">
-        <div className="footer-row">
-          <span className="dot dot-ok" />
-          <span>Cluster connected</span>
-          <span className="footer-tail">Ready</span>
-        </div>
-        <div className="footer-row dim">
-          <span>{nodeCount} nodes</span>
-          <span className="footer-tail">· {timeAgo(lastRefresh)}</span>
-        </div>
-      </div>
-    </aside>
   );
 }
 
@@ -1107,43 +886,6 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain }) {
         </div>
       </div>
     </div>
-  );
-}
-
-/* ─────────── Icons ─────────── */
-
-// View glyphs, sized to sit alongside MetricIcon in the segmented controls:
-// a quartered rect for the treemap, an isometric cube for the 3D scene.
-function ViewIcon({ kind }) {
-  if (kind === "rect") return (
-    <svg viewBox="0 0 16 16" width="13" height="13" fill="none">
-      <rect x="1.5" y="1.5" width="13" height="13" rx="1" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M1.5 8 H14.5 M8 1.5 V14.5" stroke="currentColor" strokeWidth="1.1" />
-    </svg>
-  );
-  return (
-    <svg viewBox="0 0 16 16" width="13" height="13" fill="none">
-      {/* top face, then the left and right walls meeting at the near vertex */}
-      <path d="M8 1.6 L14 5 L8 8.4 L2 5 Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-      <path d="M2 5 V11 L8 14.4 V8.4" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-      <path d="M14 5 V11 L8 14.4" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function MetricIcon({ kind }) {
-  if (kind === "cpu") return (
-    <svg viewBox="0 0 16 16" width="13" height="13" fill="none">
-      <rect x="3.5" y="3.5" width="9" height="9" rx="1" stroke="currentColor" strokeWidth="1.3" />
-      <rect x="5.5" y="5.5" width="5" height="5" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M6 1.5v2M8 1.5v2M10 1.5v2M6 12.5v2M8 12.5v2M10 12.5v2M1.5 6h2M1.5 8h2M1.5 10h2M12.5 6h2M12.5 8h2M12.5 10h2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-    </svg>
-  );
-  return (
-    <svg viewBox="0 0 16 16" width="13" height="13" fill="none">
-      <rect x="1.5" y="4.5" width="13" height="7" rx="0.8" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M4 4.5v7M6.5 4.5v7M9 4.5v7M11.5 4.5v7" stroke="currentColor" strokeWidth="1.1" />
-    </svg>
   );
 }
 
