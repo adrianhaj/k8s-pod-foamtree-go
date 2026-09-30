@@ -46,7 +46,7 @@ function exportLook() {
 function TreemapSVG({ nodes, width, height, metric, colorBy, nsMap, match, highlight, highlightActive }) {
   const pad = 14; // .grid-wrap padding
   const slots = squarify(
-    nodes.map((node, idx) => ({ node, value: metricCap(node, metric) })),
+    nodes.map(node => ({ node, value: metricCap(node, metric) })),
     pad, pad, width - pad * 2, height - pad * 2
   );
   const look = { ...exportLook(), queryActive: !!(match && match.active), match, highlight, pinned: highlightActive, colorBy, nsMap };

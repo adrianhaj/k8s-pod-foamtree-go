@@ -1138,6 +1138,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 }
 
 .scene-legend { position: absolute; left: 14px; bottom: 14px; z-index: 2; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 10px; padding: 8px 12px; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md); font-size: 11px; line-height: 1.45; color: var(--text-dim); }
+.scene-legend svg { grid-row: 1 / span 4; color: var(--text-dim); }
 
 .cube-tip {
   position: fixed;

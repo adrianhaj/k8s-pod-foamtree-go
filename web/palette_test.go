@@ -32,6 +32,9 @@ func TestAssignNamespaces(t *testing.T) {
 		{"ties break alphabetically",
 			`entries(k8sPalette.assignNamespaces([{ name: "x", pods: [mk("b", 10), mk("a", 10)] }], null))`,
 			`[["a",0],["b",1]]`},
+		{"no free slot for a newcomer",
+			`entries(k8sPalette.assignNamespaces([{ name: "x", pods: [mk("a", 10), mk("b", 10), mk("c", 10), mk("d", 10), mk("e", 10), mk("new", 9000)] }], new Map([["a", 0], ["b", 1], ["c", 2], ["d", 3], ["e", 4]])))`,
+			`[["a",0],["b",1],["c",2],["d",3],["e",4]]`},
 		{"empty cluster", `entries(k8sPalette.assignNamespaces([], null))`, `[]`},
 	} {
 		if got := js(t, vm, c.expr); got != c.want {
