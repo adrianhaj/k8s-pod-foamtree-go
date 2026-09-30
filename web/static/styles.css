@@ -1136,31 +1136,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   pointer-events: none;
 }
 
-.scene-legend {
-  position: absolute;
-  left: 18px; bottom: 18px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 14px 10px 8px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  backdrop-filter: blur(6px);
-  pointer-events: none;
-}
-.legend-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 11px;
-  color: var(--text-dim);
-}
-.legend-lines .legend-foot {
-  margin-top: 3px;
-  color: var(--text-soft);
-  font-size: 10px;
-}
+.scene-legend { position: absolute; left: 14px; bottom: 14px; z-index: 2; display: grid; gap: 2px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; font-size: 11px; line-height: 1.45; color: var(--text-dim); }
 
 .cube-tip {
   position: fixed;

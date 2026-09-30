@@ -173,7 +173,16 @@ function apiFetch(url) {
   });
 }
 
+// Bumps whenever the effective theme may have changed, so views that cache
+// colours (the 3D scene) re-read the tokens.
+function useThemeKey() {
+  const [key, setKey] = useState(0);
+  useEffect(() => window.k8sPrefs.watchTheme(() => setKey(k => k + 1)), []);
+  return key;
+}
+
 function App() {
+  const themeKey = useThemeKey();
   const [me, setMe] = useState(null);
   const [themePref, setThemePref] = useState(() => readPref(safeStorage(), THEME_KEY, "system", v => THEME_PREFS.includes(v)));
   useEffect(() => {
@@ -559,6 +568,7 @@ function App() {
               zoom={zoom}
               groupBy={groupBy}
               nsMap={nsMap}
+              themeKey={themeKey}
               colorBy={colorBy}
               memUnit={memUnit}
               fmtMem={fmtMem}
