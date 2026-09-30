@@ -11,6 +11,8 @@ const { fitMatch, FitPanel, FitVerdict, DrainSection } = window.k8sSimulate;
 const { QOS_INFO, QOS_ORDER, NEUTRAL_HUE } = window.k8sQos;
 const { GROUP_BY, groupNodes } = window.k8sTopology;
 const { pack, unpack, record, diff } = window.k8sHistory;
+const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref } = window.k8sPrefs;
+const THEME_KEY = "k8sfoams.theme";
 
 // Per-node hue assignment — deterministic from index, evenly spaced around wheel.
 function nodeHue(idx, scheme) {
@@ -196,6 +198,11 @@ function apiFetch(url) {
 function App() {
   const [tw, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [me, setMe] = useState(null);
+  const [themePref, setThemePref] = useState(() => readPref(safeStorage(), THEME_KEY, "system", v => THEME_PREFS.includes(v)));
+  useEffect(() => {
+    applyThemePref(themePref);
+    writePref(safeStorage(), THEME_KEY, themePref);
+  }, [themePref]);
 
   const [view, setView] = useState("2d");
   const [zoom, setZoom] = useState(0.7);
@@ -528,6 +535,7 @@ function App() {
         entries={entries} at={at} setAt={setAt}
         playing={playing} setPlaying={setPlaying}
         base={base} toggleCompare={toggleCompare} changes={changes} ctxName={ctxName}
+        themePref={themePref} setThemePref={setThemePref}
       >
         <FitPanel context={context} result={fit} onResult={setFit} />
       </Sidebar>
@@ -654,7 +662,7 @@ function Sidebar({
   open, onToggle, view, setView, zoom, setZoom, groupBy, setGroupBy, metric, setMetric, metrics, memUnit, setMemUnit,
   refreshInterval, setRefreshInterval,
   contexts, contextIdx, setContextIdx, doRefresh, refreshing, lastRefresh, nodeCount, health,
-  audit, qosBreakdown, colorBy, setColorBy, query, setQuery, entries, at, setAt, playing, setPlaying, base, toggleCompare, changes, ctxName, children
+  audit, qosBreakdown, colorBy, setColorBy, query, setQuery, entries, at, setAt, playing, setPlaying, base, toggleCompare, changes, ctxName, themePref, setThemePref, children
 }) {
   const is3d = view === "3d";
   return (
@@ -823,6 +831,15 @@ function Sidebar({
         <div className="seg seg-3">
           {["MiB", "GiB", "TiB"].map(u => (
             <button key={u} className={memUnit === u ? "seg-on" : ""} onClick={() => setMemUnit(u)}>{u}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="sidebar-section">
+        <div className="section-label">Theme</div>
+        <div className="seg seg-3">
+          {[["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(([id, label]) => (
+            <button key={id} className={themePref === id ? "seg-on" : ""} onClick={() => setThemePref(id)}>{label}</button>
           ))}
         </div>
       </div>
