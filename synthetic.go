@@ -46,7 +46,8 @@ func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam
 			Conditions: map[string]bool{"Ready": true, "MemoryPressure": i%31 == 5},
 			Zone:       "synthetic-1" + string(rune('a'+i%3)), Region: "synthetic-1",
 			InstanceType: "m.4xlarge", Pool: pools[i%len(pools)], Unschedulable: i%23 == 7,
-			Extended: map[string]int64{"ephemeral-storage": 100_000_000_000},
+			CapacityType: "on-demand",
+			Extended:     map[string]int64{"ephemeral-storage": 100_000_000_000},
 		}
 		if i%8 == 1 {
 			n.Pool = "gpu"
@@ -57,6 +58,7 @@ func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam
 			n.Extended["hugepages-2Mi"] = 4 << 30
 		case "spot":
 			n.Taints = []foam.Taint{{Key: "spot", Value: "true", Effect: "NoSchedule"}}
+			n.CapacityType = "spot"
 		case "gpu":
 			n.InstanceType = "g.4xlarge"
 			n.Taints = []foam.Taint{{Key: "nvidia.com/gpu", Value: "present", Effect: "NoSchedule"}}

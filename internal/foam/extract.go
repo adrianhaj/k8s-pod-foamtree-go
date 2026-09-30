@@ -56,6 +56,8 @@ type Node struct {
 	Conditions    map[string]bool
 	// "" when the node does not carry the label.
 	Zone, Region, InstanceType, Pool string
+	// "spot", "on-demand", or "" when no label says which.
+	CapacityType string
 	// From allocatable, what pods can actually claim; CPU and Memory stay on
 	// capacity, as the Python app did.
 	Extended map[string]int64
@@ -88,8 +90,30 @@ var PoolLabels = []string{
 	"kubernetes.azure.com/agentpool",
 }
 
+// Capacity-type labels by provider, most specific first like PoolLabels, and
+// the label=value pairs that say spot or on-demand. Other values (Karpenter's
+// "reserved", GKE's "standard") say nothing, so they fall through.
+var capacityLabels = []string{
+	"karpenter.sh/capacity-type",
+	"eks.amazonaws.com/capacityType",
+	"cloud.google.com/gke-spot",
+	"cloud.google.com/gke-provisioning",
+	"kubernetes.azure.com/scalesetpriority",
+}
+
+var capacityTypes = map[string]string{
+	"karpenter.sh/capacity-type=spot":               "spot",
+	"karpenter.sh/capacity-type=on-demand":          "on-demand",
+	"eks.amazonaws.com/capacityType=SPOT":           "spot",
+	"eks.amazonaws.com/capacityType=ON_DEMAND":      "on-demand",
+	"cloud.google.com/gke-spot=true":                "spot",
+	"cloud.google.com/gke-provisioning=spot":        "spot",
+	"kubernetes.azure.com/scalesetpriority=spot":    "spot",
+	"kubernetes.azure.com/scalesetpriority=regular": "on-demand",
+}
+
 // TopologyLabels are the node labels the dashboard reads.
-var TopologyLabels = append([]string{zoneLabel, regionLabel, instanceTypeLabel}, PoolLabels...)
+var TopologyLabels = append(append([]string{zoneLabel, regionLabel, instanceTypeLabel}, PoolLabels...), capacityLabels...)
 
 // extended keeps every non-zero resource besides CPU and memory (GPUs,
 // ephemeral-storage, hugepages) in its base unit: bytes or devices. nil when
@@ -227,6 +251,13 @@ func FromNode(n *corev1.Node) Node {
 			break
 		}
 	}
+	capacity := ""
+	for _, l := range capacityLabels {
+		if v, ok := capacityTypes[l+"="+n.Labels[l]]; ok {
+			capacity = v
+			break
+		}
+	}
 	return Node{
 		Name:          n.Name,
 		CPU:           n.Status.Capacity.Cpu().MilliValue(),
@@ -238,6 +269,7 @@ func FromNode(n *corev1.Node) Node {
 		Region:        n.Labels[regionLabel],
 		InstanceType:  n.Labels[instanceTypeLabel],
 		Pool:          pool,
+		CapacityType:  capacity,
 		Extended:      extended(n.Status.Allocatable),
 		Labels:        n.Labels,
 		AllocCPU:      n.Status.Allocatable.Cpu().MilliValue(),
