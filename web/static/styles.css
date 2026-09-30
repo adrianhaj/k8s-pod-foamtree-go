@@ -377,7 +377,8 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   overflow: hidden;
   margin-top: 7px;
 }
-.stat-bar-fill { height: 100%; transition: width .3s; border-radius: 2px; }
+.stat-bar-fill { height: 100%; transition: width .3s; border-radius: 2px; background: var(--accent); }
+.stat-bar-fill.tone-warn { background: var(--warn); } .stat-bar-fill.tone-danger { background: var(--danger); }
 
 .header-tools { display: flex; align-items: center; gap: 10px; }
 .search {
@@ -489,15 +490,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   position: absolute;
 }
 
-.node-card {
-  position: relative;
-  width: 100%; height: 100%;
-  border-radius: 10px;
-  border: 1px solid;
-  overflow: hidden;
-  cursor: pointer;
-  transition: transform .15s, box-shadow .2s, filter .2s, opacity .18s;
-}
+.node-card { position: absolute; inset: 0; transition: transform .15s, box-shadow .2s, filter .2s, opacity .18s; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; cursor: pointer; }
 .node-card:hover {
   transform: translateY(-1px);
   box-shadow: var(--shadow);
@@ -512,68 +505,30 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
   pointer-events: none;
 }
 
-.node-header {
-  display: flex; align-items: center; gap: 8px;
-  padding: 0 10px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: color-mix(in srgb, var(--text) 95%, transparent);
-  text-shadow: 0 1px 2px color-mix(in srgb, var(--bg) 40%, transparent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 15%, transparent), color-mix(in srgb, var(--bg) 0%, transparent));
-  position: relative;
-  z-index: 2;
-}
-.node-header-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  box-shadow: 0 0 8px currentColor;
-  flex-shrink: 0;
-}
-.node-name {
-  flex: 1; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-weight: 500;
-}
-.node-meta { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.node-util {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
+.node-header { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 6px; padding: 0 8px; white-space: nowrap; overflow: hidden; font-size: 11.5px; }
+.node-name { font: 500 11.5px/1 var(--font-mono); color: var(--text); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.node-type { font-size: 11px; color: var(--text-dim); flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.node-meta { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; }
+.node-ubar { width: 34px; height: 4px; border-radius: 2px; background: var(--bg-3); overflow: hidden; }
+.node-ubar i { display: block; height: 100%; background: var(--text-soft); }
+.node-util { font: 11px/1 var(--font-mono); color: var(--text-dim); }
+.tone-warn { color: var(--warn); } .node-ubar i.tone-warn { background: var(--warn); }
+.tone-danger { color: var(--danger); } .node-ubar i.tone-danger { background: var(--danger); }
 
 /* Pods + containers */
-.pod-box {
-  position: absolute;
-  border-radius: 4px;
-  border: 1px solid;
-  overflow: hidden;
-  transition: opacity .18s, box-shadow .18s;
-}
-.pod-label {
-  position: absolute; top: 0; left: 0; right: 0;
-  height: 12px;
-  font-size: 8px;
-  color: color-mix(in srgb, var(--text) 85%, transparent);
-  padding: 0 4px;
-  display: flex; align-items: center;
-  font-family: var(--font-mono);
-  letter-spacing: -0.02em;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  text-shadow: 0 1px 1px color-mix(in srgb, var(--bg) 50%, transparent);
-  pointer-events: none;
-}
-.container-box {
-  position: absolute;
-  border-radius: 2px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 9px;
-  color: color-mix(in srgb, var(--bg) 85%, transparent);
-  font-weight: 500;
-  overflow: hidden;
-  padding: 0 3px;
-}
-.container-box span {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  max-width: 100%;
-}
+.pod-box { position: absolute; border-radius: 2px; overflow: hidden;
+  background: color-mix(in srgb, var(--pod-c) var(--tint-fill), var(--panel));
+  border: 1px solid color-mix(in srgb, var(--pod-c) var(--tint-edge), var(--panel)); }
+.pod-label, .pod-req { position: absolute; left: 5px; right: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pod-label { top: 3px; font-size: 10.5px; color: var(--text); }
+.pod-req { top: 15px; font: 10px/1.2 var(--font-mono); color: var(--text-dim); }
+.container-box { position: absolute; border-radius: 1px; background: color-mix(in srgb, var(--pod-c) var(--tint-box), var(--panel)); }
+.container-box.is-init { --pod-c: var(--pod-neutral); }
+.container-box span { font-size: 9px; color: var(--text); padding: 1px 3px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 11.5px; color: var(--text-dim); }
+.legend .lg { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--pod-c) var(--tint-fill), var(--panel)); border: 1px solid color-mix(in srgb, var(--pod-c) var(--tint-edge), var(--panel)); }
+.legend i.hat { background: repeating-linear-gradient(135deg, var(--hatch-0) 0 2px, var(--line-2) 2px 3px); border-color: var(--line-2); }
 
 /* Query dim/highlight. The empty free-space block is never a pod, so it is
    deliberately left out of both states. */
