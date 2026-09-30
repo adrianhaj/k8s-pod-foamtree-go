@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -19,6 +19,14 @@ jobs:
 
       - run: make lint
       - run: make test
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
 
       # The Dockerfile cross-compiles from $BUILDPLATFORM, so no QEMU is needed.
       - uses: docker/setup-buildx-action@v4
