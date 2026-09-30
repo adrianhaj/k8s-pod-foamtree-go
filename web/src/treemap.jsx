@@ -4,7 +4,7 @@
 const { workloadKey } = window.k8sWorkload;
 const { worstSeverity, NodeWarnBadge } = window.k8sNodeStatus;
 const { PodAuditBadge } = window.k8sPodAudit;
-const { qosHue } = window.k8sQos;
+const { podToken, utilTone } = window.k8sPalette;
 
 function squarify(items, x, y, w, h) {
   const sorted = items.filter(i => i.value > 0).sort((a, b) => b.value - a.value);
@@ -99,7 +99,7 @@ function cardItems(node, metric, podMatched) {
 
 // Render a node card: header + nested treemap of pods (each pod = treemap of containers).
 function NodeCard({
-  node, match, metric, hue, colorBy, style: nodeStyle, showLabels, density, onClick,
+  node, match, metric, colorBy, nsMap, fmtReq, onClick,
   highlight, highlightActive, onPodSelect, onPodHover,
 }) {
   const ref = React.useRef(null);
@@ -108,9 +108,7 @@ function NodeCard({
   React.useLayoutEffect(() => {
     if (!ref.current) return;
     const el = ref.current;
-    const ro = new ResizeObserver(() => {
-      setBox({ w: el.clientWidth, h: el.clientHeight });
-    });
+    const ro = new ResizeObserver(() => setBox({ w: el.clientWidth, h: el.clientHeight }));
     ro.observe(el);
     setBox({ w: el.clientWidth, h: el.clientHeight });
     return () => ro.disconnect();
@@ -122,96 +120,55 @@ function NodeCard({
   const nodeDim = queryActive && match.dimNodes.has(node.name);
   const podMatched = pod => queryActive && match.pods.has(pod);
 
-  const padding = density === "compact" ? 4 : 6;
-  const headerH = density === "compact" ? 26 : 32;
-
+  const padding = 4;
+  const headerH = 24;
   const { items, cap, used, empty } = cardItems(node, metric, podMatched);
-
   const innerW = Math.max(0, box.w - padding * 2);
   const innerH = Math.max(0, box.h - headerH - padding);
-  // Memoised because a highlight change re-renders every card: `items` is a
-  // pure function of node, metric and match (the sliver), so those plus the
-  // box are the whole input to the layout, and hovering a pod must not redo
-  // this math per card.
+  // Memoised: a highlight change re-renders every card, and hovering a pod must
+  // not redo the layout of every card.
   const laid = React.useMemo(
     () => (innerW > 0 && innerH > 0 ? squarify(items, padding, headerH, innerW, innerH) : []),
-    [node, metric, match, innerW, innerH, padding, headerH]
+    [node, metric, match, innerW, innerH]
   );
 
   // Free capacity on a node that refuses pods is not really free, so the idle
   // foam gets hatched in the worst warning's colour instead of the neutral one.
   const warnSev = worstSeverity(node.warnings);
-
   const utilization = used / cap;
-  const utilColor = utilization > 0.85 ? "#ef4444" :
-                    utilization > 0.6 ? "#f59e0b" :
-                    utilization > 0.3 ? "#10b981" : "#3b82f6";
-
-  // Card style depending on tweak — hsl for max renderer compat.
-  const cardBg = nodeStyle === "solid"
-    ? `hsl(${hue} 55% 24%)`
-    : nodeStyle === "gradient"
-    ? `linear-gradient(135deg, hsl(${hue} 60% 22%) 0%, hsl(${hue} 50% 12%) 100%)`
-    : `hsl(${hue} 20% 12%)`;
-
-  const borderColor = nodeStyle === "outlined"
-    ? `hsl(${hue} 70% 55%)`
-    : `hsla(${hue}, 40%, 45%, 0.4)`;
+  const tone = utilTone(utilization);
 
   return (
-    <div
-      ref={ref}
-      onClick={onClick}
-      className={`node-card ${nodeDim ? "is-dim" : ""}`}
-      style={{
-        background: cardBg,
-        borderColor,
-        borderWidth: nodeStyle === "outlined" ? 1.5 : 1,
-      }}
-    >
-      {/* Header */}
+    <div ref={ref} onClick={onClick} className={`node-card${nodeDim ? " is-dim" : ""}`}>
       <div className="node-header" style={{ height: headerH }}>
-        <div className="node-header-dot" style={{ background: `hsl(${hue} 80% 65%)` }}></div>
         <span className="node-name">{node.name}</span>
+        {node.instanceType && <span className="node-type">{node.instanceType}</span>}
         <span className="node-meta">
           <NodeWarnBadge warnings={node.warnings} />
-          <span className="node-util" style={{ color: utilColor }}>{Math.round(utilization * 100)}%</span>
+          <span className="node-ubar"><i className={tone ? `tone-${tone}` : ""} style={{ width: `${Math.min(100, utilization * 100)}%` }} /></span>
+          <span className={`node-util${tone ? ` tone-${tone}` : ""}`}>{Math.round(utilization * 100)}%</span>
         </span>
       </div>
-
-      {/* Pods */}
-      {laid.map((it, i) => {
-        if (it.empty) {
-          return (
-            <div key={`empty-${i}`} className={`pod-empty${warnSev ? ` warn-${warnSev}` : ""}`}
-              style={{
-                left: it.x, top: it.y, width: it.w - 2, height: it.h - 2,
-              }}>
-              {it.w > 60 && it.h > 30 && <span>idle · {Math.round((empty/cap)*100)}%</span>}
-            </div>
-          );
-        }
-        return (
-          <PodBox key={`pod-${i}`} pod={it.pod} rect={it}
-                  hue={colorBy === "qos" ? qosHue(it.pod.qos) : hue}
-                  metric={metric} showLabels={showLabels} nodeStyle={nodeStyle}
-                  matched={podMatched(it.pod)}
-                  dim={queryActive && !nodeDim && !podMatched(it.pod)}
-                  highlight={highlight} highlightActive={highlightActive}
-                  onPodSelect={onPodSelect} onPodHover={onPodHover} />
-        );
-      })}
+      {laid.map((it, i) => it.empty ? (
+        <div key={`empty-${i}`} className={`pod-empty${warnSev ? ` warn-${warnSev}` : ""}`}
+          style={{ left: it.x, top: it.y, width: it.w - 2, height: it.h - 2 }}>
+          {it.w > 60 && it.h > 30 && <span>idle · {Math.round((empty / cap) * 100)}%</span>}
+        </div>
+      ) : (
+        <PodBox key={`pod-${i}`} pod={it.pod} rect={it} role={podToken(it.pod, colorBy, nsMap)}
+          metric={metric} fmtReq={fmtReq}
+          matched={podMatched(it.pod)} dim={queryActive && !nodeDim && !podMatched(it.pod)}
+          highlight={highlight} highlightActive={highlightActive}
+          onPodSelect={onPodSelect} onPodHover={onPodHover} />
+      ))}
     </div>
   );
 }
 
 function PodBox({
-  pod, rect, hue, metric, showLabels, nodeStyle, matched, dim,
+  pod, rect, role, metric, fmtReq, matched, dim,
   highlight, highlightActive, onPodSelect, onPodHover,
 }) {
-  // Workload identity is cheap to derive and only ever needed here, so it is
-  // recomputed rather than cached on the pod — the highlight itself is a plain
-  // class toggle, so a re-render costs nothing beyond this string compare.
   const wl = workloadKey(pod.name);
   const cls = ["pod-box"];
   if (dim) cls.push("is-dim");
@@ -220,62 +177,29 @@ function PodBox({
     cls.push(wl === highlight ? "wl-peer" : "wl-dim");
     if (!highlightActive) cls.push("wl-preview");
   }
-
+  // Labels read top-left like a table cell: name, then the request beneath.
   const inset = 2;
-  const headerH = rect.h > 28 ? 12 : 0;
-  // Same reasoning as the card layout: the container rects depend only on the
-  // pod, the metric and the rect handed down, so a highlight-only re-render
-  // reuses them instead of re-squarifying every pod in the cluster.
-  const laid = React.useMemo(() => {
-    const containers = pod.containers.map(c => ({
-      container: c,
-      value: metricValue(c, metric),
-    }));
-    return squarify(
-      containers,
-      inset,
-      headerH + inset,
-      Math.max(0, rect.w - inset * 2),
-      Math.max(0, rect.h - headerH - inset * 2)
-    );
-  }, [pod, metric, rect, headerH]);
-
-  const podBg = nodeStyle === "solid"
-    ? `hsla(${hue}, 65%, 38%, 0.65)`
-    : nodeStyle === "gradient"
-    ? `hsla(${hue}, 55%, 32%, 0.9)`
-    : `hsla(${hue}, 45%, 25%, 0.7)`;
+  const showName = rect.w >= 52 && rect.h >= 22;
+  const showReq = showName && rect.h >= 38;
+  const headerH = showReq ? 26 : showName ? 13 : 0;
+  const laid = React.useMemo(() => squarify(
+    pod.containers.map(c => ({ container: c, value: metricValue(c, metric) })),
+    inset, headerH + inset, Math.max(0, rect.w - inset * 2), Math.max(0, rect.h - headerH - inset * 2)
+  ), [pod, metric, rect, headerH]);
 
   return (
     <div className={cls.join(" ")}
-      // stopPropagation keeps the node card's own click (the focus overlay)
-      // from firing on top of the workload selection.
       onClick={e => { e.stopPropagation(); onPodSelect(wl); }}
       onMouseEnter={() => onPodHover(wl)}
       onMouseLeave={() => onPodHover(null)}
-      style={{
-        left: rect.x, top: rect.y, width: rect.w - 2, height: rect.h - 2,
-        background: podBg,
-        borderColor: `hsla(${hue}, 60%, 55%, 0.5)`,
-      }}>
-      {headerH > 0 && showLabels && rect.w > 50 && (
-        <div className="pod-label">{pod.shortName}</div>
-      )}
-      {/* Too small for a glyph? The sidebar panel and audit: query still reach it. */}
+      style={{ left: rect.x, top: rect.y, width: rect.w - 2, height: rect.h - 2, "--pod-c": `var(${role})` }}>
+      {showName && <div className="pod-label">{pod.shortName}</div>}
+      {showReq && <div className="pod-req">{fmtReq(metricValue(pod, metric), metric)}</div>}
       {rect.w > 24 && rect.h > 16 && <PodAuditBadge findings={pod.findings} />}
       {laid.map((it, i) => (
-        <div key={i} className="container-box"
-          style={{
-            left: it.x, top: it.y, width: Math.max(0, it.w - 1), height: Math.max(0, it.h - 1),
-            // Init containers render desaturated — they explain the effective
-            // request but don't run alongside the regular containers.
-            background: it.container.init
-              ? `hsla(${hue}, 10%, 55%, 0.85)`
-              : `hsla(${hue}, 70%, 68%, 0.92)`,
-          }}>
-          {showLabels && it.w > 40 && it.h > 18 && (
-            <span>{it.container.name}</span>
-          )}
+        <div key={i} className={`container-box${it.container.init ? " is-init" : ""}`}
+          style={{ left: it.x, top: it.y, width: Math.max(0, it.w - 1), height: Math.max(0, it.h - 1) }}>
+          {it.w > 40 && it.h > 18 && <span>{it.container.name}</span>}
         </div>
       ))}
     </div>

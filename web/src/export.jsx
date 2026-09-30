@@ -2,23 +2,19 @@
 //
 // The 2D SVG is drawn from the data with the treemap's own squarify layout and
 // colours instead of rasterising the page: it stays vector for decks, needs no
-// library, and the PNG is that SVG drawn onto a canvas. It mirrors NodeCard and
-// PodBox in treemap.jsx, so a change to their look belongs in both.
+// library, and the PNG is that SVG drawn onto a canvas. It mirrors the colours
+// and states of NodeCard and PodBox in treemap.jsx, so a change to those belongs
+// in both; the node header omits the instance type and mini utilization bar, and
+// pods omit the request line.
 
 const { squarify, cardItems, metricCap, metricValue } = window.k8sTreemap;
 const { worstSeverity, WarnIcon } = window.k8sNodeStatus;
 const { worstFindingSeverity } = window.k8sPodAudit;
-const { hsl, token } = window.k8sScene3D;
+const { token } = window.k8sScene3D;
 const { workloadKey } = window.k8sWorkload;
+const { podToken, utilTone, tintHex } = window.k8sPalette;
 
-const MONO = '"JetBrains Mono", ui-monospace, "SF Mono", monospace';
 const SCALE = 2;
-
-// Hex plus fill-opacity rather than hsla(): not every SVG consumer reads CSS colours.
-const hex = rgb => "#" + rgb.map(v => Math.round(v * 255).toString(16).padStart(2, "0")).join("");
-const paint = (h, s, l, a = 1) => ({ fill: hex(hsl(h, s, l)), fillOpacity: a });
-const stroke = (h, s, l, a = 1) => ({ stroke: hex(hsl(h, s, l)), strokeOpacity: a });
-const utilColor = u => (u > 0.85 ? "#ef4444" : u > 0.6 ? "#f59e0b" : u > 0.3 ? "#10b981" : "#3b82f6");
 
 // SVG text does not ellipsize; monospace glyphs are ~0.6em wide.
 function fit(text, px, width) {
@@ -26,111 +22,87 @@ function fit(text, px, width) {
   return text.length <= n ? text : n > 1 ? text.slice(0, n - 1) + "…" : "";
 }
 
-// .pod-empty and its warn-* variants: 45deg stripes, border, label alpha.
-const EMPTY = {
-  none: { rgb: "#ffffff", a: [0.04, 0.08], period: 8, border: 0.12, text: 0.45 },
-  danger: { rgb: "#ef4444", a: [0.1, 0.28], period: 10, border: 0.55, text: 0.7 },
-  warn: { rgb: "#f59e0b", a: [0.1, 0.26], period: 10, border: 0.5, text: 0.7 },
-  info: { rgb: "#60a5fa", a: [0.08, 0.2], period: 10, border: 0.45, text: 0.65 },
-};
+// Colours come from the live tokens at export time, so the file matches the
+// theme on screen. SVG gets plain hex: not every consumer reads CSS colours.
+function exportLook() {
+  const t = name => token(name, "#808080");
+  const pct = name => parseFloat(token(name, "20%")) / 100;
+  return {
+    bg: t("--bg"), panel: t("--panel"), line: t("--line"), text: t("--text"), dim: t("--text-dim"),
+    accent: t("--accent"),
+    tint: { fill: pct("--tint-fill"), edge: pct("--tint-edge"), box: pct("--tint-box") },
+    sev: { danger: t("--danger"), warn: t("--warn"), info: t("--info") },
+    hatch: {
+      none: [t("--hatch-0"), t("--hatch-1"), t("--text-dim")],
+      danger: [t("--hatch-danger-0"), t("--hatch-danger-1"), t("--hatch-danger-text")],
+      warn: [t("--hatch-warn-0"), t("--hatch-warn-1"), t("--hatch-warn-text")],
+      info: [t("--hatch-info-0"), t("--hatch-info-1"), t("--hatch-info-text")],
+    },
+    role: t,
+    font: token("--font-mono", "ui-monospace, monospace"),
+  };
+}
 
-function TreemapSVG({ nodes, width, height, metric, hueOf, nodeStyle, density, showLabels, match, highlight, highlightActive }) {
+function TreemapSVG({ nodes, width, height, metric, colorBy, nsMap, match, highlight, highlightActive }) {
   const pad = 14; // .grid-wrap padding
   const slots = squarify(
-    nodes.map((node, idx) => ({ node, idx, value: metricCap(node, metric) })),
+    nodes.map(node => ({ node, value: metricCap(node, metric) })),
     pad, pad, width - pad * 2, height - pad * 2
   );
-  const look = {
-    queryActive: !!(match && match.active), match, highlight, pinned: highlightActive,
-    accent: token("--accent", "#7c5cff"),
-    sev: { danger: token("--danger", "#ef4444"), warn: token("--warn", "#f59e0b"), info: token("--info", "#60a5fa") },
-  };
+  const look = { ...exportLook(), queryActive: !!(match && match.active), match, highlight, pinned: highlightActive, colorBy, nsMap };
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width={width} height={height} viewBox={`0 0 ${width} ${height}`} fontFamily={MONO}>
+    <svg xmlns="http://www.w3.org/2000/svg" width={width} height={height} viewBox={`0 0 ${width} ${height}`} fontFamily={look.font}>
       <defs>
-        {Object.entries(EMPTY).map(([k, e]) => (
-          <pattern key={k} id={`hatch-${k}`} width={e.period} height={e.period} patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
-            <rect width={e.period / 2} height={e.period} fill={e.rgb} fillOpacity={e.a[0]} />
-            <rect x={e.period / 2} width={e.period / 2} height={e.period} fill={e.rgb} fillOpacity={e.a[1]} />
+        {Object.entries(look.hatch).map(([k, [a, b]]) => (
+          <pattern key={k} id={`hatch-${k}`} width={8} height={8} patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+            <rect width={5} height={8} fill={a} />
+            <rect x={5} width={3} height={8} fill={b} />
           </pattern>
         ))}
-        <linearGradient id="node-header" x2="0" y2="1">
-          <stop offset="0" stopColor="#000" stopOpacity=".15" />
-          <stop offset="1" stopColor="#000" stopOpacity="0" />
-        </linearGradient>
-        {nodeStyle === "gradient" && slots.map(s => (
-          // ponytail: CSS 135deg vs the bounding-box diagonal differ slightly on non-square cards.
-          <linearGradient key={s.idx} id={`card-${s.idx}`} x2="1" y2="1">
-            <stop offset="0" stopColor={hex(hsl(hueOf(s.idx), 60, 22))} />
-            <stop offset="1" stopColor={hex(hsl(hueOf(s.idx), 50, 12))} />
-          </linearGradient>
-        ))}
       </defs>
-      <rect width={width} height={height} fill={token("--bg", "#07080c")} />
-      {slots.map(s => (
-        <SvgCard key={s.node.id} slot={s} hue={hueOf(s.idx)} metric={metric} nodeStyle={nodeStyle}
-          density={density} showLabels={showLabels} look={look} />
-      ))}
+      <rect width={width} height={height} fill={look.bg} />
+      {slots.map(s => <SvgCard key={s.node.id} slot={s} metric={metric} look={look} />)}
     </svg>
   );
 }
 
-function SvgCard({ slot, hue, metric, nodeStyle, density, showLabels, look }) {
+function SvgCard({ slot, metric, look }) {
   const { node } = slot;
-  const bw = nodeStyle === "outlined" ? 1.5 : 1;
-  const w = slot.w - 6, h = slot.h - 6;
-  const padding = density === "compact" ? 4 : 6;
-  const headerH = density === "compact" ? 26 : 32;
+  const w = slot.w - 6, h = slot.h - 6, padding = 4, headerH = 24;
   const nodeDim = look.queryActive && look.match.dimNodes.has(node.name);
   const podMatched = pod => look.queryActive && look.match.pods.has(pod);
   const { items, cap, used, empty } = cardItems(node, metric, podMatched);
-  const innerW = w - bw * 2 - padding * 2, innerH = h - bw * 2 - headerH - padding;
+  const innerW = w - 2 - padding * 2, innerH = h - 2 - headerH - padding;
   const laid = innerW > 0 && innerH > 0 ? squarify(items, padding, headerH, innerW, innerH) : [];
   const warnSev = worstSeverity(node.warnings);
-  const util = used / cap;
+  const util = used / cap, tone = utilTone(util);
   const utilText = `${Math.round(util * 100)}%`;
-
-  const bg = nodeStyle === "solid" ? paint(hue, 55, 24)
-    : nodeStyle === "gradient" ? { fill: `url(#card-${slot.idx})` }
-    : paint(hue, 20, 12);
-  const border = nodeStyle === "outlined" ? stroke(hue, 70, 55) : stroke(hue, 40, 45, 0.4);
-  const podBg = nodeStyle === "solid" ? paint(hue, 65, 38, 0.65)
-    : nodeStyle === "gradient" ? paint(hue, 55, 32, 0.9)
-    : paint(hue, 45, 25, 0.7);
-
-  const inner = w - bw * 2;
-  const utilX = inner - 10;
+  const inner = w - 2, utilX = inner - 8;
   const badgeX = utilX - utilText.length * 6.6 - 6 - 11;
   const nameEnd = (warnSev ? badgeX : utilX - utilText.length * 6.6) - 8;
-  const e = EMPTY[warnSev || "none"];
+  const [, , hatchText] = look.hatch[warnSev || "none"];
 
   return (
     <g opacity={nodeDim ? 0.32 : 1}>
-      <rect x={slot.x + bw / 2} y={slot.y + bw / 2} width={w - bw} height={h - bw} rx={10} {...bg} {...border} strokeWidth={bw} />
-      <g transform={`translate(${slot.x + bw} ${slot.y + bw})`}>
-        <rect width={inner} height={headerH} fill="url(#node-header)" />
-        <circle cx={13.5} cy={headerH / 2} r={3.5} {...paint(hue, 80, 65)} />
-        <text x={25} y={headerH / 2} dominantBaseline="central" fontSize={11} fontWeight={500} fill="#fff" fillOpacity={0.95}>
-          {fit(node.name, 11, nameEnd - 25)}
+      <rect x={slot.x + 0.5} y={slot.y + 0.5} width={w - 1} height={h - 1} rx={4} fill={look.panel} stroke={look.line} />
+      <g transform={`translate(${slot.x + 1} ${slot.y + 1})`}>
+        <text x={8} y={headerH / 2} dominantBaseline="central" fontSize={11} fontWeight={500} fill={look.text}>
+          {fit(node.name, 11, nameEnd - 8)}
         </text>
-        {warnSev && (
-          <g transform={`translate(${badgeX} ${headerH / 2 - 5.5})`} color={look.sev[warnSev]}><WarnIcon size={11} /></g>
-        )}
-        <text x={utilX} y={headerH / 2} dominantBaseline="central" textAnchor="end" fontSize={11} fontWeight={600} fill={utilColor(util)}>
-          {utilText}
-        </text>
+        {warnSev && <g transform={`translate(${badgeX} ${headerH / 2 - 5.5})`} color={look.sev[warnSev]}><WarnIcon size={11} /></g>}
+        <text x={utilX} y={headerH / 2} dominantBaseline="central" textAnchor="end" fontSize={11}
+          fill={tone ? look.sev[tone] : look.dim}>{utilText}</text>
         {laid.map((it, i) => it.empty ? (
           <g key={`empty-${i}`}>
-            <rect x={it.x} y={it.y} width={Math.max(0, it.w - 2)} height={Math.max(0, it.h - 2)} rx={6}
-              fill={`url(#hatch-${warnSev || "none"})`} stroke={e.rgb} strokeOpacity={e.border}
-              strokeDasharray={warnSev ? null : "3 3"} />
+            <rect x={it.x} y={it.y} width={Math.max(0, it.w - 2)} height={Math.max(0, it.h - 2)} rx={2}
+              fill={`url(#hatch-${warnSev || "none"})`} stroke={look.line} />
             {it.w > 60 && it.h > 30 && (
               <text x={it.x + it.w / 2 - 1} y={it.y + it.h / 2 - 1} textAnchor="middle" dominantBaseline="central"
-                fontSize={10} fill="#fff" fillOpacity={e.text}>idle · {Math.round((empty / cap) * 100)}%</text>
+                fontSize={10} fill={hatchText}>idle · {Math.round((empty / cap) * 100)}%</text>
             )}
           </g>
         ) : (
-          <SvgPod key={`pod-${i}`} it={it} hue={hue} metric={metric} showLabels={showLabels} podBg={podBg} look={look}
+          <SvgPod key={`pod-${i}`} it={it} metric={metric} look={look}
             matched={podMatched(it.pod)} dim={look.queryActive && !nodeDim && !podMatched(it.pod)} />
         ))}
       </g>
@@ -139,40 +111,43 @@ function SvgCard({ slot, hue, metric, nodeStyle, density, showLabels, look }) {
 }
 
 // PodBox's states: query dim wins over the workload highlight, which wins over a match.
-function SvgPod({ it, hue, metric, showLabels, podBg, look, matched, dim }) {
+function SvgPod({ it, metric, look, matched, dim }) {
   const { pod, x, y, w, h } = it;
+  const role = look.role(podToken(pod, look.colorBy, look.nsMap));
+  const neutral = look.role("--pod-neutral");
   const peer = !!look.highlight && workloadKey(pod.name) === look.highlight;
   const opacity = dim ? 0.16 : look.highlight && !peer ? (look.pinned ? 0.22 : 0.55) : 1;
   const ring = !dim && (matched || peer);
-  const headerH = h > 28 ? 12 : 0;
+  const showName = w >= 52 && h >= 22;
+  const headerH = showName ? 13 : 0;
   const containers = squarify(
     pod.containers.map(c => ({ container: c, value: metricValue(c, metric) })),
-    3, headerH + 3, Math.max(0, w - 4), Math.max(0, h - headerH - 4)
+    2, headerH + 2, Math.max(0, w - 4), Math.max(0, h - headerH - 4)
   );
   const sev = w > 24 && h > 16 && worstFindingSeverity(pod.findings);
   return (
     <g opacity={opacity}>
-      <rect x={x} y={y} width={Math.max(0, w - 2)} height={Math.max(0, h - 2)} rx={4} {...podBg}
-        {...(ring ? { stroke: look.accent, strokeWidth: 1.5 } : { ...stroke(hue, 60, 55, 0.5), strokeWidth: 1 })} />
-      {headerH > 0 && showLabels && w > 50 && (
-        <text x={x + 5} y={y + 7} dominantBaseline="central" fontSize={8} fill="#fff" fillOpacity={0.85}>
-          {fit(pod.shortName, 8, w - 10)}
-        </text>
+      <rect x={x} y={y} width={Math.max(0, w - 2)} height={Math.max(0, h - 2)} rx={2}
+        fill={tintHex(role, look.panel, look.tint.fill)}
+        stroke={ring ? look.accent : tintHex(role, look.panel, look.tint.edge)} strokeWidth={ring ? 1.5 : 1} />
+      {showName && (
+        <text x={x + 5} y={y + 7} dominantBaseline="central" fontSize={9} fill={look.text}>{fit(pod.shortName, 9, w - 16)}</text>
       )}
       {sev && <g transform={`translate(${x + w - 14} ${y + 2})`} color={look.sev[sev]}><WarnIcon size={9} /></g>}
       {containers.map((c, i) => (
         <g key={i}>
-          <rect x={x + c.x} y={y + c.y} width={Math.max(0, c.w - 1)} height={Math.max(0, c.h - 1)} rx={2}
-            {...(c.container.init ? paint(hue, 10, 55, 0.85) : paint(hue, 70, 68, 0.92))} />
-          {showLabels && c.w > 40 && c.h > 18 && (
+          <rect x={x + c.x} y={y + c.y} width={Math.max(0, c.w - 1)} height={Math.max(0, c.h - 1)} rx={1}
+            fill={tintHex(c.container.init ? neutral : role, look.panel, look.tint.box)} />
+          {c.w > 40 && c.h > 18 && (
             <text x={x + c.x + c.w / 2} y={y + c.y + c.h / 2} textAnchor="middle" dominantBaseline="central"
-              fontSize={9} fontWeight={500} fill="#000" fillOpacity={0.85}>{fit(c.container.name, 9, c.w - 6)}</text>
+              fontSize={9} fill={look.text}>{fit(c.container.name, 9, c.w - 6)}</text>
           )}
         </g>
       ))}
     </g>
   );
 }
+
 
 function treemapSVG(props) {
   const host = document.createElement("div");

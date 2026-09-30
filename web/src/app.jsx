@@ -8,29 +8,17 @@ const { warnInfo, statusOf, WARNING_ORDER } = window.k8sNodeStatus;
 const { findingInfo, FINDING_ORDER, PodAuditBadge } = window.k8sPodAudit;
 const { ExportMenu } = window.k8sExport;
 const { fitMatch, FitPanel, FitVerdict, DrainSection } = window.k8sSimulate;
-const { QOS_INFO, QOS_ORDER, NEUTRAL_HUE } = window.k8sQos;
+const { QOS_INFO, QOS_ORDER } = window.k8sQos;
+const { assignNamespaces, utilTone, COLOR_MODES } = window.k8sPalette;
+const { Legend } = window.k8sLegend;
 const { GROUP_BY, groupNodes } = window.k8sTopology;
 const { pack, unpack, record, diff } = window.k8sHistory;
-
-// Per-node hue assignment — deterministic from index, evenly spaced around wheel.
-function nodeHue(idx, scheme) {
-  if (scheme === "monochrome") return 265;
-  if (scheme === "status") {
-    // returned from utilization later — we'll override at card level
-    return [200, 145, 50, 25][idx % 4];
-  }
-  // spectrum
-  return Math.floor((idx * 137.5) % 360);
-}
+const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref } = window.k8sPrefs;
+const THEME_KEY = "k8sfoams.theme";
 
 const METRICS = [
   { id: "cpu", label: "CPU", icon: "cpu" },
   { id: "mem", label: "Memory", icon: "mem" },
-];
-
-const COLOR_MODES = [
-  { id: "node", label: "Node" },
-  { id: "qos", label: "QoS" },
 ];
 
 // Extended resources become metrics when a node offers them. Byte-sized ones
@@ -53,14 +41,6 @@ const VIEWS = [
   { id: "2d", label: "2D Map", icon: "rect" },
   { id: "3d", label: "3D Cubes", icon: "cube" },
 ];
-
-const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
-  "colorScheme": "spectrum",
-  "nodeStyle": "gradient",
-  "density": "comfortable",
-  "showLabels": true,
-  "accent": "#7c5cff"
-}/*EDITMODE-END*/;
 
 // Backend memory weights are decimal kB (bitmath .kB, 1 kB = 1000 bytes),
 // so MiB = kB * 1000 / 1024^2 — not a plain /1024, which would treat kB as KiB.
@@ -193,15 +173,28 @@ function apiFetch(url) {
   });
 }
 
+// Bumps whenever the effective theme may have changed, so views that cache
+// colours (the 3D scene) re-read the tokens.
+function useThemeKey() {
+  const [key, setKey] = useState(0);
+  useEffect(() => window.k8sPrefs.watchTheme(() => setKey(k => k + 1)), []);
+  return key;
+}
+
 function App() {
-  const [tw, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const themeKey = useThemeKey();
   const [me, setMe] = useState(null);
+  const [themePref, setThemePref] = useState(() => readPref(safeStorage(), THEME_KEY, "system", v => THEME_PREFS.includes(v)));
+  useEffect(() => {
+    applyThemePref(themePref);
+    writePref(safeStorage(), THEME_KEY, themePref);
+  }, [themePref]);
 
   const [view, setView] = useState("2d");
   const [zoom, setZoom] = useState(0.7);
   const [groupBy, setGroupBy] = useState("none");
   const [metric, setMetric] = useState("cpu");
-  const [colorBy, setColorBy] = useState("node");
+  const [colorBy, setColorBy] = useState("namespace");
   const [memUnit, setMemUnit] = useState("GiB");
   const [refreshInterval, setRefreshInterval] = useState(60);
   const [contexts, setContexts] = useState([]);
@@ -317,6 +310,7 @@ function App() {
     setFit(null);
     setAt(null);
     setPlaying(false);
+    nsRef.current = new Map();
   }, [contextIdx]);
 
   const ctxName = contexts[contextIdx] ? contexts[contextIdx].context : "";
@@ -496,13 +490,10 @@ function App() {
     return QOS_ORDER.map(q => ({ qos: q, count: counts.get(q), ...QOS_INFO[q] }));
   }, [nodes]);
 
-  // In QoS mode node chrome goes neutral, so only the pods carry colour.
-  const hueOf = idx => (colorBy === "qos" ? NEUTRAL_HUE : nodeHue(idx, tw.colorScheme));
-
-  // Auto-set accent CSS var
-  useEffect(() => {
-    document.documentElement.style.setProperty("--accent", tw.accent);
-  }, [tw.accent]);
+  // Namespace colour slots stick across refreshes; a context switch starts over.
+  const nsRef = useRef(new Map());
+  const nsMap = useMemo(() => (nsRef.current = assignNamespaces(nodes, nsRef.current)), [nodes]);
+  const fmtReq = (v, m) => (m === "cpu" ? `${Math.round(v)}m` : m === "mem" ? `${fmtMem(v, memUnit)} ${memUnit}` : fmtExt(v, m, memUnit));
 
   return (
     <div className={`app ${sidebarOpen ? "sidebar-open" : "sidebar-collapsed"}`}>
@@ -523,11 +514,12 @@ function App() {
         health={health}
         audit={audit}
         qosBreakdown={qosBreakdown}
-        colorBy={colorBy} setColorBy={setColorBy}
+        colorBy={colorBy} setColorBy={setColorBy} nsMap={nsMap}
         query={query} setQuery={setQuery}
         entries={entries} at={at} setAt={setAt}
         playing={playing} setPlaying={setPlaying}
         base={base} toggleCompare={toggleCompare} changes={changes} ctxName={ctxName}
+        themePref={themePref} setThemePref={setThemePref}
       >
         <FitPanel context={context} result={fit} onResult={setFit} />
       </Sidebar>
@@ -561,9 +553,7 @@ function App() {
               gridRef={gridRef}
               sceneRef={sceneRef}
               treemap={{
-                nodes, metric: activeMetric, match, highlight, highlightActive,
-                hueOf: idx => nodeHue(idx, tw.colorScheme),
-                nodeStyle: tw.nodeStyle, density: tw.density, showLabels: tw.showLabels,
+                nodes, metric: activeMetric, match: shown, highlight, highlightActive, colorBy, nsMap,
               }}
             />
           }
@@ -577,7 +567,8 @@ function App() {
               match={shown}
               zoom={zoom}
               groupBy={groupBy}
-              hueOf={hueOf}
+              nsMap={nsMap}
+              themeKey={themeKey}
               colorBy={colorBy}
               memUnit={memUnit}
               fmtMem={fmtMem}
@@ -594,11 +585,9 @@ function App() {
               match={shown}
               metric={activeMetric}
               groupBy={groupBy}
-              hueOf={hueOf}
               colorBy={colorBy}
-              nodeStyle={tw.nodeStyle}
-              density={tw.density}
-              showLabels={tw.showLabels}
+              nsMap={nsMap}
+              fmtReq={fmtReq}
               onFocus={setFocused}
               highlight={highlight}
               highlightActive={highlightActive}
@@ -613,37 +602,6 @@ function App() {
         <FocusOverlay node={focused} onClose={() => setFocused(null)} metric={metric} memUnit={memUnit} context={context}
           fitReasons={fit && (fit.find(v => v.node === focused.name) || {}).reasons} />
       )}
-
-      <TweaksPanel>
-        <TweakSection label="Color">
-          <TweakRadio label="Color scheme" value={tw.colorScheme}
-            onChange={v => setTweak("colorScheme", v)}
-            options={[
-              { value: "spectrum", label: "Spectrum" },
-              { value: "monochrome", label: "Mono" },
-            ]} />
-          <TweakColor label="Accent" value={tw.accent}
-            onChange={v => setTweak("accent", v)}
-            options={["#7c5cff", "#22d3ee", "#f472b6", "#84cc16", "#fb923c"]} />
-        </TweakSection>
-        <TweakSection label="Cards">
-          <TweakRadio label="Node style" value={tw.nodeStyle}
-            onChange={v => setTweak("nodeStyle", v)}
-            options={[
-              { value: "gradient", label: "Gradient" },
-              { value: "solid", label: "Solid" },
-              { value: "outlined", label: "Outline" },
-            ]} />
-          <TweakRadio label="Density" value={tw.density}
-            onChange={v => setTweak("density", v)}
-            options={[
-              { value: "comfortable", label: "Comfortable" },
-              { value: "compact", label: "Compact" },
-            ]} />
-          <TweakToggle label="Pod & container labels" value={tw.showLabels}
-            onChange={v => setTweak("showLabels", v)} />
-        </TweakSection>
-      </TweaksPanel>
     </div>
   );
 }
@@ -654,7 +612,7 @@ function Sidebar({
   open, onToggle, view, setView, zoom, setZoom, groupBy, setGroupBy, metric, setMetric, metrics, memUnit, setMemUnit,
   refreshInterval, setRefreshInterval,
   contexts, contextIdx, setContextIdx, doRefresh, refreshing, lastRefresh, nodeCount, health,
-  audit, qosBreakdown, colorBy, setColorBy, query, setQuery, entries, at, setAt, playing, setPlaying, base, toggleCompare, changes, ctxName, children
+  audit, qosBreakdown, colorBy, setColorBy, nsMap, query, setQuery, entries, at, setAt, playing, setPlaying, base, toggleCompare, changes, ctxName, themePref, setThemePref, children
 }) {
   const is3d = view === "3d";
   return (
@@ -729,7 +687,7 @@ function Sidebar({
 
       <div className="sidebar-section">
         <div className="section-label">Color by</div>
-        <div className="seg seg-2">
+        <div className="seg seg-3">
           {COLOR_MODES.map(c => (
             <button key={c.id} className={colorBy === c.id ? "seg-on" : ""}
               onClick={() => setColorBy(c.id)}>
@@ -737,6 +695,7 @@ function Sidebar({
             </button>
           ))}
         </div>
+        <div className="legend"><Legend colorBy={colorBy} nsMap={nsMap} view={view} /></div>
       </div>
 
       <div className="sidebar-section">
@@ -823,6 +782,15 @@ function Sidebar({
         <div className="seg seg-3">
           {["MiB", "GiB", "TiB"].map(u => (
             <button key={u} className={memUnit === u ? "seg-on" : ""} onClick={() => setMemUnit(u)}>{u}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="sidebar-section">
+        <div className="section-label">Theme</div>
+        <div className="seg seg-3">
+          {[["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(([id, label]) => (
+            <button key={id} className={themePref === id ? "seg-on" : ""} onClick={() => setThemePref(id)}>{label}</button>
           ))}
         </div>
       </div>
@@ -1078,7 +1046,7 @@ function QueryBar({ query, setQuery, match, hintOpen, setHintOpen }) {
 }
 
 function Stat({ label, value, unit, pct }) {
-  const color = pct > 0.85 ? "#ef4444" : pct > 0.6 ? "#f59e0b" : pct > 0.3 ? "#10b981" : "#60a5fa";
+  const tone = utilTone(pct);
   return (
     <div className="stat">
       <div className="stat-label">{label}</div>
@@ -1087,7 +1055,7 @@ function Stat({ label, value, unit, pct }) {
         <span className="stat-unit">{unit}</span>
       </div>
       <div className="stat-bar">
-        <div className="stat-bar-fill" style={{ width: `${Math.min(100, (pct || 0) * 100)}%`, background: color }} />
+        <div className={`stat-bar-fill${tone ? ` tone-${tone}` : ""}`} style={{ width: `${Math.min(100, (pct || 0) * 100)}%` }} />
       </div>
     </div>
   );
@@ -1098,10 +1066,8 @@ function Stat({ label, value, unit, pct }) {
 // Height of a group's label strip in the 2D map.
 const GROUP_HEAD = 24;
 
-const utilTone = u => (u > 0.85 ? "var(--danger)" : u > 0.6 ? "var(--warn)" : u > 0.3 ? "var(--ok)" : "var(--info)");
-
 function TreemapGrid({
-  nodes, match, metric, groupBy, hueOf, colorBy, nodeStyle, density, showLabels, onFocus,
+  nodes, match, metric, groupBy, colorBy, nsMap, fmtReq, onFocus,
   highlight, highlightActive, onPodSelect, onPodHover,
 }) {
   const containerRef = useRef(null);
@@ -1128,7 +1094,6 @@ function TreemapGrid({
   const cards = (members, x, y, w, h) => window.k8sTreemap.squarify(
     members.map(m => ({ ...m, value: cap(m.node) })), x, y, w, h
   ).map(it => {
-    const hue = hueOf(it.idx);
     return (
       <div key={it.node.id} className="grid-slot"
         style={{
@@ -1138,11 +1103,9 @@ function TreemapGrid({
           node={it.node}
           match={match}
           metric={metric}
-          hue={hue}
           colorBy={colorBy}
-          style={nodeStyle}
-          density={density}
-          showLabels={showLabels}
+          nsMap={nsMap}
+          fmtReq={fmtReq}
           onClick={() => onFocus(it.node)}
           highlight={highlight}
           highlightActive={highlightActive}
@@ -1162,7 +1125,7 @@ function TreemapGrid({
 
   return (
     <div className="grid" ref={containerRef}>
-      {ready && groupBy === "none" && cards(nodes.map((node, idx) => ({ node, idx })), 0, 0, box.w, box.h)}
+      {ready && groupBy === "none" && cards(nodes.map(node => ({ node })), 0, 0, box.w, box.h)}
       {groups.map(g => {
         const u = g.members.reduce((s, m) => s + used(m.node), 0) / (g.value || 1), n = g.members.length;
         return (
@@ -1170,7 +1133,7 @@ function TreemapGrid({
             <div className="group-label" style={{ height: GROUP_HEAD }}>
               <span className="group-name">{g.key}</span>
               <span className="group-meta">{n} node{n === 1 ? "" : "s"}</span>
-              <span className="group-util" style={{ color: utilTone(u) }}>{Math.round(u * 100)}%</span>
+              <span className={`group-util${utilTone(u) ? ` tone-${utilTone(u)}` : ""}`}>{Math.round(u * 100)}%</span>
             </div>
             {cards(g.members, 6, GROUP_HEAD, g.w - 16, g.h - GROUP_HEAD - 10)}
           </div>
@@ -1207,12 +1170,12 @@ function FocusOverlay({ node, onClose, metric, memUnit, context, fitReasons }) {
           <div className="ov-stat">
             <div className="ov-label">Memory</div>
             <div className="ov-val">{fmtMem(node.memUsed, memUnit)} / {fmtMem(node.memCapacity, memUnit, true)} <span>{memUnit}</span></div>
-            <div className="ov-bar"><div style={{ width: `${(node.memUsed / (node.memCapacity || 1)) * 100}%`, background: "#a78bfa" }} /></div>
+            <div className="ov-bar"><div style={{ width: `${(node.memUsed / (node.memCapacity || 1)) * 100}%`, background: "var(--ns-3)" }} /></div>
           </div>
           <div className="ov-stat">
             <div className="ov-label">Pods</div>
             <div className="ov-val">{node.pods.length} <span>scheduled</span></div>
-            <div className="ov-bar"><div style={{ width: `${(node.pods.length / 110) * 100}%`, background: "#22d3ee" }} /></div>
+            <div className="ov-bar"><div style={{ width: `${(node.pods.length / 110) * 100}%`, background: "var(--ns-2)" }} /></div>
           </div>
         </div>
         {/* Own row, one column per resource, so no grid cell is left blank. */}
