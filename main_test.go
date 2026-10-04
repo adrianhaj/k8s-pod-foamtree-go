@@ -344,6 +344,38 @@ func TestAssistantFlags(t *testing.T) {
 	}
 }
 
+// rbacProblems lists what a manifest grants beyond this account's own
+// read-only ClusterRole. roleRef names are read in block and flow style.
+func rbacProblems(manifest string) []string {
+	var rules strings.Builder
+	for line := range strings.Lines(manifest) {
+		code, _, _ := strings.Cut(line, "#")
+		rules.WriteString(code)
+	}
+	var out []string
+	for _, banned := range []string{"secrets", "configmaps", "pods/exec", "pods/attach", "pods/portforward",
+		"create", "update", "patch", "delete", "escalate", "impersonate", "proxy", "aggregationRule", "*"} {
+		if strings.Contains(rules.String(), banned) {
+			out = append(out, "grants "+banned)
+		}
+	}
+	own := regexp.MustCompile(`kind: ClusterRole\nmetadata:\n\s+name: (\S+)`).FindStringSubmatch(rules.String())
+	if own == nil {
+		return append(out, "no ClusterRole")
+	}
+	refs := regexp.MustCompile(`(?s)roleRef:\s*\{[^}]*?\bname:\s*["']?([^\s,}"']+)`).FindAllStringSubmatch(rules.String(), -1)
+	refs = append(refs, regexp.MustCompile(`(?s)roleRef:[ \t]*\n.*?\bname:\s*["']?([^\s"']+)`).FindAllStringSubmatch(rules.String(), -1)...)
+	if len(refs) == 0 {
+		out = append(out, "no roleRef")
+	}
+	for _, ref := range refs {
+		if ref[1] != own[1] {
+			out = append(out, fmt.Sprintf("roleRef %q is not this repo's %q", ref[1], own[1]))
+		}
+	}
+	return out
+}
+
 // The assistant can only reach what this account can read: keep Secrets,
 // ConfigMaps and exec out of it, and keep it read-only.
 func TestRBACCannotReadSecrets(t *testing.T) {
@@ -351,28 +383,21 @@ func TestRBACCannotReadSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var rules strings.Builder
-	for line := range strings.Lines(string(b)) {
-		code, _, _ := strings.Cut(line, "#")
-		rules.WriteString(code)
+	if p := rbacProblems(string(b)); len(p) > 0 {
+		t.Errorf("deploy/base/rbac.yaml: %v", p)
 	}
-	for _, banned := range []string{"secrets", "configmaps", "pods/exec", "pods/attach", "pods/portforward",
-		"create", "update", "patch", "delete", "escalate", "impersonate", "proxy", "aggregationRule", "*"} {
-		if strings.Contains(rules.String(), banned) {
-			t.Errorf("deploy/base/rbac.yaml grants %q", banned)
-		}
+	own := "kind: ClusterRole\nmetadata:\n  name: k8sfoams\nrules: []\n---\nroleRef:\n  name: k8sfoams\n"
+	if p := rbacProblems(own); len(p) != 0 {
+		t.Errorf("block-style own role flagged: %v", p)
 	}
-	own := regexp.MustCompile(`kind: ClusterRole\nmetadata:\n\s+name: (\S+)`).FindStringSubmatch(rules.String())
-	if own == nil {
-		t.Fatal("no ClusterRole in deploy/base/rbac.yaml")
-	}
-	refs := regexp.MustCompile(`(?s)roleRef:.*?\n\s+name:\s*(\S+)`).FindAllStringSubmatch(rules.String(), -1)
-	if len(refs) == 0 {
-		t.Error("no roleRef in deploy/base/rbac.yaml")
-	}
-	for _, ref := range refs {
-		if ref[1] != own[1] {
-			t.Errorf("roleRef %q binds a role other than this repo's %q", ref[1], own[1])
+	for name, bad := range map[string]string{
+		"flow":         own + "---\nroleRef: {kind: ClusterRole, name: cluster-admin}\n",
+		"flow quoted":  own + "---\nroleRef: {apiGroup: x, name: \"cluster-admin\", kind: ClusterRole}\n",
+		"block":        own + "---\nroleRef:\n  kind: ClusterRole\n  name: cluster-admin\n",
+		"block quoted": own + "---\nroleRef:\n  name: 'cluster-admin'\n",
+	} {
+		if len(rbacProblems(bad)) == 0 {
+			t.Errorf("%s-style cluster-admin binding passed", name)
 		}
 	}
 }

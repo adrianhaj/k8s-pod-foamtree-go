@@ -11,10 +11,11 @@ const masked = "[REDACTED]"
 // not a letter-led one, so tokens, tokenizer and passwordless stay readable.
 // pass, sig and auth are short enough to need a non-letter in front and no suffix.
 const (
-	keyword = `(?:passw(?:or)?d|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|account[_-]?key|credentials?|signature)(?:[_.-][a-z0-9_.-]*)?`
-	edge    = `(?:^|[^a-z])(?:pass|sig|auth(?:orization)?)`
+	unambiguous = `passw(?:or)?d|password[_-]?hash|passphrase|pwd|secret|secret[_-]?key|api[_-]?key|access[_-]?key|private[_-]?key|account[_-]?key|encryption[_-]?key`
+	keyword     = `(?:` + unambiguous + `|token|credentials?|signature)(?:[_.-][a-z0-9_.-]*)?`
+	edge        = `(?:^|[^a-z])(?:pass|sig|auth(?:orization)?)`
 	// These name a secret outright: any value of 4+ characters is masked.
-	plain  = `(?im)((?:passw(?:or)?d|pwd|secret|api[_-]?key|access[_-]?key|private[_-]?key|account[_-]?key|(?:^|[^a-z])pass)\\?["']?[ \t]*[:=][ \t]*)([^\s"',;&}\\]{4,})`
+	plain  = `(?im)((?:` + unambiguous + `|(?:^|[^a-z])pass)\\?["']?[ \t]*[:=][ \t]*)([^\s"',;&}\\]{4,})`
 	assign = `(?im)((?:` + keyword + `|` + edge + `)\\?["']?[ \t]*[:=][ \t]*`
 )
 
@@ -30,26 +31,29 @@ var (
 	plainWord = regexp.MustCompile(`^[A-Z]?[a-z]+$`)
 )
 
+// A value this long is a secret even if it is only letters or only digits.
+const longValue = 16
+
 var notValues = map[string]bool{"true": true, "false": true, "null": true, "none": true, "nil": true, "empty": true, "unset": true}
 
 func isSecretValue(v string) bool { return v != masked && !notValues[strings.ToLower(v)] }
 func isValue(v string) bool       { return v != masked }
 func looksSecret(v string) bool {
-	return v != masked && !letters.MatchString(v) && !digits.MatchString(v)
+	return v != masked && (len(v) >= longValue || !letters.MatchString(v) && !digits.MatchString(v))
 }
-func notWord(v string) bool { return !plainWord.MatchString(v) }
+func notWord(v string) bool { return len(v) >= longValue || !plainWord.MatchString(v) }
 func realUserinfo(v string) bool {
 	return strings.Trim(strings.ReplaceAll(v, masked, ""), ":") != ""
 }
 
 // secretRules mask values that look like secrets before anything leaves for
-// the model. Order matters: the Authorization header first so it counts once,
+// the model. Order matters: the Authorization and Cookie headers first so it counts once,
 // then whole tokens, then name=value pairs.
 // ponytail: patterns, not entropy detection; a secret in an unusual shape can
 // pass, and after token, auth and credential keys a bare value of only letters
 // or only digits is read as a word or a number. Add a rule when one is found.
 var secretRules = []rule{
-	{regexp.MustCompile(`(?i)\b(authorization:[ \t]*)([^\r\n]+)`), "${1}" + masked, isValue},
+	{regexp.MustCompile(`(?i)\b((?:authorization|(?:set-)?cookie):[ \t]*)([^\r\n"']+)`), "${1}" + masked, isValue},
 	{regexp.MustCompile(`-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]*PRIVATE KEY-----|$)`), masked, nil},
 	{regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`), masked, nil},
 	{regexp.MustCompile(`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`), masked, nil},
