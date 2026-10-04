@@ -22,7 +22,8 @@ function BottomPanel({ panel, setPanel, counts, children }) {
     if (!d || e.target.getAttribute("role") !== "tab") return;
     const i = TABS.findIndex(t => t.id === panel.tab);
     const next = TABS[(i + d + TABS.length) % TABS.length].id;
-    pick(next);
+    // Cycling only switches tabs; a click on a tab may also maximize it.
+    setPanel(p => ({ ...p, open: true, tab: next }));
     const el = document.getElementById(`tab-${next}`);
     if (el) el.focus();
   };

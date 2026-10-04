@@ -72,6 +72,8 @@ function useAssistant({ context, nodes, totals, problems, focused, logsPod, logs
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  // Tokens spent on questions that were taken back for lack of answer text.
+  const [spent, setSpent] = useState(0);
   const [draft] = useState(textStore);
   const [ticked, setTicked] = useState({});
   const [connecting, setConnecting] = useState(false);
@@ -103,7 +105,7 @@ function useAssistant({ context, nodes, totals, problems, focused, logsPod, logs
     setError(null);
     const ctl = new AbortController();
     abort.current = ctl;
-    let ended = false, got = false, failed = null, note = null;
+    let ended = false, got = false, failed = null, note = null, usage = null, masked = 0, stopped = false;
     try {
       await streamChat({
         conn, context, messages: p.wire, signal: ctl.signal,
@@ -112,23 +114,30 @@ function useAssistant({ context, nodes, totals, problems, focused, logsPod, logs
           if (ev.type === "error") failed = ev.text;
           if (ev.type === "delta" && ev.text) got = true;
           if (ev.type === "notice") note = ev.text;
+          if (ev.type === "done") { usage = ev.usage; masked = ev.masked || 0; }
           setMessages(ms => applyEvent(ms, ev));
         },
       });
       if (!ended) setMessages(ms => applyEvent(ms, { type: "cut" }));
     } catch (e) {
-      if (e.name !== "AbortError") failed = e.message;
+      if (e.name === "AbortError") stopped = true;
+      else failed = e.message;
     } finally {
       setBusy(false);
       abort.current = null;
     }
     // A question that got no answer text (failed, stopped, or empty) is taken
     // back, so the retry keeps user and assistant turns alternating, which
-    // strict chat templates require. Text typed meanwhile is kept.
+    // strict chat templates require. Text typed meanwhile is kept. What it
+    // spent still counts, and only the viewer's own Stop goes unexplained.
     if (!got) {
       setMessages(ms => ms.slice(0, -2));
       draft.set(d => (d.trim() ? d : text));
-      setError(failed || note);
+      if (usage) setSpent(n => n + usage.total);
+      setError(stopped ? null : [
+        failed || note || (ended ? "The endpoint returned no answer text." : "The answer ended before the endpoint finished."),
+        usage && usageText(usage), masked > 0 && maskedText(masked),
+      ].filter(Boolean).join(" · "));
     } else if (failed && !ended) setError(failed);
   };
 
@@ -158,12 +167,12 @@ function useAssistant({ context, nodes, totals, problems, focused, logsPod, logs
   };
 
   return {
-    conn, setConn, server, context, items, known, pick, messages, busy, error, draft, ticked, setTicked,
+    conn, setConn, server, context, items, known, pick, messages, spent, busy, error, draft, ticked, setTicked,
     connecting, setConnecting, ask, analyzePod, acked,
     ack: () => { writePref(safeStorage(), ACK_KEY, true); setAcked(true); },
     openConnection: () => { setConnecting(true); setPanel(p => ({ ...p, open: true, tab: "assistant" })); },
     stop: () => abort.current && abort.current.abort(),
-    clear: () => { setMessages([]); setError(null); },
+    clear: () => { setMessages([]); setError(null); setSpent(0); },
   };
 }
 
@@ -191,6 +200,7 @@ function inline(s, known, onPick) {
 const usageText = u => (u.estimated
   ? `≈ ${fmtTokens(u.total)} tokens, estimated: the endpoint did not report usage`
   : `used ${u.total.toLocaleString()} tokens (${u.prompt.toLocaleString()} in · ${u.completion.toLocaleString()} out)`);
+const maskedText = n => `${n} likely secret${n === 1 ? "" : "s"} masked before sending`;
 
 function PrivacyNotice({ onOk }) {
   return (
@@ -311,7 +321,7 @@ const Msg = React.memo(function Msg({ m, streaming, known, onPick }) {
         {m.error && <div className="sim-error">{m.error}</div>}
         {m.sent && <div className="msg-meta">sent with: {m.sent.items.join(", ").toLowerCase()} · ≈ {fmtTokens(m.sent.tokens)} tokens</div>}
         {m.usage && <div className="msg-meta">{usageText(m.usage)}</div>}
-        {m.masked > 0 && <div className="msg-meta">{m.masked} likely secret{m.masked === 1 ? "" : "s"} masked before sending</div>}
+        {m.masked > 0 && <div className="msg-meta">{maskedText(m.masked)}</div>}
       </div>
     </div>
   );
@@ -325,7 +335,7 @@ function Chat({ a }) {
   const budget = effectiveBudget(conn, server);
   const next = plan(h, draft);
   const over = overCap(next.tokens, budget);
-  const used = a.messages.reduce((s, m) => s + (m.usage ? m.usage.total : 0), 0);
+  const used = a.messages.reduce((s, m) => s + (m.usage ? m.usage.total : 0), a.spent);
   const submit = () => {
     const text = draft.trim();
     if (text && !a.busy && !over) a.ask(items, a.ticked, text);
