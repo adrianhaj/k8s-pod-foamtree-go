@@ -1,7 +1,7 @@
 // The Logs tab: one container's logs, fetched only when the viewer opens or
 // reloads them. App owns which pod is shown; this file owns the fetch.
 
-const { useState, useEffect, useMemo } = React;
+const { useState, useEffect, useMemo, useRef } = React;
 const { Icon } = window.k8sIcons;
 const { clock } = window.k8sFormat;
 
@@ -33,7 +33,7 @@ function markLine(line, q) {
 }
 
 function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
-  const [state, setState] = useState({ text: null, error: null, busy: false, at: null });
+  const [state, setState] = useState({ url: null, text: null, error: null, busy: false, at: null });
   const [filter, setFilter] = useState("");
   const [tick, setTick] = useState(0);
   const key = sel ? `${sel.namespace}/${sel.name}` : "";
@@ -41,11 +41,15 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
   useEffect(() => setPodText(key), [key]);
   const byKey = useMemo(() => new Map(pods.map(p => [`${p.namespace}/${p.name}`, p])), [pods]);
   const url = sel && sel.container ? logsURL(context, sel) : null;
+  const loaded = useRef(null);
+  // Lines belong to the url that fetched them; another selection shows none.
+  const cur = state.url === url ? state : { text: null, error: null, at: null };
 
   useEffect(() => {
     if (!url) return;
     const ctl = new AbortController();
-    setState(s => ({ ...s, busy: true, error: null }));
+    if (loaded.current !== url) onLoaded(null);
+    setState(s => (s.url === url ? { ...s, busy: true, error: null } : { url, text: null, error: null, busy: true, at: null }));
     fetch(url, { signal: ctl.signal })
       .then(async r => {
         if (!r.ok) throw new Error((await r.text()).trim() || `status ${r.status}`);
@@ -53,12 +57,14 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
       })
       .then(text => {
         const at = Date.now();
-        setState({ text, error: null, busy: false, at });
+        loaded.current = url;
+        setState({ url, text, error: null, busy: false, at });
         onLoaded({ ...sel, text, at });
       })
       .catch(e => {
         if (e.name === "AbortError") return;
-        setState({ text: null, error: e.message, busy: false, at: null });
+        loaded.current = url;
+        setState({ url, text: null, error: e.message, busy: false, at: null });
         onLoaded(null);
       });
     return () => ctl.abort();
@@ -70,7 +76,7 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
     if (p) setSel(selFor(p));
   };
   const pod = sel && byKey.get(key);
-  const lines = state.text ? state.text.replace(/\n$/, "").split("\n") : [];
+  const lines = cur.text ? cur.text.replace(/\n$/, "").split("\n") : [];
   const hits = filter ? lines.filter(l => l.includes(filter)).length : 0;
 
   return (
@@ -99,20 +105,20 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
         {onAnalyze && (
           <>
             <span className="grow" />
-            <button className="btn-primary" disabled={!state.text} onClick={onAnalyze}><Icon name="spark" size={14} />Analyze with assistant</button>
+            <button className="btn-primary" disabled={!cur.text} onClick={onAnalyze}><Icon name="spark" size={14} />Analyze with assistant</button>
           </>
         )}
       </div>
       {!sel ? <div className="panel-empty">Pick a pod above, or use Logs on a selected workload or in a node's pod list. Logs load only when you open or reload them.</div>
-        : state.error ? <div className="panel-empty sim-error">{state.error}</div>
-        : state.text == null ? <div className="panel-empty">Loading logs…</div>
-        : state.text === "" ? <div className="panel-empty">The container wrote no log lines.</div>
+        : cur.error ? <div className="panel-empty sim-error">{cur.error}</div>
+        : cur.text == null ? <div className="panel-empty">Loading logs…</div>
+        : cur.text === "" ? <div className="panel-empty">The container wrote no log lines.</div>
         : (
           <div className="logview" role="log" aria-label={`Logs of ${key}, container ${sel.container}`}>
             {lines.map((l, i) => <div key={i} className="logline"><b>{i + 1}</b><span>{markLine(l, filter)}</span></div>)}
             <div className="logfoot">
               Last {lines.length} lines of the {sel.previous ? "previous" : "current"} run of {sel.container}
-              {filter ? ` · ${hits} line${hits === 1 ? "" : "s"} match “${filter}”` : ""} · fetched {clock(state.at)}
+              {filter ? ` · ${hits} line${hits === 1 ? "" : "s"} match “${filter}”` : ""} · fetched {clock(cur.at)}
             </div>
           </div>
         )}
