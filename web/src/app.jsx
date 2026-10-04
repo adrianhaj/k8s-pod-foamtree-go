@@ -567,7 +567,7 @@ function App() {
         <Rail view={view} setView={setView} panel={panel} openTab={openTab} findings={problems.length}
           settings={<SettingsMenu themePref={themePref} setThemePref={setThemePref} memUnit={memUnit} setMemUnit={setMemUnit} />} />
         <MapChips lit={shown.lit} ring={shown.ring}
-          litPod={logsPod ? `${logsPod.namespace}/${logsPod.name}` : ""}
+          litPod={logsPod ? podKey(logsPod) : ""}
           onLogs={() => { const p = allPods.find(x => workloadKey(x.name) === selectedWorkload); if (p) openLogs(p); }}
           workload={workloadStats} onClearWorkload={() => setSelectedWorkload(null)}
           at={at} onLive={goLive} />
@@ -935,7 +935,7 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, str
                     <span className="pod-row-num">{fmtMem(mem, memUnit)}</span>
                     <span className="pod-row-unit">{memUnit}</span>
                   </div>
-                  <button className="btn-quiet" onClick={() => onLogs(p)} aria-label={`Logs of ${p.name}`}><Icon name="terminal" size={12} />Logs</button>
+                  <button className="btn" onClick={() => onLogs(p)} aria-label={`Logs of ${p.name}`}><Icon name="terminal" size={12} />Logs</button>
                 </div>
               );
             })}

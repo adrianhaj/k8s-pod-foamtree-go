@@ -165,7 +165,7 @@ function MapChips({ lit, ring, litPod, workload, onClearWorkload, onLogs, at, on
       {workload && (
         <span className="chip chip-wl" title={workload.key}>
           <span>{workload.key} · {workload.replicas} replica{workload.replicas === 1 ? "" : "s"} · {workload.nodes} node{workload.nodes === 1 ? "" : "s"}</span>
-          {onLogs && <button className="chip-act" onClick={onLogs} title="Open logs for this workload">Logs</button>}
+          <button className="chip-act" onClick={onLogs} title="Open logs for this workload">Logs</button>
           <button onClick={onClearWorkload} aria-label="Clear selection (Esc)">×</button>
         </span>
       )}

@@ -20,7 +20,7 @@ function pickShown({ match, tab, changes, sim, nodes, logsPod }) {
   }
   if (tab === "logs" && logsPod) {
     for (const n of nodes) {
-      const p = n.pods.find(x => x.namespace === logsPod.namespace && x.name === logsPod.name);
+      const p = n.pods.find(x => window.k8sWorkload.podKey(x) === window.k8sWorkload.podKey(logsPod));
       if (p) return { ...plain, active: true, pods: new Set([p]), dimNodes: new Set(), count: 1, ring: n.name, lit: "logs" };
     }
   }

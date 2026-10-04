@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -105,11 +106,8 @@ func isLoopback(host string) bool {
 // that rebinds its DNS to 127.0.0.1 cannot read cluster data.
 func loopbackHostOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host, _, err := net.SplitHostPort(r.Host)
-		if err != nil {
-			host = strings.Trim(r.Host, "[]")
-		}
-		if !isLoopback(strings.ToLower(host)) {
+		host := strings.ToLower((&url.URL{Host: r.Host}).Hostname())
+		if !isLoopback(host) {
 			http.Error(w, "unexpected Host header", http.StatusMisdirectedRequest)
 			return
 		}

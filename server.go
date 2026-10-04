@@ -146,7 +146,7 @@ func newHandler(src source, static fs.FS, a *auth.Auth) http.Handler {
 		if t := q.Get("tail"); t != "" {
 			n, err := strconv.ParseInt(t, 10, 64)
 			if err != nil || n < 1 || n > maxLogTail {
-				http.Error(w, "tail must be 1 to 5000", http.StatusBadRequest)
+				http.Error(w, fmt.Sprintf("tail must be 1 to %d", maxLogTail), http.StatusBadRequest)
 				return
 			}
 			req.Tail = n

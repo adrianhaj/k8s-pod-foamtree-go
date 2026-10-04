@@ -42,6 +42,9 @@ type LogRequest struct {
 // MaxLogBytes caps one fetch: a tail of long lines can still be megabytes.
 const MaxLogBytes = 1 << 20
 
+// ponytail: the API cuts limitBytes from the start, so the 1 MiB cap is applied here; 32 MiB bounds the read
+const fetchLimitBytes = 32 << 20
+
 type Context struct {
 	Context string `json:"context"`
 	Active  bool   `json:"active"`
@@ -147,8 +150,7 @@ func (s *Source) Logs(ctx context.Context, name string, req LogRequest) (io.Read
 	if err != nil {
 		return nil, err
 	}
-	// ponytail: the API cuts limitBytes from the start, so the 1 MiB cap is applied here; 32 MiB bounds the read
-	limit := int64(32 << 20)
+	limit := int64(fetchLimitBytes)
 	rc, err := c.client.CoreV1().Pods(req.Namespace).GetLogs(req.Pod, &corev1.PodLogOptions{
 		Container: req.Container, TailLines: &req.Tail, Previous: req.Previous, LimitBytes: &limit,
 	}).Stream(ctx)
@@ -163,18 +165,18 @@ func (s *Source) Logs(ctx context.Context, name string, req LogRequest) (io.Read
 	return io.NopCloser(bytes.NewReader(b)), nil
 }
 
-// tail reads r to the end holding at most about 2*max bytes, and returns the newest max.
-func tail(r io.Reader, max int) ([]byte, error) {
-	var buf []byte
+// tail reads r to the end holding at most about 2*limit bytes, and returns the newest limit.
+func tail(r io.Reader, limit int) ([]byte, error) {
 	chunk := make([]byte, 32<<10)
+	buf := make([]byte, 0, 2*limit+len(chunk))
 	for {
 		n, err := r.Read(chunk)
 		buf = append(buf, chunk[:n]...)
-		if len(buf) > 2*max {
-			buf = append(buf[:0], buf[len(buf)-max-1:]...)
+		if len(buf) > 2*limit {
+			buf = append(buf[:0], buf[len(buf)-limit-1:]...)
 		}
 		if err == io.EOF {
-			return lastBytes(buf, max), nil
+			return lastBytes(buf, limit), nil
 		}
 		if err != nil {
 			return nil, err
@@ -182,19 +184,19 @@ func tail(r io.Reader, max int) ([]byte, error) {
 	}
 }
 
-// lastBytes keeps the newest max bytes, starting at a line boundary.
-func lastBytes(b []byte, max int) []byte {
-	if len(b) <= max {
+// lastBytes keeps the newest limit bytes, starting at a line boundary.
+func lastBytes(b []byte, limit int) []byte {
+	if len(b) <= limit {
 		return b
 	}
-	cut := len(b) - max
-	tail := b[cut:]
+	cut := len(b) - limit
+	out := b[cut:]
 	if b[cut-1] != '\n' {
-		if i := bytes.IndexByte(tail, '\n'); i >= 0 && i+1 < len(tail) {
-			tail = tail[i+1:]
+		if i := bytes.IndexByte(out, '\n'); i >= 0 && i+1 < len(out) {
+			out = out[i+1:]
 		}
 	}
-	return tail
+	return out
 }
 
 type clusterCache struct {

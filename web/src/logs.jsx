@@ -4,6 +4,7 @@
 const { useState, useEffect, useMemo, useRef } = React;
 const { Icon } = window.k8sIcons;
 const { clock } = window.k8sFormat;
+const { podKey } = window.k8sWorkload;
 
 const TAILS = [200, 500, 2000];
 
@@ -36,11 +37,15 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
   const [state, setState] = useState({ url: null, text: null, error: null, busy: false, at: null });
   const [filter, setFilter] = useState("");
   const [tick, setTick] = useState(0);
-  const key = sel ? `${sel.namespace}/${sel.name}` : "";
+  const key = sel ? podKey(sel) : "";
   const [podText, setPodText] = useState(key);
   useEffect(() => setPodText(key), [key]);
-  const byKey = useMemo(() => new Map(pods.map(p => [`${p.namespace}/${p.name}`, p])), [pods]);
-  const podOptions = useMemo(() => [...byKey.keys()].sort().map(k => <option key={k} value={k} />), [byKey]);
+  const byKey = useMemo(() => new Map(pods.map(p => [podKey(p), p])), [pods]);
+  const sortedKeys = useMemo(() => [...byKey.keys()].sort(), [byKey]);
+  const podOptions = useMemo(
+    () => sortedKeys.filter(k => k.includes(podText)).slice(0, 100).map(k => <option key={k} value={k} />),
+    [sortedKeys, podText],
+  );
   const url = sel && sel.container ? logsURL(context, sel) : null;
   const loaded = useRef(null);
   // Lines belong to the url that fetched them; another selection shows none.
@@ -77,8 +82,8 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
     if (p) setSel(selFor(p));
   };
   const pod = sel && byKey.get(key);
-  const lines = cur.text ? cur.text.replace(/\n$/, "").split("\n") : [];
-  const hits = filter ? lines.filter(l => l.includes(filter)).length : 0;
+  const lines = useMemo(() => (cur.text ? cur.text.replace(/\n$/, "").split("\n") : []), [cur.text]);
+  const hits = useMemo(() => (filter ? lines.filter(l => l.includes(filter)).length : 0), [lines, filter]);
 
   return (
     <>
@@ -102,7 +107,7 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
         </select>
         <input id="log-filter" className="mini-search" value={filter} spellCheck="false" placeholder="Highlight text"
           aria-label="Highlight text" onChange={e => setFilter(e.target.value)} />
-        <button className="btn-quiet" disabled={!url || state.busy} onClick={() => setTick(t => t + 1)}><Icon name="refresh" size={14} />Reload</button>
+        <button className="btn" disabled={!url || state.busy} onClick={() => setTick(t => t + 1)}><Icon name="refresh" size={14} />Reload</button>
         {onAnalyze && (
           <>
             <span className="grow" />
