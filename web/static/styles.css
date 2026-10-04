@@ -470,7 +470,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 .pod-rows { display: flex; flex-direction: column; gap: 4px; }
 .pod-row {
   display: grid;
-  grid-template-columns: 1fr 90px 100px;
+  grid-template-columns: 1fr 90px 100px auto;
   gap: 14px;
   padding: 10px 12px;
   background: var(--bg-2);
@@ -1064,3 +1064,22 @@ button.ptr:hover > * { background: var(--bg-3); }
 @media (prefers-reduced-motion: reduce) {
   .icon-btn.spinning svg { animation: none; }
 }
+
+/* ─────────── Logs tab ─────────── */
+.panel-tabs { overflow-x: auto; }
+.panel-tabs [role="tab"] { white-space: nowrap; }
+.panel-bar .grow { flex: 1; }
+.mini-search { height: 28px; width: 180px; padding: 0 8px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--panel); font: 12px var(--font-mono); }
+.mini-search.wide { width: 280px; }
+.mini-search:focus { outline: none; border-color: var(--accent); }
+.btn-quiet { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--panel); font-size: 12px; font-weight: 500; color: var(--text); white-space: nowrap; }
+.btn-quiet:hover:not(:disabled) { background: var(--bg-3); }
+.btn-quiet:disabled { opacity: .5; cursor: default; }
+.panel-bar .btn-primary { height: 28px; padding: 0 12px; white-space: nowrap; }
+.logview { flex: 1; min-height: 0; overflow: auto; margin: 0 14px 10px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel-2); font: 11.5px/1.65 var(--font-mono); }
+.logline { display: grid; grid-template-columns: 52px minmax(0, 1fr); }
+.logline > b { padding-right: 10px; text-align: right; font-weight: 400; color: var(--text-dim); user-select: none; border-right: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.logline > span { padding-left: 10px; white-space: pre; color: var(--text); }
+.logline mark { background: var(--accent-wash); color: var(--accent); border-radius: 2px; }
+.logfoot { padding: 6px 10px; border-top: 1px solid var(--line); color: var(--text-dim); font: 11px var(--font-sans); }
+.chip .chip-act { padding: 0 2px; font-weight: 600; color: var(--accent); }

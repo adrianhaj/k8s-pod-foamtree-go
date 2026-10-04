@@ -316,6 +316,10 @@ Modelled: allocatable CPU, memory and pod count, cordons, `NoSchedule` /
 pod (anti-)affinity, topology spread, volume zones, host ports, extended
 resources and preemption. The drain also ignores PodDisruptionBudgets.
 
+## Logs
+
+The **Logs** tab shows one container's logs. Pick a pod by `namespace/name`, then the container, the **Current** or **Previous** run (the one before the last restart, where a crash shows up) and how many lines. **Highlight text** marks matching lines without hiding the others. Open it from the **Logs** action on a selected workload's chip, or on any pod row in a node's overlay; the map lights that pod. Logs load when you open or reload them, never in the background. They need `get` on `pods/log`, which the base RBAC grants.
+
 ## Run in a cluster
 
 ```bash

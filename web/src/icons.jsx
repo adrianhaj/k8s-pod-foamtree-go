@@ -11,6 +11,7 @@ const ICON_PATHS = {
   chev: <path d="M4 6l4 4 4-4" />,
   refresh: <path d="M13 8a5 5 0 1 1-1.46-3.54M13 2.5V5h-2.5" />,
   max: <path d="M3 6V3h3M13 6V3h-3M3 10v3h3M13 10v3h-3" />,
+  terminal: <path d="M2 3h12v10H2zM4.5 6.5l2 1.5-2 1.5M8 10h3.5" />,
   signout: <path d="M6 2.5H3.5v11H6M10 5l3 3-3 3M13 8H6.5" />,
 };
 

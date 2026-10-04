@@ -8,6 +8,7 @@ const TABS = [
   { id: "problems", label: "Problems" },
   { id: "changes", label: "Changes" },
   { id: "drain", label: "Drain simulation" },
+  { id: "logs", label: "Logs" },
 ];
 const ROW_CAP = 100; // ponytail: plain list; virtualise if clusters routinely exceed this
 
@@ -156,14 +157,15 @@ function DrainTab({ mode, setMode, node, setNode, nodes, busy, error, onRun, dra
 
 const LIT_TEXT = { changes: "Lit: added and resized pods", fit: "Lit: nodes that fit", drain: null };
 
-function MapChips({ lit, ring, workload, onClearWorkload, at, onLive }) {
-  const text = lit === "drain" ? `Lit: pods on ${ring}` : LIT_TEXT[lit];
+function MapChips({ lit, ring, litPod, workload, onClearWorkload, onLogs, at, onLive }) {
+  const text = lit === "drain" ? `Lit: pods on ${ring}` : lit === "logs" ? `Lit: ${litPod}` : LIT_TEXT[lit];
   return (
     <div className="map-chips">
       {at != null && <span className="chip">History · {clock(at)}<button onClick={onLive}>Back to live</button></span>}
       {workload && (
         <span className="chip chip-wl" title={workload.key}>
           <span>{workload.key} · {workload.replicas} replica{workload.replicas === 1 ? "" : "s"} · {workload.nodes} node{workload.nodes === 1 ? "" : "s"}</span>
+          {onLogs && <button className="chip-act" onClick={onLogs} title="Open logs for this workload">Logs</button>}
           <button onClick={onClearWorkload} aria-label="Clear selection (Esc)">×</button>
         </span>
       )}

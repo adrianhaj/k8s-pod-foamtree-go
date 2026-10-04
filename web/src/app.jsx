@@ -4,6 +4,8 @@ const { useState, useEffect, useMemo, useRef } = React;
 const { NodeCard, metricCap, metricValue } = window.k8sTreemap;
 const { Scene3D } = window.k8sScene3D;
 const { workloadKey, podKey } = window.k8sWorkload;
+const { Icon } = window.k8sIcons;
+const { LogsTab, selFor } = window.k8sLogs;
 const { warnInfo, statusOf } = window.k8sNodeStatus;
 const { findingInfo, PodAuditBadge } = window.k8sPodAudit;
 const { ExportMenu } = window.k8sExport;
@@ -221,6 +223,14 @@ function App() {
   const [selectedWorkload, setSelectedWorkload] = useState(null);
   const [hoveredWorkload, setHoveredWorkload] = useState(null);
   const [nodes, setNodes] = useState([]);
+  const [logsPod, setLogsPod] = useState(null);
+  const [logsText, setLogsText] = useState(null);
+  const allPods = useMemo(() => nodes.flatMap(n => n.pods), [nodes]);
+  const openLogs = pod => {
+    setLogsPod(selFor(pod));
+    setPanel(p => ({ ...p, open: true, tab: "logs" }));
+    setFocused(null);
+  };
   const [error, setError] = useState(null);
   const gridRef = useRef(null);
   const sceneRef = useRef(null);
@@ -437,9 +447,9 @@ function App() {
   // A fit verdict takes over the map's dimming until it is cleared.
   const fitShown = useMemo(() => (fit ? fitMatch(nodes, fit) : null), [fit, nodes]);
   const shown = useMemo(() => pickShown({
-    match, tab: panel.open ? panel.tab : null, changes, nodes,
+    match, tab: panel.open ? panel.tab : null, changes, nodes, logsPod,
     sim: { mode: sim.mode, fit: fitShown, node: sim.node },
-  }), [match, panel.open, panel.tab, changes, nodes, fitShown, sim.mode, sim.node]);
+  }), [match, panel.open, panel.tab, changes, nodes, fitShown, sim.mode, sim.node, logsPod]);
 
   const highlight = selectedWorkload || hoveredWorkload;
   const highlightActive = !!selectedWorkload;
@@ -557,6 +567,8 @@ function App() {
         <Rail view={view} setView={setView} panel={panel} openTab={openTab} findings={problems.length}
           settings={<SettingsMenu themePref={themePref} setThemePref={setThemePref} memUnit={memUnit} setMemUnit={setMemUnit} />} />
         <MapChips lit={shown.lit} ring={shown.ring}
+          litPod={logsPod ? `${logsPod.namespace}/${logsPod.name}` : ""}
+          onLogs={() => { const p = allPods.find(x => workloadKey(x.name) === selectedWorkload); if (p) openLogs(p); }}
           workload={workloadStats} onClearWorkload={() => setSelectedWorkload(null)}
           at={at} onLive={goLive} />
         {view === "3d" ? (
@@ -616,10 +628,13 @@ function App() {
             drainBody={sim.result && <DrainResults result={sim.result} podsByKey={podsByKey} fmtReq={fmtReq} />}
             fitBody={<><FitForm context={context} onResult={setFit} />{fit && <FitSummary result={fit} onClear={() => setFit(null)} />}</>} />
         )}
+        {panel.tab === "logs" && (
+          <LogsTab context={context} sel={logsPod} setSel={setLogsPod} pods={allPods} onLoaded={setLogsText} />
+        )}
       </BottomPanel>
 
       {focused && (
-        <FocusOverlay node={focused} onClose={() => setFocused(null)} metric={metric} memUnit={memUnit}
+        <FocusOverlay node={focused} onClose={() => setFocused(null)} metric={metric} memUnit={memUnit} onLogs={openLogs}
           strand={stranded(focused, shape)}
           fitReasons={fit && (fit.find(v => v.node === focused.name) || {}).reasons}
           onDrain={name => { setPanel(p => ({ ...p, open: true, tab: "drain" })); setFocused(null); runDrain(name); }} />
@@ -788,7 +803,7 @@ function TreemapGrid({
 
 /* ─────────── Focus overlay ─────────── */
 
-function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, strand }) {
+function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, strand, onLogs }) {
   // At most one axis is stranded; hide figures that would print as zero.
   const strandNote = strand.cpu >= 5 ? `${(strand.cpu / 1000).toFixed(2)} cores free with no memory to pair`
     : Number(fmtMem(strand.mem, memUnit)) > 0 ? `${fmtMem(strand.mem, memUnit)} ${memUnit} free with no CPU to pair`
@@ -920,6 +935,7 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, str
                     <span className="pod-row-num">{fmtMem(mem, memUnit)}</span>
                     <span className="pod-row-unit">{memUnit}</span>
                   </div>
+                  <button className="btn-quiet" onClick={() => onLogs(p)} aria-label={`Logs of ${p.name}`}><Icon name="terminal" size={12} />Logs</button>
                 </div>
               );
             })}
