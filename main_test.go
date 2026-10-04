@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -339,5 +340,25 @@ func TestAssistantFlags(t *testing.T) {
 	}
 	if o, _ := parseFlags(nil); o.llm.Key != "env-key" {
 		t.Fatal("env key not read")
+	}
+}
+
+// The assistant can only reach what this account can read: keep Secrets,
+// ConfigMaps and exec out of it, and keep it read-only.
+func TestRBACCannotReadSecrets(t *testing.T) {
+	b, err := os.ReadFile("deploy/base/rbac.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rules strings.Builder
+	for line := range strings.Lines(string(b)) {
+		code, _, _ := strings.Cut(line, "#")
+		rules.WriteString(code)
+	}
+	for _, banned := range []string{"secrets", "configmaps", "pods/exec", "pods/attach", "pods/portforward",
+		"create", "update", "patch", "delete", "escalate", "impersonate", "*"} {
+		if strings.Contains(rules.String(), banned) {
+			t.Errorf("deploy/base/rbac.yaml grants %q", banned)
+		}
 	}
 }

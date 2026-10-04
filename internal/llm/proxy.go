@@ -52,11 +52,12 @@ func (u Usage) add(v Usage) Usage {
 }
 
 type event struct {
-	Type  string `json:"type"`
-	Text  string `json:"text,omitempty"`
-	Name  string `json:"name,omitempty"`
-	Args  string `json:"args,omitempty"`
-	Usage *Usage `json:"usage,omitempty"`
+	Type   string `json:"type"`
+	Text   string `json:"text,omitempty"`
+	Name   string `json:"name,omitempty"`
+	Args   string `json:"args,omitempty"`
+	Usage  *Usage `json:"usage,omitempty"`
+	Masked int    `json:"masked,omitempty"`
 }
 
 type Proxy struct {
@@ -101,6 +102,8 @@ func (p *Proxy) ServeChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	var hidden int
+	req.Messages, hidden = redactMessages(req.Messages)
 	if in := estimate(req.Messages); t.budget > 0 && in+minAnswerTokens > t.budget {
 		http.Error(w, fmt.Sprintf("this question needs about %d tokens before the answer, over the cap of %d: untick some context or raise the cap", in, t.budget), http.StatusUnprocessableEntity)
 		return
@@ -109,10 +112,10 @@ func (p *Proxy) ServeChat(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	rc := http.NewResponseController(w)
 	rc.SetWriteDeadline(time.Now().Add(turnTimeout + 10*time.Second))
-	p.converse(ctx, &stream{w: w, rc: rc}, t, req)
+	p.converse(ctx, &stream{w: w, rc: rc}, t, req, hidden)
 }
 
-func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatRequest) {
+func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatRequest, hidden int) {
 	var c compat
 	rd, err := t.call(ctx, &c, req.Messages, 0, s)
 	if err != nil {
@@ -122,7 +125,7 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatReque
 	if rd.Finish == "length" {
 		s.send(event{Type: "notice", Text: "The answer stopped at the token cap."})
 	}
-	s.send(event{Type: "done", Usage: &rd.Usage})
+	s.send(event{Type: "done", Usage: &rd.Usage, Masked: hidden})
 }
 
 type target struct {

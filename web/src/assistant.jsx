@@ -16,7 +16,7 @@ function applyEvent(ms, ev) {
   else if (ev.type === "tool") last.tools = [...last.tools, `${ev.name} ${ev.args || ""}`.trim()];
   else if (ev.type === "notice") last.note = ev.text;
   else if (ev.type === "error") last.error = ev.text;
-  else if (ev.type === "done") last.usage = ev.usage;
+  else if (ev.type === "done") { last.usage = ev.usage; last.masked = ev.masked || 0; }
   else if (ev.type === "cut") last.cut = true;
   return [...ms.slice(0, -1), last];
 }
@@ -159,7 +159,7 @@ function ConnectForm({ conn, server, context, onSaved, onBack, onForget }) {
 
   return (
     <div className="connect">
-      <div className="notice"><SevGlyph sev="info" /><span><b>What leaves this cluster.</b> Your questions and the context you tick are sent to the chosen endpoint. Pod specs and logs can contain secrets. Nothing is sent until you press Send or Analyze with assistant.</span></div>
+      <div className="notice"><SevGlyph sev="info" /><span><b>What leaves this cluster.</b> Your questions and the context you tick are sent to the chosen endpoint. Pod specs and logs can contain secrets. Values that look like secrets, such as passwords, tokens, keys and credentials in URLs, are masked on the server before anything is sent. Masking matches patterns and can miss an unusual secret. Nothing is sent until you press Send or Analyze with assistant.</span></div>
       {hasServer && (
         <div className="panel-bar">
           <div className="seg" role="radiogroup" aria-label="Connection">
@@ -236,6 +236,7 @@ function AssistantTab({ a, conn, setConn, server, items, known, onPick, context 
                 {m.error && <div className="sim-error">{m.error}</div>}
                 {m.sent && <div className="msg-meta">sent with: {m.sent.items.join(", ").toLowerCase()} · ≈ {fmtTokens(m.sent.tokens)} tokens</div>}
                 {m.usage && <div className="msg-meta">{usageText(m.usage)}</div>}
+                {m.masked > 0 && <div className="msg-meta">{m.masked} likely secret{m.masked === 1 ? "" : "s"} masked before sending</div>}
               </div>
             </div>
           ))}

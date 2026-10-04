@@ -336,6 +336,8 @@ The column on the right lists what goes with your next message: a cluster summar
 
 Every question has a token cap, 20,000 by default, set in Connection; on the server connection `--llm-max-tokens-per-question` (default 50000) is the ceiling. The composer shows an estimate of the next message against the cap, and Send is disabled when it is over. After each answer the tab shows the tokens actually used, as reported by the endpoint, or an estimate marked as such when it reports none.
 
+**Secrets.** The assistant reaches only what k8sfoams reads: nodes, pods and pod logs, never Secrets or ConfigMaps, and pod details without env values or annotations. Before anything is sent to the model endpoint, the server masks values that look like secrets: private keys, JWTs such as service account tokens, bearer and basic credentials, credentials in URLs, common API key formats, and the value after names like `password`, `secret`, `token` or `api_key`. Each answer says how many values were masked. Masking matches patterns, so an unusual secret can still pass; keep secrets out of logs. The Logs tab itself shows raw logs, since the viewer can already read them.
+
 ## Run in a cluster
 
 ```bash

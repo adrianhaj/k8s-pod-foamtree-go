@@ -408,3 +408,21 @@ func TestTurnDeadlineIsReadable(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+func TestSecretsAreMaskedBeforeLeaving(t *testing.T) {
+	up := newUpstream(t, answer("ok"))
+	body := `{"url":"` + up.URL + `/v1","model":"m","messages":[` +
+		`{"role":"system","content":"logs:\nDB_PASSWORD=hunter2hunter2\nconnect postgres://app:s3cretpw@db:5432/x"},` +
+		`{"role":"user","content":"why does it fail?"}]}`
+	w := chat(New(Config{AllowAnyURL: true}), "k", body)
+	sent, _ := json.Marshal(up.got()[0].body)
+	for _, secret := range []string{"hunter2hunter2", "s3cretpw"} {
+		if strings.Contains(string(sent), secret) {
+			t.Fatalf("%s reached the model endpoint: %s", secret, sent)
+		}
+	}
+	ev := events(t, w.Body.String())
+	if last := ev[len(ev)-1]; last.Type != "done" || last.Masked != 2 {
+		t.Fatalf("%+v", last)
+	}
+}

@@ -12,7 +12,8 @@ const MIN_BUDGET = 1000;
 
 const SYSTEM = "You are the assistant inside k8sfoams, a read-only Kubernetes dashboard of requested CPU and memory. "
   + "You cannot change the cluster: suggest kubectl commands for the viewer to run. "
-  + "Name pods as namespace/name and nodes by name. Be brief.";
+  + "Name pods as namespace/name and nodes by name. Be brief. "
+  + "Values shown as [REDACTED] were masked by k8sfoams on purpose; do not ask for them.";
 
 const estimateTokens = text => Math.ceil([...text].length / CHARS_PER_TOKEN);
 const estimateMessages = msgs =>
