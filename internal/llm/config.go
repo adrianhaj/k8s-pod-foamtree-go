@@ -39,7 +39,7 @@ func (c Config) serverKey() (string, error) {
 
 func (c Config) checkURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+	if err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		return "", fmt.Errorf("base URL must look like https://host/v1, got %q", raw)
 	}
 	if c.AllowAnyURL {
@@ -48,19 +48,51 @@ func (c Config) checkURL(raw string) (string, error) {
 	if u.Scheme != "https" {
 		return "", errors.New("base URL must use https")
 	}
-	host := u.Hostname()
-	if own, err := url.Parse(c.URL); err == nil && c.URL != "" && own.Hostname() == host {
+	host := strings.ToLower(u.Hostname())
+	if own, err := url.Parse(c.URL); err == nil && c.URL != "" && strings.ToLower(own.Hostname()) == host {
 		return u.String(), nil
 	}
 	for _, g := range c.AllowedHosts {
-		if ok, _ := path.Match(g, host); ok {
+		if ok, _ := path.Match(strings.ToLower(g), host); ok {
 			return u.String(), nil
 		}
 	}
 	return "", fmt.Errorf("host %s is not allowed: ask the operator to add it to --llm-allowed-hosts", host)
 }
 
-var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+// blocked lists what netip's IsGlobalUnicast and IsPrivate let through but is
+// still not a public destination.
+var blocked = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("::/96"),
+	netip.MustParsePrefix("2002::/16"),
+	netip.MustParsePrefix("fec0::/10"),
+}
+
+var nat64 = []netip.Prefix{netip.MustParsePrefix("64:ff9b::/96"), netip.MustParsePrefix("64:ff9b:1::/48")}
+
+func isPublic(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	if !ip.IsGlobalUnicast() || ip.IsPrivate() {
+		return false
+	}
+	for _, p := range blocked {
+		if p.Contains(ip) {
+			return false
+		}
+	}
+	for _, p := range nat64 {
+		if p.Contains(ip) {
+			b := ip.As16()
+			return isPublic(netip.AddrFrom4([4]byte(b[12:])))
+		}
+	}
+	return true
+}
 
 // publicOnly runs at dial time, after DNS, so a hostname that resolves to a
 // cluster, node or metadata address is refused too.
@@ -69,16 +101,19 @@ func publicOnly(_, address string, _ syscall.RawConn) error {
 	if err != nil {
 		return fmt.Errorf("refusing to dial %s: %w", address, err)
 	}
-	ip := ap.Addr().Unmap()
-	if !ip.IsGlobalUnicast() || ip.IsPrivate() || cgnat.Contains(ip) {
+	if !isPublic(ap.Addr()) {
 		return fmt.Errorf("refusing to dial %s: not a public address", address)
 	}
 	return nil
 }
 
 // viewerClient has no proxy on purpose: the dial check must see the real
-// destination, not a proxy's address.
+// destination, not a proxy's address. It never follows redirects: a hop would
+// skip the https and allow-list checks and carry the prompt and key along.
 func viewerClient() *http.Client {
 	d := &net.Dialer{Timeout: 10 * time.Second, Control: publicOnly}
-	return &http.Client{Transport: &http.Transport{DialContext: d.DialContext, TLSHandshakeTimeout: 10 * time.Second, ForceAttemptHTTP2: true}}
+	return &http.Client{
+		Transport:     &http.Transport{DialContext: d.DialContext, TLSHandshakeTimeout: 10 * time.Second, IdleConnTimeout: 90 * time.Second, ForceAttemptHTTP2: true},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 }

@@ -21,12 +21,25 @@ func TestCheckURL(t *testing.T) {
 		"ftp://api.openai.com":                    false,
 		"api.openai.com/v1":                       false,
 		"":                                        false,
+		"https://user:pw@api.openai.com/v1":       false,
+		"https://api.openai.com@evil.example/v1":  false,
+		"https:///v1":                             false,
+		"https://API.OpenAI.com/v1":               true,
+		"https://TEAM.openai.azure.com/v1":        true,
+		"https://LLM.Internal.Example/v1":         true,
 	} {
 		if _, err := c.checkURL(raw); (err == nil) != ok {
 			t.Errorf("%q: err=%v", raw, err)
 		}
 	}
+	upper := Config{URL: "https://LLM.Internal.Example/v1"}
+	if _, err := upper.checkURL("https://llm.internal.example/v1"); err != nil {
+		t.Errorf("operator URL host should match case-insensitively: %v", err)
+	}
 	local := Config{AllowAnyURL: true}
+	if _, err := local.checkURL("http://user:pw@localhost:11434/v1"); err == nil {
+		t.Error("userinfo accepted on a loopback run")
+	}
 	for _, raw := range []string{"http://localhost:11434/v1", "http://10.0.0.5:8000/v1"} {
 		if _, err := local.checkURL(raw); err != nil {
 			t.Errorf("loopback run should allow %q: %v", raw, err)
@@ -49,6 +62,20 @@ func TestPublicOnly(t *testing.T) {
 		"[fd00::1]:443":              false,
 		"[fe80::1]:443":              false,
 		"[::ffff:10.0.0.1]:443":      false,
+		"[64:ff9b::a00:1]:443":       false,
+		"[64:ff9b:1::a00:1]:443":     false,
+		"[2002:a00:1::]:443":         false,
+		"[::a00:1]:443":              false,
+		"[64:ff9b::808:808]:443":     true,
+		"0.1.2.3:443":                false,
+		"240.0.0.1:443":              false,
+		"198.18.0.1:443":             false,
+		"198.19.255.255:443":         false,
+		"192.0.0.1:443":              false,
+		"[fec0::1]:443":              false,
+		"224.0.0.1:443":              false,
+		"[ff02::1]:443":              false,
+		"[::]:443":                   false,
 	} {
 		if err := publicOnly("tcp", addr, nil); (err == nil) != ok {
 			t.Errorf("%s: err=%v", addr, err)
@@ -63,6 +90,26 @@ func TestViewerClientRefusesPrivateAddresses(t *testing.T) {
 	_, err := viewerClient().Get(srv.URL)
 	if err == nil || !strings.Contains(err.Error(), "not a public address") {
 		t.Fatalf("dialled a loopback address: %v", err)
+	}
+}
+
+func TestViewerClientDoesNotFollowRedirects(t *testing.T) {
+	hit := false
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hit = true }))
+	defer target.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+	c := viewerClient()
+	c.Transport = &http.Transport{}
+	resp, err := c.Post(srv.URL, "application/json", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusTemporaryRedirect || hit {
+		t.Fatalf("followed a redirect: status=%d hit=%v", resp.StatusCode, hit)
 	}
 }
 
