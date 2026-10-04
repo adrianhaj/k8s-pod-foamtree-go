@@ -3,6 +3,7 @@ package kube
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -251,6 +252,24 @@ func TestLastBytesKeepsTheNewestWholeLines(t *testing.T) {
 		if got != tc.want || len(got) > tc.max && len(tc.in) > tc.max {
 			t.Errorf("lastBytes(%q, %d) = %q, want %q", tc.in, tc.max, got, tc.want)
 		}
+	}
+}
+
+func TestTailBoundsALargeStream(t *testing.T) {
+	var in strings.Builder
+	for i := 0; in.Len() < 3*MaxLogBytes; i++ {
+		fmt.Fprintf(&in, "line %d\n", i)
+	}
+	last := in.String()[strings.LastIndex(strings.TrimSuffix(in.String(), "\n"), "\n")+1:]
+	got, err := tail(strings.NewReader(in.String()), MaxLogBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) > MaxLogBytes || !strings.HasSuffix(string(got), last) || !strings.HasPrefix(string(got), "line ") {
+		t.Fatalf("len %d, starts %q, ends %q", len(got), got[:12], got[len(got)-12:])
+	}
+	if !strings.Contains(in.String(), "\n"+string(got)) {
+		t.Fatal("result is not a whole-line suffix of the input")
 	}
 }
 

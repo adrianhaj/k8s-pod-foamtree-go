@@ -156,11 +156,30 @@ func (s *Source) Logs(ctx context.Context, name string, req LogRequest) (io.Read
 		return nil, err
 	}
 	defer rc.Close()
-	b, err := io.ReadAll(rc)
+	b, err := tail(rc, MaxLogBytes)
 	if err != nil {
 		return nil, err
 	}
-	return io.NopCloser(bytes.NewReader(lastBytes(b, MaxLogBytes))), nil
+	return io.NopCloser(bytes.NewReader(b)), nil
+}
+
+// tail reads r to the end holding at most about 2*max bytes, and returns the newest max.
+func tail(r io.Reader, max int) ([]byte, error) {
+	var buf []byte
+	chunk := make([]byte, 32<<10)
+	for {
+		n, err := r.Read(chunk)
+		buf = append(buf, chunk[:n]...)
+		if len(buf) > 2*max {
+			buf = append(buf[:0], buf[len(buf)-max-1:]...)
+		}
+		if err == io.EOF {
+			return lastBytes(buf, max), nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 }
 
 // lastBytes keeps the newest max bytes, starting at a line boundary.
