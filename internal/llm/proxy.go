@@ -276,7 +276,8 @@ func (t target) read(parent context.Context, stop context.CancelFunc, c *compat,
 	if c.noLimit && t.budget > 0 {
 		limit = max(t.budget-used-in, 0) * charsPerToken
 	}
-	rd, err := readStream(body, func(text string) {
+	// Reasoning text counts toward the cap but is not relayed.
+	rd, err := readStream(body, func(text string, relay bool) {
 		if cut {
 			return
 		}
@@ -286,7 +287,7 @@ func (t target) read(parent context.Context, stop context.CancelFunc, c *compat,
 			n, cut = len([]rune(text)), true
 		}
 		chars += n
-		if text != "" {
+		if relay && text != "" {
 			s.send(event{Type: "delta", Text: text})
 		}
 		if cut {
@@ -336,7 +337,9 @@ func (t target) post(ctx context.Context, body any) (*http.Response, error) {
 type chunk struct {
 	Choices []struct {
 		Delta struct {
-			Content string `json:"content"`
+			Content          string `json:"content"`
+			ReasoningContent string `json:"reasoning_content"`
+			Reasoning        string `json:"reasoning"`
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -350,7 +353,7 @@ type chunk struct {
 	} `json:"error"`
 }
 
-func readStream(r io.Reader, onText func(string)) (round, error) {
+func readStream(r io.Reader, onText func(text string, relay bool)) (round, error) {
 	var rd round
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
@@ -376,9 +379,15 @@ func readStream(r io.Reader, onText func(string)) (round, error) {
 			rd.Usage = Usage{Prompt: c.Usage.Prompt, Completion: c.Usage.Completion, Total: c.Usage.Total}
 		}
 		for _, ch := range c.Choices {
+			for _, r := range []string{ch.Delta.ReasoningContent, ch.Delta.Reasoning} {
+				if r != "" {
+					rd.chars += utf8.RuneCountInString(r)
+					onText(r, false)
+				}
+			}
 			if ch.Delta.Content != "" {
 				rd.chars += utf8.RuneCountInString(ch.Delta.Content)
-				onText(ch.Delta.Content)
+				onText(ch.Delta.Content, true)
 			}
 			if ch.FinishReason != "" {
 				rd.Finish = ch.FinishReason

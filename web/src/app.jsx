@@ -563,10 +563,12 @@ function App() {
     assistant.setTicked(ticked);
     setPanel(p => ({ ...p, open: true, tab: "assistant", max: true }));
     const q = `Analyze pod ${logsPodObj.namespace}/${logsPodObj.name}. Use its status and the logs provided. What is the most likely cause, and how do I fix it?`;
-    if (!connReady(conn, server)) {
+    // Until the privacy notice is acknowledged, the question waits in the composer.
+    if (!assistant.acked || !connReady(conn, server)) {
       assistant.setDraft(q);
       return;
     }
+    assistant.setConnecting(false);
     assistant.ask(conn, effectiveBudget(conn, server), items, ticked, q);
   };
   const openConnection = () => {

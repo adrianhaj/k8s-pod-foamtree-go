@@ -261,7 +261,7 @@ Focusing the input opens a popover with the same token list; it is replaced by t
 | `GET /contexts` | `[{"context": "...", "active": true}]` |
 | `GET /api/logs` | one container's logs as plain text. `namespace` and `pod` are required; optional `container`, `tail` (1–5000, default 500), `previous=1` for the run before the last restart, and `context`. At most 1 MiB. 404 when the pod is gone, 400 when there is no previous run. |
 | `GET /api/llm/config` | `{"server", "url", "model", "maxTokens"}`; never the key |
-| `POST /api/llm/chat` | takes JSON `{url?, model?, context, budget, messages}` and an optional `X-LLM-Key` header; streams `text/event-stream` events `delta`, `tool`, `notice`, `error` and `done` (with `usage`) |
+| `POST /api/llm/chat` | takes JSON `{url?, model?, context, budget, messages}` and an optional `X-LLM-Key` header; streams `text/event-stream` events `delta`, `notice`, `error` and `done` (with `usage` and `masked`, the count of values masked before sending) |
 | `GET /api/me` | `{"auth": "none"}`, or `{"auth": "oidc", "email": "...", "name": "..."}` for the signed-in user |
 | `GET /auth/login`, `GET /auth/callback`, `POST /auth/logout` | OIDC sign-in and sign-out (only with `--auth=oidc`) |
 
@@ -332,7 +332,7 @@ The **Assistant** tab chats with any OpenAI-compatible API: OpenAI, Azure OpenAI
 - **Server connection.** The operator sets `--llm-url`, `--llm-model` and a key in `K8SFOAMS_LLM_API_KEY` or a file named by `--llm-api-key-file` (a mounted Secret). The key never reaches the browser and is only ever sent to `--llm-url`.
 - **My own key.** URL, model and key typed in the browser. The key lasts until the tab closes unless you tick **Remember key in this browser**; then it stays in this browser's storage. The server relays it and never logs or stores it. On a shared deployment the URL's host must match `--llm-allowed-hosts`, and private addresses are refused.
 
-The column on the right lists what goes with your next message: a cluster summary, the Problems list, the pod and logs open in the Logs tab, and the last node you opened. Untick anything you do not want to send. Nothing is sent until you press **Send**, or **Analyze with assistant** in the Logs tab.
+The column on the right lists what goes with your next message: a cluster summary, the Problems list, the pod and logs open in the Logs tab, and the last node you opened, which starts unticked. Untick anything you do not want to send. Nothing is sent until you press **Send**, **Analyze with assistant** in the Logs tab, or **Test and save** (which sends one short test message). The first time you open the tab it explains what leaves the cluster, until you press OK.
 
 Every question has a token cap, 20,000 by default, set in Connection; on the server connection `--llm-max-tokens-per-question` (default 50000) is the ceiling. The composer shows an estimate of the next message against the cap, and Send is disabled when it is over. After each answer the tab shows the tokens actually used, as reported by the endpoint, or an estimate marked as such when it reports none.
 
@@ -377,8 +377,8 @@ Releases: an admin pushes a `v*` tag (`git tag v1.0.0 && git push origin v1.0.0`
 | `--oidc-groups-claim` | `groups` | ID-token claim with group names |
 | `--oidc-scopes` | `openid,email,profile` | add `groups` for Dex/Keycloak |
 | `--version`, `-v` | | print the version (`git describe` of the build) and exit |
-| `--llm-url`, `--llm-model` | | the assistant connection shared by every viewer: an OpenAI-compatible base URL and a model; required together |
-| `--llm-api-key-file` | | file holding the server's API key, e.g. a mounted Secret; re-read on every request |
+| `--llm-url`, `--llm-model` | | the assistant connection shared by every viewer: an OpenAI-compatible `http` or `https` base URL, without credentials, query or fragment, and a model; required together |
+| `--llm-api-key-file` | | file holding the server's API key, e.g. a mounted Secret; re-read on every request. Used only with `--llm-url` |
 | `--llm-allowed-hosts` | | comma-separated globs of hosts viewers may send their own key to; empty means only the `--llm-url` host. Ignored on a loopback run without auth, where any URL is allowed |
 | `--llm-max-tokens-per-question` | `50000` | token cap for one question; `0` means none. Server connection only |
 | `--synthetic` | | serve a made-up cluster, e.g. `100x50` (nodes × pods per node), for UI work and scale tests; includes GPU, ephemeral-storage and hugepages nodes |

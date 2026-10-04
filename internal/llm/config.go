@@ -63,6 +63,13 @@ func (c Config) checkURL(raw string) (string, error) {
 	return "", fmt.Errorf("host %s is not allowed: ask the operator to add it to --llm-allowed-hosts", host)
 }
 
+// CheckBaseURL applies the shape rules every base URL must pass: http or
+// https, a host, no credentials, query or fragment.
+func CheckBaseURL(raw string) error {
+	_, err := Config{AllowAnyURL: true}.checkURL(raw)
+	return err
+}
+
 // blocked lists what netip's IsGlobalUnicast and IsPrivate let through but is
 // still not a public destination.
 var blocked = []netip.Prefix{

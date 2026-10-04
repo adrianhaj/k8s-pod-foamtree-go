@@ -77,12 +77,17 @@ func parseFlags(args []string) (options, error) {
 	o.llm.Key = os.Getenv("K8SFOAMS_LLM_API_KEY")
 	o.llm.AllowedHosts = list(o.llmHosts)
 	switch {
-	case o.llm.URL != "" && o.llm.Model == "":
-		return o, errors.New("--llm-url needs --llm-model")
+	case (o.llm.URL == "") != (o.llm.Model == ""):
+		return o, errors.New("--llm-url and --llm-model go together")
 	case o.llm.Key != "" && o.llm.KeyFile != "":
 		return o, errors.New("set K8SFOAMS_LLM_API_KEY or --llm-api-key-file, not both")
 	case o.llm.MaxTokens < 0:
 		return o, errors.New("--llm-max-tokens-per-question must be 0 or more")
+	}
+	if o.llm.URL != "" {
+		if err := llm.CheckBaseURL(o.llm.URL); err != nil {
+			return o, fmt.Errorf("--llm-url: %w", err)
+		}
 	}
 	o.oidc.Scopes, o.oidc.AllowedEmails, o.oidc.AllowedGroups = list(o.scopes), list(o.emails), list(o.groups)
 	if o.syntheticSpec != "" {

@@ -322,6 +322,15 @@ func TestAssistantFlags(t *testing.T) {
 		{[]string{"--llm-url", "https://api.openai.com/v1"}, false},
 		{[]string{"--llm-url", "https://api.openai.com/v1", "--llm-model", "gpt-4.1-mini"}, true},
 		{[]string{"--llm-max-tokens-per-question", "-1"}, false},
+		{[]string{"--llm-model", "gpt-4.1-mini"}, false},
+		{[]string{"--llm-url", "http://localhost:11434/v1", "--llm-model", "m"}, true},
+	}
+	for _, bad := range []string{"api.openai.com/v1", "ftp://api.openai.com/v1", "https:///v1", "https://user:pw@api.openai.com/v1",
+		"https://api.openai.com/v1?x=1", "https://api.openai.com/v1?", "https://api.openai.com/v1#f"} {
+		cases = append(cases, struct {
+			args []string
+			ok   bool
+		}{[]string{"--llm-url", bad, "--llm-model", "m"}, false})
 	}
 	for _, tc := range cases {
 		if _, err := parseFlags(tc.args); (err == nil) != tc.ok {
@@ -332,8 +341,10 @@ func TestAssistantFlags(t *testing.T) {
 	if fmt.Sprint(o.llm.AllowedHosts) != "[api.openai.com *.openai.azure.com]" || o.llm.MaxTokens != 50000 || !o.llm.AllowAnyURL {
 		t.Fatalf("defaults: %+v", o.llm)
 	}
-	if o, _ := parseFlags([]string{"--host", "0.0.0.0", "--auth", "oidc"}); o.llm.AllowAnyURL {
-		t.Fatal("any URL allowed on a shared deployment")
+	for _, args := range [][]string{{"--host", "0.0.0.0", "--auth", "oidc"}, {"--host", "0.0.0.0", "--allow-unauthenticated"}} {
+		if o, err := parseFlags(args); err != nil || o.llm.AllowAnyURL {
+			t.Fatalf("%v: any URL allowed on a shared deployment (err=%v)", args, err)
+		}
 	}
 	t.Setenv("K8SFOAMS_LLM_API_KEY", "env-key")
 	if _, err := parseFlags([]string{"--llm-api-key-file", "/k"}); err == nil {

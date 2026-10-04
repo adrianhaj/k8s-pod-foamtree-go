@@ -7,7 +7,9 @@ const {
   DEFAULT_BUDGET, estimateMessages, fmtTokens, saveConn, forgetKey, connReady, effectiveBudget,
   overCap, isOn, systemPrompt, streamChat,
 } = window.k8sLLM;
+const { safeStorage, readPref, writePref } = window.k8sPrefs;
 
+const ACK_KEY = "k8sfoams.llm.ack";
 const QUICK = ["Explain the problems", "Which nodes have the least room left?", "Which pods have no memory limit?"];
 
 function applyEvent(ms, ev) {
@@ -28,6 +30,7 @@ function useAssistant(context) {
   const [draft, setDraft] = useState("");
   const [ticked, setTicked] = useState({});
   const [connecting, setConnecting] = useState(false);
+  const [acked, setAcked] = useState(() => readPref(safeStorage(), ACK_KEY, false, v => v === true));
   const abort = useRef(null);
 
   // The estimate covers exactly the array that goes out, the way the server counts it.
@@ -47,7 +50,7 @@ function useAssistant(context) {
     setError(null);
     const ctl = new AbortController();
     abort.current = ctl;
-    let ended = false, got = false, failed = null;
+    let ended = false, got = false, failed = null, note = null;
     try {
       await streamChat({
         conn, context, messages: p.wire, signal: ctl.signal,
@@ -55,6 +58,7 @@ function useAssistant(context) {
           if (ev.type === "done" || ev.type === "error") ended = true;
           if (ev.type === "error") failed = ev.text;
           if (ev.type === "delta" && ev.text) got = true;
+          if (ev.type === "notice") note = ev.text;
           setMessages(ms => applyEvent(ms, ev));
         },
       });
@@ -65,12 +69,13 @@ function useAssistant(context) {
       setBusy(false);
       abort.current = null;
     }
-    // A question that got no answer is taken back, so the retry keeps user and
-    // assistant turns alternating, which strict chat templates require.
-    if (failed && !got) {
+    // A question that got no answer text (failed, stopped, or empty) is taken
+    // back, so the retry keeps user and assistant turns alternating, which
+    // strict chat templates require. Text typed meanwhile is kept.
+    if (!got) {
       setMessages(ms => ms.slice(0, -2));
-      setDraft(text);
-      setError(failed);
+      setDraft(d => (d.trim() ? d : text));
+      setError(failed || note);
     } else if (failed && !ended) setError(failed);
   };
 
@@ -84,7 +89,8 @@ function useAssistant(context) {
   };
 
   return {
-    messages, busy, error, draft, setDraft, ticked, setTicked, connecting, setConnecting, plan, ask,
+    messages, busy, error, draft, setDraft, ticked, setTicked, connecting, setConnecting, plan, ask, acked,
+    ack: () => { writePref(safeStorage(), ACK_KEY, true); setAcked(true); },
     stop: () => abort.current && abort.current.abort(),
     clear: () => { setMessages([]); setError(null); },
   };
@@ -115,7 +121,14 @@ const usageText = u => (u.estimated
   ? `≈ ${fmtTokens(u.total)} tokens, estimated: the endpoint did not report usage`
   : `used ${u.total.toLocaleString()} tokens (${u.prompt.toLocaleString()} in · ${u.completion.toLocaleString()} out)`);
 
-function ConnectForm({ conn, server, context, onSaved, onBack, onForget }) {
+function PrivacyNotice({ onOk }) {
+  return (
+    <div className="notice"><SevGlyph sev="info" /><span><b>What leaves this cluster.</b> Your questions and the context you tick are sent to the chosen endpoint. Pod specs and logs can contain secrets. Values that look like secrets, such as passwords, tokens, keys and credentials in URLs, are masked on the server before anything is sent. Masking matches patterns and can miss an unusual secret. Nothing is sent until you press Send, Analyze with assistant, or Test and save (which sends one short test message).</span>
+      {onOk && <button className="btn" onClick={onOk}>OK</button>}</div>
+  );
+}
+
+function ConnectForm({ conn, server, context, onSaved, onBack, onForget, onAck }) {
   const hasServer = !!(server && server.server);
   const [f, setF] = useState(() => ({ ...conn, mode: hasServer ? conn.mode : "own" }));
   const [busy, setBusy] = useState(false);
@@ -132,14 +145,17 @@ function ConnectForm({ conn, server, context, onSaved, onBack, onForget }) {
     setError(null);
     try {
       // One tiny question proves URL, model and key before anything real is sent.
-      let done = false;
+      let done = false, got = false, note = null;
       await streamChat({
         conn: c, context, messages: [{ role: "user", content: "Reply with the single word OK." }],
         onEvent: ev => {
           if (ev.type === "error") throw new Error(ev.text);
+          if (ev.type === "delta" && ev.text) got = true;
+          if (ev.type === "notice") note = ev.text;
           if (ev.type === "done") done = true;
         },
       });
+      if (!got) throw new Error(`No answer text came back${note ? `: ${note}` : ""}. Check the base URL and model.`);
       if (!done) throw new Error("The answer ended before the endpoint finished.");
       save(c);
     } catch (err) {
@@ -159,7 +175,7 @@ function ConnectForm({ conn, server, context, onSaved, onBack, onForget }) {
 
   return (
     <div className="connect">
-      <div className="notice"><SevGlyph sev="info" /><span><b>What leaves this cluster.</b> Your questions and the context you tick are sent to the chosen endpoint. Pod specs and logs can contain secrets. Values that look like secrets, such as passwords, tokens, keys and credentials in URLs, are masked on the server before anything is sent. Masking matches patterns and can miss an unusual secret. Nothing is sent until you press Send or Analyze with assistant.</span></div>
+      <PrivacyNotice onOk={onAck} />
       {hasServer && (
         <div className="panel-bar">
           <div className="seg" role="radiogroup" aria-label="Connection">
@@ -204,7 +220,7 @@ function ConnectForm({ conn, server, context, onSaved, onBack, onForget }) {
 function AssistantTab({ a, conn, setConn, server, items, known, onPick, context }) {
   const ready = connReady(conn, server);
   if (!ready || a.connecting) {
-    return <ConnectForm conn={conn} server={server} context={context} onBack={ready ? () => a.setConnecting(false) : null}
+    return <ConnectForm conn={conn} server={server} context={context} onBack={ready ? () => a.setConnecting(false) : null} onAck={a.acked ? null : a.ack}
       onSaved={c => { setConn(c); a.setConnecting(false); }} onForget={() => setConn(c => ({ ...c, key: "" }))} />;
   }
   const budget = effectiveBudget(conn, server);
@@ -222,6 +238,7 @@ function AssistantTab({ a, conn, setConn, server, items, known, onPick, context 
   return (
     <div className="ast">
       <div className="ast-main">
+        {!a.acked && <PrivacyNotice onOk={a.ack} />}
         <div className="transcript" aria-live="polite">
           {a.messages.length === 0 && <div className="panel-empty">Ask about this cluster. Tick what to send in the context column. Nothing is sent until you press Send.</div>}
           {a.messages.map((m, i) => (
@@ -248,7 +265,7 @@ function AssistantTab({ a, conn, setConn, server, items, known, onPick, context 
             <textarea id="ast-input" rows="2" value={a.draft} aria-label="Message"
               placeholder="Ask about this cluster. Enter sends, Shift+Enter adds a line."
               onChange={e => a.setDraft(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }} />
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); submit(); } }} />
             <div className="composer-side">
               <span className="cost" title="Rough estimate: 4 characters per token">
                 next message ≈ {fmtTokens(next.tokens)}{budget > 0 ? ` of ${fmtTokens(budget)} cap` : ""} tokens

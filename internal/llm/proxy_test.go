@@ -370,6 +370,32 @@ func TestCapHoldsWhenTheEndpointRejectsTheLimit(t *testing.T) {
 	}
 }
 
+// Reasoning models may stream only reasoning for a long time: it counts
+// toward the cap even though it is never relayed.
+func TestCapCountsReasoningWhenTheEndpointRejectsTheLimit(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request, _ int, body map[string]any) {
+		if body["max_tokens"] != nil || body["max_completion_tokens"] != nil {
+			http.Error(w, `{"error":{"message":"max_tokens is too large: 998. This model supports at most 4096 completion tokens"}}`, 400)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		for i := 0; i < 100000 && r.Context().Err() == nil; i++ {
+			field := []string{"reasoning_content", "reasoning"}[i%2]
+			fmt.Fprintf(w, `data: {"choices":[{"delta":{%q:"abcd"}}]}`+"\n\n", field)
+			w.(http.Flusher).Flush()
+		}
+	})
+	w := chat(New(Config{AllowAnyURL: true}), "k", `{"url":"`+up.URL+`/v1","model":"m","budget":1000,`+q+`}`)
+	ev := events(t, w.Body.String())
+	if len(ev) != 2 || ev[0].Type != "notice" || !strings.Contains(ev[0].Text, "token cap") || ev[1].Type != "done" {
+		t.Fatalf("%+v", ev)
+	}
+	in := estimate([]Message{{Role: "user", Content: "q"}})
+	if u := ev[1].Usage; !u.Estimated || u.Completion != 1000-in {
+		t.Fatalf("usage %+v", u)
+	}
+}
+
 func TestEstimateCountsRunes(t *testing.T) {
 	if got, want := estimate([]Message{{Role: "user", Content: "日本語日本語"}}), (4+6)/charsPerToken+1; got != want {
 		t.Fatalf("estimate %d, want %d", got, want)
