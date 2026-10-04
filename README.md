@@ -115,7 +115,7 @@ Every pod is checked against seven rules: four best-practice rules and three cra
 
 Three details are worth knowing:
 
-- **Init containers are not audited.** They finish before the app runs, so their requests and limits say nothing about how the pod behaves once it is running.
+- **Init containers are not audited against the best-practice rules.** They finish before the app runs, so their requests and limits say nothing about how the pod behaves once it is running. The crash signals do cover them.
 - **CPU limits are not required.** Only a missing *memory* limit is flagged. A memory leak without a limit can take the whole node down; a CPU spike without a limit only gets throttled.
 - **Ratio asymmetry ignores small pods.** A sidecar asking for 5% of the CPU and almost no memory has an extreme ratio, but it leaves no meaningful capacity stranded.
 

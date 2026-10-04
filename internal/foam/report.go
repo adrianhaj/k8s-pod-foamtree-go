@@ -29,7 +29,8 @@ type ReportRow struct {
 // Report lists nodes by name with their pods by namespace then name, like the
 // treemap, then the pods the treemap cannot draw: pending ones and any whose
 // node is gone. Those keep their nodeName (empty while pending) and have no
-// node columns or warnings, only the findings that need no node.
+// node columns or warnings, only the findings that need no node (requests,
+// limits and the crash signals).
 func Report(nodes []Node, pods []Pod) []ReportRow {
 	byNode := map[string][]Pod{}
 	for _, p := range pods {
@@ -66,7 +67,7 @@ func sortPods(ps []Pod) []Pod {
 }
 
 // n is the zero Node for a pod on no known node: Findings then reports only
-// what needs no node (missing requests / limits).
+// what needs no node (missing requests / limits and the crash signals).
 func appendPods(rows []ReportRow, base ReportRow, n Node, pods []Pod) []ReportRow {
 	for _, p := range sortPods(pods) {
 		r := base

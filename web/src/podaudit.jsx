@@ -11,7 +11,7 @@ const POD_FINDINGS = {
   "monolith":         { label: "monolith",         sev: "warn", why: "reserves over 80% of its node — nowhere else to reschedule it" },
   "ratio-asymmetry":  { label: "ratio asymmetry",  sev: "info", why: "CPU:memory ratio far from the node's — strands the other resource" },
   "crashloop":  { label: "crash loop", sev: "danger", why: "a container keeps crashing and Kubernetes is backing off restarts", status: true },
-  "oom-killed": { label: "OOM killed", sev: "danger", why: "a container's last run was killed for going over its memory limit", status: true },
+  "oom-killed": { label: "OOM killed", sev: "danger", why: "a container's last run was killed for running out of memory", status: true },
   "image-pull": { label: "image pull", sev: "warn",   why: "a container image cannot be pulled", status: true },
 };
 

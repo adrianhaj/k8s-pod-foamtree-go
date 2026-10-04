@@ -6,7 +6,7 @@
 //   node:<glob>            node name, "*" matches any run of characters
 //   qos:<class>            Guaranteed | Burstable | BestEffort (case-insensitive)
 //   has:init-containers    pod declares at least one init container
-//   audit:<finding>        pod breaks a best-practice rule (see AUDIT_FIELDS)
+//   audit:<finding>        pod breaks an audit rule or shows a crash signal (see AUDIT_FIELDS)
 //   health:<warning>       node carries a health warning (see HEALTH_FIELDS)
 //   key=value              label equality
 //   key!=value             label inequality (a missing label counts as unequal)
