@@ -283,3 +283,19 @@ func TestSlimNodeKeepsCapacityAndAllocatable(t *testing.T) {
 		t.Fatalf("got %+v", n.Status)
 	}
 }
+
+func TestSlimPodKeepsContainerStatusWithoutMessages(t *testing.T) {
+	in := &corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{
+		Name: "api", Ready: false, RestartCount: 4, Image: "registry/api:1", ImageID: "sha256:x", ContainerID: "containerd://y",
+		State:                corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff", Message: "long back-off text"}},
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "OOMKilled", ExitCode: 137, Message: "oom"}},
+	}}}}
+	out, _ := slimPod(in)
+	got := out.(*corev1.Pod).Status
+	want := corev1.ContainerStatus{Name: "api", RestartCount: 4,
+		State:                corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "OOMKilled", ExitCode: 137}}}
+	if got.Phase != corev1.PodRunning || len(got.ContainerStatuses) != 1 || !reflect.DeepEqual(got.ContainerStatuses[0], want) {
+		t.Fatalf("got %+v", got)
+	}
+}

@@ -77,5 +77,21 @@ func Findings(p Pod, n Node) []string {
 			f = append(f, "ratio-asymmetry")
 		}
 	}
+
+	crash, oom, pull := false, false, false
+	for _, s := range p.Statuses {
+		crash = crash || s.Waiting == "CrashLoopBackOff"
+		oom = oom || s.LastExitReason == "OOMKilled"
+		pull = pull || s.Waiting == "ImagePullBackOff" || s.Waiting == "ErrImagePull"
+	}
+	if crash {
+		f = append(f, "crashloop")
+	}
+	if oom {
+		f = append(f, "oom-killed")
+	}
+	if pull {
+		f = append(f, "image-pull")
+	}
 	return f
 }
