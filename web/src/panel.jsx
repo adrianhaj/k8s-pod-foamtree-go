@@ -9,6 +9,7 @@ const TABS = [
   { id: "changes", label: "Changes" },
   { id: "drain", label: "Drain simulation" },
   { id: "logs", label: "Logs" },
+  { id: "assistant", label: "Assistant" },
 ];
 const ROW_CAP = 100; // ponytail: plain list; virtualise if clusters routinely exceed this
 

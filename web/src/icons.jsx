@@ -13,6 +13,9 @@ const ICON_PATHS = {
   max: <path d="M3 6V3h3M13 6V3h-3M3 10v3h3M13 10v3h-3" />,
   terminal: <path d="M2 3h12v10H2zM4.5 6.5l2 1.5-2 1.5M8 10h3.5" />,
   signout: <path d="M6 2.5H3.5v11H6M10 5l3 3-3 3M13 8H6.5" />,
+  chat: <path d="M2.5 3h11v7.5H8L5 13v-2.5H2.5zM5 6.2h6M5 8.2h4" />,
+  spark: <path d="M8 2v3M8 11v3M2 8h3M11 8h3M4 4l1.8 1.8M10.2 10.2L12 12M4 12l1.8-1.8M10.2 5.8L12 4" />,
+  stop: <rect x="4" y="4" width="8" height="8" rx="1" />,
 };
 
 function Icon({ name, size = 16 }) {

@@ -21,6 +21,8 @@ const { buildProblems, problemChips } = window.k8sProblems;
 const { pickShown } = window.k8sHighlight;
 const { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips } = window.k8sPanel;
 const { TopBar, SummaryStrip, Toolbar, Rail, SettingsMenu, attentionBySev } = window.k8sChrome;
+const { useAssistant, AssistantTab } = window.k8sAssistant;
+const { loadConn, connReady, effectiveBudget, contextItems } = window.k8sLLM;
 const THEME_KEY = "k8sfoams.theme";
 const SIM_IDLE = { mode: "drain", node: null, result: null, error: null, busy: false };
 
@@ -523,6 +525,55 @@ function App() {
   const problems = useMemo(() => buildProblems(nodes), [nodes]);
   const chips = useMemo(() => problemChips(problems), [problems]);
 
+  const [conn, setConn] = useState(loadConn);
+  const [server, setServer] = useState(null);
+  useEffect(() => {
+    apiFetch("/api/llm/config").then(r => (r.ok ? r.json() : null)).then(setServer, () => setServer(null));
+  }, []);
+  const assistant = useAssistant(context);
+  const [lastNode, setLastNode] = useState(null);
+  useEffect(() => { if (focused) setLastNode(focused.name); }, [focused]);
+
+  const logsPodObj = useMemo(() => {
+    if (!logsPod) return null;
+    for (const n of nodes) {
+      const p = n.pods.find(x => x.namespace === logsPod.namespace && x.name === logsPod.name);
+      if (p) return { ...p, node: n.name };
+    }
+    return null;
+  }, [nodes, logsPod]);
+  const logsForPod = logsText && logsPod && logsText.namespace === logsPod.namespace && logsText.name === logsPod.name ? logsText : null;
+  const items = useMemo(() => contextItems({
+    context, totals, problems, pod: logsPodObj, logs: logsForPod,
+    node: lastNode ? nodes.find(n => n.name === lastNode) || null : null,
+  }), [context, totals, problems, logsPodObj, logsForPod, lastNode, nodes]);
+  const known = useMemo(() => {
+    const m = new Map();
+    for (const n of nodes) {
+      m.set(n.name, n);
+      for (const p of n.pods) m.set(`${p.namespace}/${p.name}`, n);
+    }
+    return m;
+  }, [nodes]);
+
+  // The one click in the Logs tab that spends tokens.
+  const analyzePod = () => {
+    if (!logsPodObj) return;
+    const ticked = { ...assistant.ticked, pod: true, logs: true };
+    assistant.setTicked(ticked);
+    setPanel(p => ({ ...p, open: true, tab: "assistant", max: true }));
+    const q = `Analyze pod ${logsPodObj.namespace}/${logsPodObj.name}. Use its status and the logs provided. What is the most likely cause, and how do I fix it?`;
+    if (!connReady(conn, server)) {
+      assistant.setDraft(q);
+      return;
+    }
+    assistant.ask(conn, effectiveBudget(conn, server), items, ticked, q);
+  };
+  const openConnection = () => {
+    assistant.setConnecting(true);
+    setPanel(p => ({ ...p, open: true, tab: "assistant" }));
+  };
+
   // Every class gets a row, even at zero — "no BestEffort pods" is the answer
   // an SRE is usually looking for. Pods with no reported class are not counted.
   const qosBreakdown = useMemo(() => {
@@ -568,7 +619,7 @@ function App() {
           </div>
         )}
         <Rail view={view} setView={setView} panel={panel} openTab={openTab} findings={problems.length}
-          settings={<SettingsMenu themePref={themePref} setThemePref={setThemePref} memUnit={memUnit} setMemUnit={setMemUnit} />} />
+          settings={<SettingsMenu themePref={themePref} setThemePref={setThemePref} memUnit={memUnit} setMemUnit={setMemUnit} onAssistant={openConnection} />} />
         <MapChips lit={shown.lit} ring={shown.ring}
           litPod={logsPod ? podKey(logsPod) : ""}
           onLogs={() => { const p = allPods.find(x => workloadKey(x.name) === selectedWorkload); if (p) openLogs(p); }}
@@ -632,7 +683,11 @@ function App() {
             fitBody={<><FitForm context={context} onResult={setFit} />{fit && <FitSummary result={fit} onClear={() => setFit(null)} />}</>} />
         )}
         {panel.tab === "logs" && (
-          <LogsTab context={context} sel={logsPod} setSel={setLogsPod} pods={allPods} onLoaded={setLogsText} />
+          <LogsTab context={context} sel={logsPod} setSel={setLogsPod} pods={allPods} onLoaded={setLogsText} onAnalyze={analyzePod} />
+        )}
+        {panel.tab === "assistant" && (
+          <AssistantTab a={assistant} conn={conn} setConn={setConn} server={server} items={items} known={known}
+            context={context} onPick={name => setFocused(known.get(name) || null)} />
         )}
       </BottomPanel>
 
