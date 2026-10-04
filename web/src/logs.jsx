@@ -2,12 +2,11 @@
 // reloads them. App owns which pod is shown; this file owns the fetch.
 
 const { useState, useEffect, useMemo } = React;
-const { Icon, SevGlyph } = window.k8sIcons;
+const { Icon } = window.k8sIcons;
 const { clock } = window.k8sFormat;
 const { podKey } = window.k8sWorkload;
 
 const TAILS = [200, 500, 2000];
-const STATUS_FINDINGS = ["crashloop", "oom-killed", "image-pull"];
 
 function logsURL(context, sel) {
   return "/api/logs?" + new URLSearchParams({
@@ -31,17 +30,13 @@ function selFor(pod, container) {
 }
 
 function PodState({ pod, container }) {
-  const { findingInfo } = window.k8sPodAudit;
+  const { findingInfo, FindingPill } = window.k8sPodAudit;
   const st = (pod.statuses || []).find(s => s.name === container);
-  const flags = (pod.findings || []).filter(f => STATUS_FINDINGS.includes(f));
+  const flags = (pod.findings || []).filter(f => findingInfo(f).status);
   if (!st && flags.length === 0) return null;
   return (
     <div className="pod-state">
-      {flags.map(f => (
-        <span key={f} className={`audit-pill sev-${findingInfo(f).sev}`} title={findingInfo(f).why}>
-          <SevGlyph sev={findingInfo(f).sev} />{findingInfo(f).label}
-        </span>
-      ))}
+      {flags.map(f => <FindingPill key={f} f={f} />)}
       {st && (
         <span>
           {st.restarts} restart{st.restarts === 1 ? "" : "s"}
@@ -157,4 +152,4 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
   );
 }
 
-window.k8sLogs = { LogsTab, logsURL, markLine, selFor, containerNames, TAILS, STATUS_FINDINGS };
+window.k8sLogs = { LogsTab, logsURL, markLine, selFor, containerNames, TAILS };

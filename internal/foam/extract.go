@@ -3,8 +3,6 @@
 package foam
 
 import (
-	"slices"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	resourcehelper "k8s.io/component-helpers/resource"
@@ -245,20 +243,23 @@ func FromPod(p *corev1.Pod) Pod {
 // statuses lists init containers first, like the pod spec. A container that
 // has stopped reports its own exit; a running one reports the previous run's.
 func statuses(p *corev1.Pod) []ContainerStatus {
-	var out []ContainerStatus
-	for _, c := range slices.Concat(p.Status.InitContainerStatuses, p.Status.ContainerStatuses) {
-		s := ContainerStatus{Name: c.Name, Ready: c.Ready, Restarts: c.RestartCount}
-		if w := c.State.Waiting; w != nil {
-			s.Waiting = w.Reason
+	init, regular := p.Status.InitContainerStatuses, p.Status.ContainerStatuses
+	out := make([]ContainerStatus, 0, len(init)+len(regular))
+	for _, group := range [][]corev1.ContainerStatus{init, regular} {
+		for _, c := range group {
+			s := ContainerStatus{Name: c.Name, Ready: c.Ready, Restarts: c.RestartCount}
+			if w := c.State.Waiting; w != nil {
+				s.Waiting = w.Reason
+			}
+			last := c.LastTerminationState.Terminated
+			if t := c.State.Terminated; t != nil {
+				last = t
+			}
+			if last != nil {
+				s.LastExitReason, s.LastExitCode = last.Reason, last.ExitCode
+			}
+			out = append(out, s)
 		}
-		last := c.LastTerminationState.Terminated
-		if t := c.State.Terminated; t != nil {
-			last = t
-		}
-		if last != nil {
-			s.LastExitReason, s.LastExitCode = last.Reason, last.ExitCode
-		}
-		out = append(out, s)
 	}
 	return out
 }

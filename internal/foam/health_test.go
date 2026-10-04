@@ -101,7 +101,7 @@ func TestFindings(t *testing.T) {
 }
 
 func TestCrashFindings(t *testing.T) {
-	ok := Container{Name: "app", CPU: 100, Memory: 100, MemoryLimit: func() *int64 { v := int64(200); return &v }()}
+	ok := Container{Name: "app", CPU: 100, Memory: 100, MemoryLimit: new(int64(200))}
 	n := Node{CPU: 10_000, Memory: 10_000}
 	cases := []struct {
 		name     string

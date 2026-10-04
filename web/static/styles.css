@@ -1083,4 +1083,3 @@ button.ptr:hover > * { background: var(--bg-3); }
 .logfoot { padding: 6px 10px; border-top: 1px solid var(--line); color: var(--text-dim); font: 11px var(--font-sans); }
 .chip .chip-act { padding: 0 2px; font-weight: 600; color: var(--accent); }
 .pod-state { display: flex; align-items: center; gap: 8px; padding: 0 14px 8px; font: 11.5px var(--font-mono); color: var(--text-dim); flex-wrap: wrap; }
-.pod-state .audit-pill { gap: 6px; }

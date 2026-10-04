@@ -18,8 +18,8 @@
 
 const QOS_CLASSES = ["guaranteed", "burstable", "besteffort"];
 const HAS_FIELDS = ["init-containers"];
-// Mirrors the slugs the backend emits in each pod's `findings`.
-const AUDIT_FIELDS = ["missing-requests", "missing-limits", "monolith", "ratio-asymmetry", "crashloop", "oom-killed", "image-pull"];
+// Pod finding slugs, owned by podaudit.jsx like the node warnings below.
+const AUDIT_FIELDS = window.k8sPodAudit.FINDING_ORDER;
 // Node warning slugs, owned by nodestatus.jsx so the legend and the
 // grammar can't drift apart.
 const HEALTH_FIELDS = window.k8sNodeStatus.WARNING_ORDER;

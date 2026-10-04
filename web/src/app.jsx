@@ -7,7 +7,7 @@ const { workloadKey, podKey } = window.k8sWorkload;
 const { Icon } = window.k8sIcons;
 const { LogsTab, selFor } = window.k8sLogs;
 const { warnInfo, statusOf } = window.k8sNodeStatus;
-const { findingInfo, PodAuditBadge } = window.k8sPodAudit;
+const { FindingPill } = window.k8sPodAudit;
 const { ExportMenu } = window.k8sExport;
 const { getJSON, fitMatch, FitForm, FitSummary, FitVerdict, DrainResults } = window.k8sSimulate;
 const { QOS_INFO, QOS_ORDER } = window.k8sQos;
@@ -921,12 +921,7 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, str
                     )}
                     {p.findings.length > 0 && (
                       <div className="pod-row-findings">
-                        {p.findings.map(f => (
-                          <span key={f} className={`audit-pill sev-${findingInfo(f).sev}`} title={findingInfo(f).why}>
-                            <PodAuditBadge findings={[f]} size={10} />
-                            {findingInfo(f).label}
-                          </span>
-                        ))}
+                        {p.findings.map(f => <FindingPill key={f} f={f} />)}
                       </div>
                     )}
                   </div>

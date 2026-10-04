@@ -2,15 +2,17 @@
 // breaks and sends slugs; this file is the single place that decides how each
 // slug looks, so the pod badge, the Problems tab and the query agree.
 
+const { SEV_RANK } = window.k8sNodeStatus;
+
 // Ordered the way the backend emits findings.
 const POD_FINDINGS = {
   "missing-requests": { label: "missing requests", sev: "warn", why: "no CPU or memory request — the scheduler packs it blind" },
   "missing-limits":   { label: "no memory limit",  sev: "info", why: "no memory limit — a leak can take the node down" },
   "monolith":         { label: "monolith",         sev: "warn", why: "reserves over 80% of its node — nowhere else to reschedule it" },
   "ratio-asymmetry":  { label: "ratio asymmetry",  sev: "info", why: "CPU:memory ratio far from the node's — strands the other resource" },
-  "crashloop":  { label: "crash loop", sev: "danger", why: "a container keeps crashing and Kubernetes is backing off restarts" },
-  "oom-killed": { label: "OOM killed", sev: "danger", why: "a container's last run was killed for going over its memory limit" },
-  "image-pull": { label: "image pull", sev: "warn",   why: "a container image cannot be pulled" },
+  "crashloop":  { label: "crash loop", sev: "danger", why: "a container keeps crashing and Kubernetes is backing off restarts", status: true },
+  "oom-killed": { label: "OOM killed", sev: "danger", why: "a container's last run was killed for going over its memory limit", status: true },
+  "image-pull": { label: "image pull", sev: "warn",   why: "a container image cannot be pulled", status: true },
 };
 
 const FINDING_ORDER = Object.keys(POD_FINDINGS);
@@ -27,7 +29,6 @@ function findingsTitle(findings) {
 
 // Worst wins, using the same ranking as the node badges.
 function worstFindingSeverity(findings) {
-  const { SEV_RANK } = window.k8sNodeStatus;
   let worst = null;
   for (const f of findings || []) {
     const sev = findingInfo(f).sev;
@@ -48,4 +49,14 @@ function PodAuditBadge({ findings, size = 9 }) {
   );
 }
 
-window.k8sPodAudit = { POD_FINDINGS, FINDING_ORDER, findingInfo, findingsTitle, worstFindingSeverity, PodAuditBadge };
+function FindingPill({ f }) {
+  const info = findingInfo(f);
+  return (
+    <span className={`audit-pill sev-${info.sev}`} title={info.why}>
+      <PodAuditBadge findings={[f]} size={10} />
+      {info.label}
+    </span>
+  );
+}
+
+window.k8sPodAudit = { POD_FINDINGS, FINDING_ORDER, findingInfo, findingsTitle, worstFindingSeverity, PodAuditBadge, FindingPill };
