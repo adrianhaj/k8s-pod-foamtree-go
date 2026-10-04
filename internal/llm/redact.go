@@ -53,7 +53,7 @@ func realUserinfo(v string) bool {
 // pass, and after token, auth and credential keys a bare value of only letters
 // or only digits is read as a word or a number. Add a rule when one is found.
 var secretRules = []rule{
-	{regexp.MustCompile(`(?i)\b((?:authorization|(?:set-)?cookie):[ \t]*)([^\r\n"']+)`), "${1}" + masked, isValue},
+	{regexp.MustCompile(`(?i)\b((?:authorization|(?:set-)?cookie)\\?["']?[ \t]*:[ \t]*\\?["'\[]*)([^\s"'\\][^\r\n"'\\]*)`), "${1}" + masked, isValue},
 	{regexp.MustCompile(`-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]*PRIVATE KEY-----|$)`), masked, nil},
 	{regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`), masked, nil},
 	{regexp.MustCompile(`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`), masked, nil},
