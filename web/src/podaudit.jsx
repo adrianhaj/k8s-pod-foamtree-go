@@ -8,6 +8,9 @@ const POD_FINDINGS = {
   "missing-limits":   { label: "no memory limit",  sev: "info", why: "no memory limit — a leak can take the node down" },
   "monolith":         { label: "monolith",         sev: "warn", why: "reserves over 80% of its node — nowhere else to reschedule it" },
   "ratio-asymmetry":  { label: "ratio asymmetry",  sev: "info", why: "CPU:memory ratio far from the node's — strands the other resource" },
+  "crashloop":  { label: "crash loop", sev: "danger", why: "a container keeps crashing and Kubernetes is backing off restarts" },
+  "oom-killed": { label: "OOM killed", sev: "danger", why: "a container's last run was killed for going over its memory limit" },
+  "image-pull": { label: "image pull", sev: "warn",   why: "a container image cannot be pulled" },
 };
 
 const FINDING_ORDER = Object.keys(POD_FINDINGS);
@@ -24,11 +27,11 @@ function findingsTitle(findings) {
 
 // Worst wins, using the same ranking as the node badges.
 function worstFindingSeverity(findings) {
-  const rank = { warn: 2, info: 1 };
+  const { SEV_RANK } = window.k8sNodeStatus;
   let worst = null;
   for (const f of findings || []) {
     const sev = findingInfo(f).sev;
-    if (!worst || rank[sev] > rank[worst]) worst = sev;
+    if (!worst || SEV_RANK[sev] > SEV_RANK[worst]) worst = sev;
   }
   return worst;
 }

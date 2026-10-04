@@ -84,6 +84,8 @@ type PodGroup struct {
 	QOS               string            `json:"qos"`
 	HasInitContainers bool              `json:"hasInitContainers"`
 	Findings          []string          `json:"findings"`
+	Phase             string            `json:"phase"`
+	Statuses          []ContainerStatus `json:"statuses"`
 	Limit             *float64          `json:"limit"`
 	Extended          map[string]int64  `json:"extended,omitempty"`
 }
@@ -168,6 +170,8 @@ func podGroup(p Pod, n Node, axis Axis) PodGroup {
 		QOS:               p.QOS,
 		HasInitContainers: len(p.InitContainers) > 0,
 		Findings:          Findings(p, n),
+		Phase:             p.Phase,
+		Statuses:          orEmpty(p.Statuses),
 		Limit:             axis.limit(p),
 		Extended:          p.Extended,
 	}

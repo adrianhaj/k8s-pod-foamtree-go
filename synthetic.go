@@ -150,6 +150,15 @@ func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam
 			case k%29 != 3:
 				p.Controller = "ReplicaSet"
 			}
+			st := foam.ContainerStatus{Name: "app", Ready: true}
+			p.Phase = "Running"
+			switch {
+			case k%37 == 4:
+				st = foam.ContainerStatus{Name: "app", Restarts: 14, Waiting: "CrashLoopBackOff", LastExitReason: "OOMKilled", LastExitCode: 137}
+			case k%53 == 9:
+				st, p.Phase = foam.ContainerStatus{Name: "app", Waiting: "ImagePullBackOff"}, "Pending"
+			}
+			p.Statuses = []foam.ContainerStatus{st}
 			p.Containers = []foam.Container{c}
 			pods = append(pods, p)
 		}

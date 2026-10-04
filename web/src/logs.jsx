@@ -2,11 +2,12 @@
 // reloads them. App owns which pod is shown; this file owns the fetch.
 
 const { useState, useEffect, useMemo } = React;
-const { Icon } = window.k8sIcons;
+const { Icon, SevGlyph } = window.k8sIcons;
 const { clock } = window.k8sFormat;
 const { podKey } = window.k8sWorkload;
 
 const TAILS = [200, 500, 2000];
+const STATUS_FINDINGS = ["crashloop", "oom-killed", "image-pull"];
 
 function logsURL(context, sel) {
   return "/api/logs?" + new URLSearchParams({
@@ -18,13 +19,39 @@ function logsURL(context, sel) {
 // Treemap leaves are labels: init containers carry " (init)", and unclaimed
 // pod-level budget is a leaf of its own, not a container.
 function containerNames(pod) {
+  if (pod.statuses && pod.statuses.length) return pod.statuses.map(s => s.name);
   return pod.containers.filter(c => c.name !== "(pod-level)").map(c => c.name.replace(/ \(init\)$/, ""));
 }
 
 function selFor(pod, container) {
   const regular = pod.containers.find(c => !c.init && c.name !== "(pod-level)");
   const name = container || (regular ? regular.name : containerNames(pod)[0] || "");
-  return { namespace: pod.namespace, name: pod.name, container: name, previous: false, tail: TAILS[0] };
+  const st = (pod.statuses || []).find(s => s.name === name);
+  return { namespace: pod.namespace, name: pod.name, container: name, previous: !!st && st.restarts > 0, tail: TAILS[0] };
+}
+
+function PodState({ pod, container }) {
+  const { findingInfo } = window.k8sPodAudit;
+  const st = (pod.statuses || []).find(s => s.name === container);
+  const flags = (pod.findings || []).filter(f => STATUS_FINDINGS.includes(f));
+  if (!st && flags.length === 0) return null;
+  return (
+    <div className="pod-state">
+      {flags.map(f => (
+        <span key={f} className={`audit-pill sev-${findingInfo(f).sev}`} title={findingInfo(f).why}>
+          <SevGlyph sev={findingInfo(f).sev} />{findingInfo(f).label}
+        </span>
+      ))}
+      {st && (
+        <span>
+          {st.restarts} restart{st.restarts === 1 ? "" : "s"}
+          {st.waiting ? ` · ${st.waiting}` : ""}
+          {st.lastExitReason ? ` · last exit ${st.lastExitReason} (${st.lastExitCode})` : ""}
+          {pod.phase ? ` · ${pod.phase}` : ""}
+        </span>
+      )}
+    </div>
+  );
 }
 
 // Highlight, never remove: matches light up and every line stays.
@@ -112,6 +139,7 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
           </>
         )}
       </div>
+      {pod && <PodState pod={pod} container={sel.container} />}
       {!sel ? <div className="panel-empty">Pick a pod above, or use Logs on a selected workload or in a node's pod list. Logs load only when you open or reload them.</div>
         : cur.error ? <div className="panel-empty sim-error">{cur.error}</div>
         : cur.text == null ? <div className="panel-empty">Loading logs…</div>
@@ -129,4 +157,4 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
   );
 }
 
-window.k8sLogs = { LogsTab, logsURL, markLine, selFor, containerNames, TAILS };
+window.k8sLogs = { LogsTab, logsURL, markLine, selFor, containerNames, TAILS, STATUS_FINDINGS };

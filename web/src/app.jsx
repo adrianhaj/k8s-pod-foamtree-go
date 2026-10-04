@@ -120,6 +120,9 @@ function mergeResources(cpuData, memData) {
         hasInit: !!cp.hasInitContainers,
         // Best-practice rule slugs, decided by the backend.
         findings: cp.findings || [],
+        // Container status: restarts, waiting reason, last exit. Absent on an older backend.
+        phase: cp.phase || "",
+        statuses: cp.statuses || [],
         // Effective request (what the scheduler reserves) — init containers
         // run sequentially, so this is max(sum regular, max init), not a sum.
         cpu: podCpu,

@@ -101,7 +101,7 @@ On a node with `c` free millicores, `m` free MiB and shape `r` (MiB per millicor
 
 ## Audit & hygiene
 
-Every pod is checked against four best-practice rules. A pod that breaks one gets a **small warning glyph in the top-right corner** of its box (hover it for the reasons). The **Problems** tab of the bottom panel counts the affected pods per rule. Click a chip to highlight those pods in 2D and 3D. This sets the query to `audit:<rule>`; click the chip again to clear it. A clean cluster reads `No problems found`.
+Every pod is checked against seven rules: four best-practice rules and three crash signals. A pod that breaks one gets a **small warning glyph in the top-right corner** of its box (hover it for the reasons). The **Problems** tab of the bottom panel counts the affected pods per rule. Click a chip to highlight those pods in 2D and 3D. This sets the query to `audit:<rule>`; click the chip again to clear it. A clean cluster reads `No problems found`.
 
 | Marker | Rule | Flagged when |
 | --- | --- | --- |
@@ -109,6 +109,9 @@ Every pod is checked against four best-practice rules. A pod that breaks one get
 | blue | `no memory limit` | a regular container sets no `limits.memory` |
 | amber | `monolith` | the pod reserves more than 80% of its node's CPU or memory |
 | blue | `ratio asymmetry` | the pod's share of node CPU and its share of node memory differ by 4× or more, and the larger share is at least 10% |
+| red | `crash loop` | a container is waiting in `CrashLoopBackOff` |
+| red | `OOM killed` | a container's last run ended `OOMKilled`, even if it has recovered since |
+| amber | `image pull` | a container is waiting in `ImagePullBackOff` or `ErrImagePull` |
 
 Three details are worth knowing:
 
@@ -166,7 +169,7 @@ An empty query matches everything. A query that contains a malformed token is **
 | `node:<glob>` | node the pod is scheduled on | `*` is the only wildcard; anchored (whole name must match); case-insensitive |
 | `qos:<class>` | [QoS class](#qos--eviction-risk): `Guaranteed`, `Burstable`, `BestEffort` | case-insensitive; anything else is an error |
 | `has:init-containers` | pods declaring at least one init container | currently the only `has:` field |
-| `audit:<rule>` | pods breaking an [audit rule](#audit--hygiene) | `missing-requests`, `missing-limits`, `monolith`, `ratio-asymmetry` |
+| `audit:<rule>` | pods breaking an [audit rule](#audit--hygiene) | `missing-requests`, `missing-limits`, `monolith`, `ratio-asymmetry`, `crashloop`, `oom-killed`, `image-pull` |
 | `health:<warning>` | nodes carrying a [health warning](#node-health), and every pod on them | `cordoned`, `not-ready`, `memory-pressure`, `disk-pressure`, `pid-pressure`, `tainted` |
 | `key=value` | pod label equals value | key and value are **case-sensitive** (Kubernetes labels are) |
 | `key!=value` | pod label differs from value | a **missing** label counts as unequal, so it matches too |
@@ -254,7 +257,7 @@ Focusing the input opens a popover with the same token list; it is replaced by t
 | --- | --- |
 | `GET /` | the dashboard |
 | `GET /healthcheck` | `{"status": "ok"}` |
-| `GET /resources/cpu`, `GET /resources/memory` | treemap JSON; optional `?context=<name>`. CPU in millicores, memory in decimal kB. Each node group also carries `unschedulable`, `taints`, `conditions` and a render-ready `warnings` list — see [Node health](#node-health). Each pod group carries a `findings` list — see [Audit & hygiene](#audit--hygiene). Pod groups carry `limit` on that axis (`null` = no ceiling); node groups carry `zone`, `region`, `instanceType`, `pool` and `capacityType` (`"spot"` or `"on-demand"`) — `""` when no label says. Node, pod and container entries carry `extended`: every other non-zero resource (`nvidia.com/gpu`, `ephemeral-storage`, `hugepages-2Mi`, …) in its base unit, bytes or a device count, from node allocatable (CPU and memory stay on capacity) and the effective request; omitted when there is none. |
+| `GET /resources/cpu`, `GET /resources/memory` | treemap JSON; optional `?context=<name>`. CPU in millicores, memory in decimal kB. Each node group also carries `unschedulable`, `taints`, `conditions` and a render-ready `warnings` list — see [Node health](#node-health). Each pod group carries a `findings` list — see [Audit & hygiene](#audit--hygiene) — plus `phase` and `statuses` (per container: `name`, `ready`, `restarts`, and when set `waiting`, `lastExitReason`, `lastExitCode`). Pod groups carry `limit` on that axis (`null` = no ceiling); node groups carry `zone`, `region`, `instanceType`, `pool` and `capacityType` (`"spot"` or `"on-demand"`) — `""` when no label says. Node, pod and container entries carry `extended`: every other non-zero resource (`nvidia.com/gpu`, `ephemeral-storage`, `hugepages-2Mi`, …) in its base unit, bytes or a device count, from node allocatable (CPU and memory stay on capacity) and the effective request; omitted when there is none. |
 | `GET /contexts` | `[{"context": "...", "active": true}]` |
 | `GET /api/logs` | one container's logs as plain text. `namespace` and `pod` are required; optional `container`, `tail` (1–5000, default 500), `previous=1` for the run before the last restart, and `context`. At most 1 MiB. 404 when the pod is gone, 400 when there is no previous run. |
 | `GET /api/me` | `{"auth": "none"}`, or `{"auth": "oidc", "email": "...", "name": "..."}` for the signed-in user |
