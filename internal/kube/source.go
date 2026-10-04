@@ -139,8 +139,9 @@ func (s *Source) Snapshot(ctx context.Context, name string) ([]foam.Node, []foam
 	return nodes, pods, nil
 }
 
-// Logs streams one container's logs through the context's cached client,
-// starting its watches if this is the first request for that context.
+// Logs returns the newest MaxLogBytes of one container's logs through the
+// context's cached client, starting its watches if this is the first request
+// for that context.
 func (s *Source) Logs(ctx context.Context, name string, req LogRequest) (io.ReadCloser, error) {
 	name, err := s.resolve(name)
 	if err != nil {

@@ -1,7 +1,7 @@
 // The Logs tab: one container's logs, fetched only when the viewer opens or
 // reloads them. App owns which pod is shown; this file owns the fetch.
 
-const { useState, useEffect, useMemo, useRef } = React;
+const { useState, useEffect, useMemo } = React;
 const { Icon } = window.k8sIcons;
 const { clock } = window.k8sFormat;
 const { podKey } = window.k8sWorkload;
@@ -47,14 +47,13 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
     [sortedKeys, podText],
   );
   const url = sel && sel.container ? logsURL(context, sel) : null;
-  const loaded = useRef(null);
   // Lines belong to the url that fetched them; another selection shows none.
   const cur = state.url === url ? state : { text: null, error: null, at: null };
 
   useEffect(() => {
     if (!url) return;
     const ctl = new AbortController();
-    if (loaded.current !== url) onLoaded(null);
+    if (state.url !== url) onLoaded(null);
     setState(s => (s.url === url ? { ...s, busy: true, error: null } : { url, text: null, error: null, busy: true, at: null }));
     fetch(url, { signal: ctl.signal })
       .then(async r => {
@@ -63,13 +62,11 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
       })
       .then(text => {
         const at = Date.now();
-        loaded.current = url;
         setState({ url, text, error: null, busy: false, at });
         onLoaded({ ...sel, text, at });
       })
       .catch(e => {
         if (e.name === "AbortError") return;
-        loaded.current = url;
         setState({ url, text: null, error: e.message, busy: false, at: null });
         onLoaded(null);
       });
