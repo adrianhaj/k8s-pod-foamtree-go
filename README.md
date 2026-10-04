@@ -260,6 +260,8 @@ Focusing the input opens a popover with the same token list; it is replaced by t
 | `GET /resources/cpu`, `GET /resources/memory` | treemap JSON; optional `?context=<name>`. CPU in millicores, memory in decimal kB. Each node group also carries `unschedulable`, `taints`, `conditions` and a render-ready `warnings` list — see [Node health](#node-health). Each pod group carries a `findings` list — see [Audit & hygiene](#audit--hygiene) — plus `phase` and `statuses` (per container: `name`, `ready`, `restarts`, and when set `waiting`, `lastExitReason`, `lastExitCode`). Pod groups carry `limit` on that axis (`null` = no ceiling); node groups carry `zone`, `region`, `instanceType`, `pool` and `capacityType` (`"spot"` or `"on-demand"`) — `""` when no label says. Node, pod and container entries carry `extended`: every other non-zero resource (`nvidia.com/gpu`, `ephemeral-storage`, `hugepages-2Mi`, …) in its base unit, bytes or a device count, from node allocatable (CPU and memory stay on capacity) and the effective request; omitted when there is none. |
 | `GET /contexts` | `[{"context": "...", "active": true}]` |
 | `GET /api/logs` | one container's logs as plain text. `namespace` and `pod` are required; optional `container`, `tail` (1–5000, default 500), `previous=1` for the run before the last restart, and `context`. At most 1 MiB. 404 when the pod is gone, 400 when there is no previous run. |
+| `GET /api/llm/config` | `{"server", "url", "model", "maxTokens"}`; never the key |
+| `POST /api/llm/chat` | takes JSON `{url?, model?, context, budget, messages}` and an optional `X-LLM-Key` header; streams `text/event-stream` events `delta`, `tool`, `notice`, `error` and `done` (with `usage`) |
 | `GET /api/me` | `{"auth": "none"}`, or `{"auth": "oidc", "email": "...", "name": "..."}` for the signed-in user |
 | `GET /auth/login`, `GET /auth/callback`, `POST /auth/logout` | OIDC sign-in and sign-out (only with `--auth=oidc`) |
 
@@ -362,9 +364,13 @@ Releases: an admin pushes a `v*` tag (`git tag v1.0.0 && git push origin v1.0.0`
 | `--oidc-groups-claim` | `groups` | ID-token claim with group names |
 | `--oidc-scopes` | `openid,email,profile` | add `groups` for Dex/Keycloak |
 | `--version`, `-v` | | print the version (`git describe` of the build) and exit |
+| `--llm-url`, `--llm-model` | | the assistant connection shared by every viewer: an OpenAI-compatible base URL and a model; required together |
+| `--llm-api-key-file` | | file holding the server's API key, e.g. a mounted Secret; re-read on every request |
+| `--llm-allowed-hosts` | | comma-separated globs of hosts viewers may send their own key to; empty means only the `--llm-url` host. Ignored on a loopback run without auth, where any URL is allowed |
+| `--llm-max-tokens-per-question` | `50000` | token cap for one question; `0` means none. Server connection only |
 | `--synthetic` | | serve a made-up cluster, e.g. `100x50` (nodes × pods per node), for UI work and scale tests; includes GPU, ephemeral-storage and hugepages nodes |
 
-Secrets come from the environment only: `K8SFOAMS_OIDC_CLIENT_SECRET`, `K8SFOAMS_SESSION_KEY` (32 bytes, base64; unset means a random key, so sessions end on restart).
+Secrets come from the environment only: `K8SFOAMS_OIDC_CLIENT_SECRET`, `K8SFOAMS_SESSION_KEY` (32 bytes, base64; unset means a random key, so sessions end on restart), and `K8SFOAMS_LLM_API_KEY`, or `--llm-api-key-file` for a mounted Secret.
 
 ## Development
 

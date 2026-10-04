@@ -22,6 +22,7 @@ import (
 
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/auth"
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/kube"
+	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/llm"
 	"github.com/adrianhaj/k8s-pod-foamtree-go/web"
 )
 
@@ -40,6 +41,8 @@ type options struct {
 	scopes, sessionKey   string
 	syntheticSpec        string
 	synthetic            *syntheticSource
+	llm                  llm.Config
+	llmHosts             string
 }
 
 func parseFlags(args []string) (options, error) {
@@ -58,6 +61,11 @@ func parseFlags(args []string) (options, error) {
 	fs.StringVar(&o.emails, "oidc-allowed-emails", "", "comma-separated emails or globs like *@example.com")
 	fs.StringVar(&o.groups, "oidc-allowed-groups", "", "comma-separated groups")
 	fs.StringVar(&o.syntheticSpec, "synthetic", "", "serve a made-up cluster instead, e.g. 100x50 (nodes x pods per node)")
+	fs.StringVar(&o.llm.URL, "llm-url", "", "OpenAI-compatible base URL for the server's assistant connection, e.g. https://api.openai.com/v1")
+	fs.StringVar(&o.llm.Model, "llm-model", "", "model for the server's assistant connection")
+	fs.StringVar(&o.llm.KeyFile, "llm-api-key-file", "", "file holding the server's API key, e.g. a mounted Secret; re-read on every request")
+	fs.StringVar(&o.llmHosts, "llm-allowed-hosts", "", "comma-separated host globs viewers may send their own key to, e.g. api.openai.com,*.openai.azure.com")
+	fs.IntVar(&o.llm.MaxTokens, "llm-max-tokens-per-question", 50000, "token cap for one question on the server connection; 0 means none")
 	fs.BoolVar(&o.version, "version", false, "print the version and exit")
 	fs.BoolVar(&o.version, "v", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil || o.version {
@@ -66,6 +74,16 @@ func parseFlags(args []string) (options, error) {
 	// Secrets come from the environment only: flags show up in `ps`.
 	o.oidc.ClientSecret = os.Getenv("K8SFOAMS_OIDC_CLIENT_SECRET")
 	o.sessionKey = os.Getenv("K8SFOAMS_SESSION_KEY")
+	o.llm.Key = os.Getenv("K8SFOAMS_LLM_API_KEY")
+	o.llm.AllowedHosts = list(o.llmHosts)
+	switch {
+	case o.llm.URL != "" && o.llm.Model == "":
+		return o, errors.New("--llm-url needs --llm-model")
+	case o.llm.Key != "" && o.llm.KeyFile != "":
+		return o, errors.New("set K8SFOAMS_LLM_API_KEY or --llm-api-key-file, not both")
+	case o.llm.MaxTokens < 0:
+		return o, errors.New("--llm-max-tokens-per-question must be 0 or more")
+	}
 	o.oidc.Scopes, o.oidc.AllowedEmails, o.oidc.AllowedGroups = list(o.scopes), list(o.emails), list(o.groups)
 	if o.syntheticSpec != "" {
 		s, err := parseSynthetic(o.syntheticSpec)
@@ -84,6 +102,9 @@ func parseFlags(args []string) (options, error) {
 	default:
 		return o, fmt.Errorf("--auth must be none or oidc, got %q", o.authMode)
 	}
+	// On a loopback run without auth the viewer is the operator, so a local
+	// endpoint such as Ollama on localhost is fine.
+	o.llm.AllowAnyURL = o.authMode == "none" && isLoopback(o.host)
 	return o, nil
 }
 
@@ -145,7 +166,7 @@ func run(ctx context.Context, o options) error {
 	if o.synthetic != nil {
 		src = o.synthetic
 	}
-	h := newHandler(src, web.Static, a)
+	h := newHandler(src, web.Static, a, llm.New(o.llm))
 	if a == nil && isLoopback(o.host) {
 		h = loopbackHostOnly(h)
 	}

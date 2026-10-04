@@ -20,6 +20,7 @@ import (
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/auth"
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/foam"
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/kube"
+	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/llm"
 )
 
 type source interface {
@@ -72,7 +73,7 @@ const snapshotTimeout = 20 * time.Second
 const maxFitFieldBytes = 4096
 
 // a is nil when auth is off.
-func newHandler(src source, static fs.FS, a *auth.Auth) http.Handler {
+func newHandler(src source, static fs.FS, a *auth.Auth, assistant *llm.Proxy) http.Handler {
 	app := http.NewServeMux()
 	app.HandleFunc("GET /contexts", func(w http.ResponseWriter, r *http.Request) {
 		cs, err := src.Contexts()
@@ -169,6 +170,10 @@ func newHandler(src source, static fs.FS, a *auth.Auth) http.Handler {
 			slog.Warn("logs", "err", err)
 		}
 	})
+	if assistant != nil {
+		app.HandleFunc("GET /api/llm/config", assistant.ServeConfig)
+		app.HandleFunc("POST /api/llm/chat", assistant.ServeChat)
+	}
 	app.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
 		if u, ok := auth.UserFrom(r.Context()); ok {
 			writeJSON(w, map[string]string{"auth": "oidc", "email": u.Email, "name": u.Name})
