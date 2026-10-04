@@ -25,7 +25,7 @@ function containerNames(pod) {
 function selFor(pod, container) {
   const statuses = pod.statuses || [];
   const regular = pod.containers.find(c => !c.init && c.name !== "(pod-level)");
-  const troubled = statuses.find(s => s.waiting) || statuses.find(s => s.restarts > 0 && !s.ready);
+  const troubled = statuses.find(s => s.restarts > 0 && !s.ready);
   const name = container || (troubled ? troubled.name : regular ? regular.name : containerNames(pod)[0] || "");
   const st = statuses.find(s => s.name === name);
   return { namespace: pod.namespace, name: pod.name, container: name, previous: !!st && st.restarts > 0, tail: TAILS[0] };
