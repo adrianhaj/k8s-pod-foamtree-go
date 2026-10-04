@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -356,9 +357,22 @@ func TestRBACCannotReadSecrets(t *testing.T) {
 		rules.WriteString(code)
 	}
 	for _, banned := range []string{"secrets", "configmaps", "pods/exec", "pods/attach", "pods/portforward",
-		"create", "update", "patch", "delete", "escalate", "impersonate", "*"} {
+		"create", "update", "patch", "delete", "escalate", "impersonate", "proxy", "aggregationRule", "*"} {
 		if strings.Contains(rules.String(), banned) {
 			t.Errorf("deploy/base/rbac.yaml grants %q", banned)
+		}
+	}
+	own := regexp.MustCompile(`kind: ClusterRole\nmetadata:\n\s+name: (\S+)`).FindStringSubmatch(rules.String())
+	if own == nil {
+		t.Fatal("no ClusterRole in deploy/base/rbac.yaml")
+	}
+	refs := regexp.MustCompile(`(?s)roleRef:.*?\n\s+name:\s*(\S+)`).FindAllStringSubmatch(rules.String(), -1)
+	if len(refs) == 0 {
+		t.Error("no roleRef in deploy/base/rbac.yaml")
+	}
+	for _, ref := range refs {
+		if ref[1] != own[1] {
+			t.Errorf("roleRef %q binds a role other than this repo's %q", ref[1], own[1])
 		}
 	}
 }

@@ -97,6 +97,12 @@ func (p *Proxy) ServeChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "messages are required", http.StatusBadRequest)
 		return
 	}
+	for _, m := range req.Messages {
+		if m.Role != "system" && m.Role != "user" && m.Role != "assistant" {
+			http.Error(w, "message role must be system, user or assistant", http.StatusBadRequest)
+			return
+		}
+	}
 	t, err := p.target(req, r.Header.Get("X-LLM-Key"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

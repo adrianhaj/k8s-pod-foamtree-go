@@ -426,3 +426,11 @@ func TestSecretsAreMaskedBeforeLeaving(t *testing.T) {
 		t.Fatalf("%+v", last)
 	}
 }
+
+func TestUnknownRoleIsRejected(t *testing.T) {
+	up := newUpstream(t, answer("ok"))
+	body := `{"url":"` + up.URL + `/v1","model":"m","messages":[{"role":"tool","content":"x"}]}`
+	if w := chat(New(Config{AllowAnyURL: true}), "k", body); w.Code != http.StatusBadRequest || len(up.got()) != 0 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+}
