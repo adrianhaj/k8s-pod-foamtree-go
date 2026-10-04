@@ -3,6 +3,7 @@ package kube
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -216,6 +217,22 @@ func TestSlimPodKeepsSchedulingConstraints(t *testing.T) {
 	}
 	if out, _ := slimPod(&corev1.Pod{}); out.(*corev1.Pod).Spec.Affinity != nil || out.(*corev1.Pod).OwnerReferences != nil {
 		t.Fatalf("a bare pod gained fields: %+v", out)
+	}
+}
+
+func TestLogsStreamsFromTheContextClient(t *testing.T) {
+	s := testSource(t, fake.NewClientset())
+	rc, err := s.Logs(context.Background(), "", LogRequest{Namespace: "ns", Pod: "p", Container: "app", Tail: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+	b, _ := io.ReadAll(rc)
+	if string(b) != "fake logs" {
+		t.Fatalf("got %q", b)
+	}
+	if _, err := s.Logs(context.Background(), "prod", LogRequest{Namespace: "ns", Pod: "p"}); !errors.Is(err, ErrUnknownContext) {
+		t.Fatalf("unknown context: %v", err)
 	}
 }
 

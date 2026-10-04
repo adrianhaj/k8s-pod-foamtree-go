@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -30,6 +31,15 @@ var ErrUnknownContext = errors.New("unknown context")
 
 // Terminated pods keep their requests in the API but reserve nothing.
 const activePods = "status.phase!=Succeeded,status.phase!=Failed"
+
+type LogRequest struct {
+	Namespace, Pod, Container string
+	Tail                      int64
+	Previous                  bool
+}
+
+// MaxLogBytes caps one fetch: a tail of long lines can still be megabytes.
+const MaxLogBytes = 1 << 20
 
 type Context struct {
 	Context string `json:"context"`
@@ -125,7 +135,25 @@ func (s *Source) Snapshot(ctx context.Context, name string) ([]foam.Node, []foam
 	return nodes, pods, nil
 }
 
+// Logs streams one container's logs through the context's cached client,
+// starting its watches if this is the first request for that context.
+func (s *Source) Logs(ctx context.Context, name string, req LogRequest) (io.ReadCloser, error) {
+	name, err := s.resolve(name)
+	if err != nil {
+		return nil, err
+	}
+	c, err := s.cache(name)
+	if err != nil {
+		return nil, err
+	}
+	limit := int64(MaxLogBytes)
+	return c.client.CoreV1().Pods(req.Namespace).GetLogs(req.Pod, &corev1.PodLogOptions{
+		Container: req.Container, TailLines: &req.Tail, Previous: req.Previous, LimitBytes: &limit,
+	}).Stream(ctx)
+}
+
 type clusterCache struct {
+	client      kubernetes.Interface
 	nodes, pods cache.SharedIndexInformer
 	lastErr     atomic.Pointer[error]
 	cancel      context.CancelFunc
@@ -165,7 +193,8 @@ func (s *Source) cache(name string) (*clusterCache, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &clusterCache{
-		nodes: coreinformers.NewNodeInformer(cs, 0, cache.Indexers{}),
+		client: cs,
+		nodes:  coreinformers.NewNodeInformer(cs, 0, cache.Indexers{}),
 		pods: coreinformers.NewFilteredPodInformer(cs, metav1.NamespaceAll, 0, cache.Indexers{},
 			func(o *metav1.ListOptions) { o.FieldSelector = activePods }),
 		cancel: cancel,
