@@ -81,7 +81,7 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
 
   return (
     <>
-      <div className="panel-bar">
+      <div className="panel-bar logs-bar">
         <input id="log-pod" className="mini-search wide" list="log-pods" value={podText} spellCheck="false"
           placeholder="namespace/pod" aria-label="Pod" onChange={e => pickPod(e.target.value)} />
         <datalist id="log-pods">{[...byKey.keys()].sort().map(k => <option key={k} value={k} />)}</datalist>

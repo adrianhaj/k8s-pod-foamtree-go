@@ -1069,6 +1069,7 @@ button.ptr:hover > * { background: var(--bg-3); }
 .panel-tabs { overflow-x: auto; }
 .panel-tabs [role="tab"] { white-space: nowrap; }
 .panel-bar .grow { flex: 1; }
+.logs-bar { flex-wrap: wrap; row-gap: 8px; }
 .mini-search { height: 28px; width: 180px; padding: 0 8px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--panel); font: 12px var(--font-mono); }
 .mini-search.wide { width: 280px; }
 .mini-search:focus { outline: none; border-color: var(--accent); }
