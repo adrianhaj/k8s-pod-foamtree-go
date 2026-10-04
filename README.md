@@ -351,7 +351,7 @@ Releases: an admin pushes a `v*` tag (`git tag v1.0.0 && git push origin v1.0.0`
 | --- | --- | --- |
 | `--host`, `--port` | `127.0.0.1`, `8080` | listen address |
 | `--in-cluster` | off | use the pod's service account; offers one context, `in-cluster` |
-| `--auth` | `none` | `none` or `oidc` |
+| `--auth` | `none` | `none` or `oidc`; with `none` on a loopback address the server only answers requests addressed to `localhost` or a loopback IP, which blocks DNS-rebinding pages from reading cluster data |
 | `--allow-unauthenticated` | off | required for `--auth=none` on a non-loopback host |
 | `--oidc-issuer`, `--oidc-client-id`, `--oidc-redirect-url` | | required with `--auth=oidc` |
 | `--oidc-allowed-emails` | | comma-separated; globs like `*@example.com`. Only verified emails match (`email_verified`, or Entra's optional `xms_edov` claim); otherwise use groups |

@@ -280,3 +280,19 @@ func TestLogsRouteMapsErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestLoopbackHostOnly(t *testing.T) {
+	h := loopbackHostOnly(newHandler(&fakeSource{}, static, nil))
+	for host, want := range map[string]int{
+		"localhost:8080": 200, "127.0.0.1:8080": 200, "[::1]:8080": 200, "localhost": 200,
+		"evil.example:8080": 421, "127.0.0.1.nip.io:8080": 421,
+	} {
+		r := httptest.NewRequest("GET", "/api/me", nil)
+		r.Host = host
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != want {
+			t.Errorf("Host %q: got %d, want %d", host, w.Code, want)
+		}
+	}
+}

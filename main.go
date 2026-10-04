@@ -101,6 +101,22 @@ func isLoopback(host string) bool {
 	return host == "localhost" || (ip != nil && ip.IsLoopback())
 }
 
+// loopbackHostOnly refuses requests addressed to any other name, so a page
+// that rebinds its DNS to 127.0.0.1 cannot read cluster data.
+func loopbackHostOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = strings.Trim(r.Host, "[]")
+		}
+		if !isLoopback(strings.ToLower(host)) {
+			http.Error(w, "unexpected Host header", http.StatusMisdirectedRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func sessionKey(encoded string) ([]byte, error) {
 	if encoded == "" {
 		slog.Warn("K8SFOAMS_SESSION_KEY unset: using a random key, sessions end on restart")
@@ -131,9 +147,13 @@ func run(ctx context.Context, o options) error {
 	if o.synthetic != nil {
 		src = o.synthetic
 	}
+	h := newHandler(src, web.Static, a)
+	if a == nil && isLoopback(o.host) {
+		h = loopbackHostOnly(h)
+	}
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(o.host, strconv.Itoa(o.port)),
-		Handler:           newHandler(src, web.Static, a),
+		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {
