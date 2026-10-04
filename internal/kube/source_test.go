@@ -236,6 +236,24 @@ func TestLogsStreamsFromTheContextClient(t *testing.T) {
 	}
 }
 
+func TestLastBytesKeepsTheNewestWholeLines(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		max  int
+		want string
+	}{
+		{"a\nb\n", 100, "a\nb\n"},
+		{strings.Repeat("old line\n", 5) + "newest line\n", 25, "old line\nnewest line\n"},
+		{"xxxx\nabc\n", 4, "abc\n"},
+		{"xxabc\n", 4, "abc\n"},
+	} {
+		got := string(lastBytes([]byte(tc.in), tc.max))
+		if got != tc.want || len(got) > tc.max && len(tc.in) > tc.max {
+			t.Errorf("lastBytes(%q, %d) = %q, want %q", tc.in, tc.max, got, tc.want)
+		}
+	}
+}
+
 // Extended resources are sized from allocatable, so the cache must keep it.
 func TestSlimNodeKeepsCapacityAndAllocatable(t *testing.T) {
 	gpus := corev1.ResourceList{"nvidia.com/gpu": resource.MustParse("8")}

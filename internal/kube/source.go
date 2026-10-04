@@ -3,6 +3,7 @@
 package kube
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -146,10 +147,35 @@ func (s *Source) Logs(ctx context.Context, name string, req LogRequest) (io.Read
 	if err != nil {
 		return nil, err
 	}
-	limit := int64(MaxLogBytes)
-	return c.client.CoreV1().Pods(req.Namespace).GetLogs(req.Pod, &corev1.PodLogOptions{
+	// ponytail: the API cuts limitBytes from the start, so the 1 MiB cap is applied here; 32 MiB bounds the read
+	limit := int64(32 << 20)
+	rc, err := c.client.CoreV1().Pods(req.Namespace).GetLogs(req.Pod, &corev1.PodLogOptions{
 		Container: req.Container, TailLines: &req.Tail, Previous: req.Previous, LimitBytes: &limit,
 	}).Stream(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	b, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(lastBytes(b, MaxLogBytes))), nil
+}
+
+// lastBytes keeps the newest max bytes, starting at a line boundary.
+func lastBytes(b []byte, max int) []byte {
+	if len(b) <= max {
+		return b
+	}
+	cut := len(b) - max
+	tail := b[cut:]
+	if b[cut-1] != '\n' {
+		if i := bytes.IndexByte(tail, '\n'); i >= 0 && i+1 < len(tail) {
+			tail = tail[i+1:]
+		}
+	}
+	return tail
 }
 
 type clusterCache struct {

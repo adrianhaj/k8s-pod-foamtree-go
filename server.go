@@ -57,6 +57,8 @@ func logsStatus(err error) int {
 		return http.StatusBadRequest
 	case apierrors.IsNotFound(err):
 		return http.StatusNotFound
+	case apierrors.IsForbidden(err):
+		return http.StatusForbidden
 	}
 	slog.Warn("logs", "err", err)
 	return http.StatusServiceUnavailable

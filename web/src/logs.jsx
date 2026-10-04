@@ -40,6 +40,7 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
   const [podText, setPodText] = useState(key);
   useEffect(() => setPodText(key), [key]);
   const byKey = useMemo(() => new Map(pods.map(p => [`${p.namespace}/${p.name}`, p])), [pods]);
+  const podOptions = useMemo(() => [...byKey.keys()].sort().map(k => <option key={k} value={k} />), [byKey]);
   const url = sel && sel.container ? logsURL(context, sel) : null;
   const loaded = useRef(null);
   // Lines belong to the url that fetched them; another selection shows none.
@@ -84,7 +85,7 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
       <div className="panel-bar logs-bar">
         <input id="log-pod" className="mini-search wide" list="log-pods" value={podText} spellCheck="false"
           placeholder="namespace/pod" aria-label="Pod" onChange={e => pickPod(e.target.value)} />
-        <datalist id="log-pods">{[...byKey.keys()].sort().map(k => <option key={k} value={k} />)}</datalist>
+        <datalist id="log-pods">{podOptions}</datalist>
         {pod && (
           <select id="log-container" aria-label="Container" value={sel.container} onChange={e => setSel({ ...sel, container: e.target.value })}>
             {containerNames(pod).map(n => <option key={n} value={n}>{n}</option>)}

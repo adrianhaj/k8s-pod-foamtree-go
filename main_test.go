@@ -271,6 +271,7 @@ func TestLogsRouteMapsErrors(t *testing.T) {
 		{gone, 404, `pods "p" not found`},
 		{noPrev, 400, "previous terminated container"},
 		{fmt.Errorf("%w %q", kube.ErrUnknownContext, "prod"), 400, "unknown context"},
+		{apierrors.NewForbidden(schema.GroupResource{Resource: "pods/log"}, "p", errors.New("rbac")), 403, "forbidden"},
 		{errors.New("dial tcp: i/o timeout"), 503, "i/o timeout"},
 	} {
 		w := get(newHandler(&fakeSource{logErr: tc.err}, static, nil), "/api/logs?namespace=ns&pod=p")
