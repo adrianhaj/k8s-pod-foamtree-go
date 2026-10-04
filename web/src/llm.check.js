@@ -6,6 +6,8 @@
   if (a.events.length !== 1 || a.events[0].text !== "a" || a.rest !== 'data: {"type":"del') return { FAIL: "parseSSE split" };
   const b = L.parseSSE(a.rest + 'ta","text":"b"}\n\n');
   if (b.events[0].text !== "b" || b.rest !== "") return { FAIL: "parseSSE join" };
+  const m = L.parseSSE('data: {"type":"delta","text":"x"}\n\ndata: {oops\n\ndata: {"type":"delta","text":"y"}\n\n');
+  if (m.events.map(e => e.text).join() !== "x,y") return { FAIL: "parseSSE malformed line" };
 
   if (L.estimateTokens("12345678") !== 2 || L.estimateTokens("123456789") !== 3) return { FAIL: "estimate" };
   if (L.estimateTokens("ééééé") !== 2 || L.estimateTokens("😀😀😀😀") !== 1) return { FAIL: "estimate counts code points" };
@@ -33,6 +35,10 @@
     if (L.loadConn().key !== "k2" || sessionStorage.getItem("k8sfoams.llm.key") !== null) return { FAIL: "remember" };
     L.forgetKey();
     if (L.loadConn().key !== "") return { FAIL: "forget" };
+    for (const [budget, want] of [[0, 20000], [999, 20000], [1000, 1000]]) {
+      L.saveConn({ mode: "own", url: "u", model: "m", remember: false, budget, key: "" });
+      if (L.loadConn().budget !== want) return { FAIL: `stored budget ${budget} loaded as ${L.loadConn().budget}` };
+    }
   } finally {
     for (const [k, l, s] of keep) {
       if (l === null) local.removeItem(k); else local.setItem(k, l);

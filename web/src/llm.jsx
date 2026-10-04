@@ -8,6 +8,7 @@ const MIN_ANSWER_TOKENS = 256; // the server refuses a question that leaves less
 const LOG_CONTEXT_CHARS = 32 * 1024;
 const PROBLEM_ROWS = 50;
 const DEFAULT_BUDGET = 20000;
+const MIN_BUDGET = 1000;
 
 const SYSTEM = "You are the assistant inside k8sfoams, a read-only Kubernetes dashboard of requested CPU and memory. "
   + "You cannot change the cluster: suggest kubectl commands for the viewer to run. "
@@ -29,7 +30,7 @@ function drop(storage, key) {
 
 const CONN_DEFAULT = { mode: "server", url: "", model: "", remember: false, budget: DEFAULT_BUDGET };
 const validConn = v => !!v && ["server", "own"].includes(v.mode) && typeof v.url === "string"
-  && typeof v.model === "string" && typeof v.remember === "boolean" && Number.isInteger(v.budget);
+  && typeof v.model === "string" && typeof v.remember === "boolean" && Number.isInteger(v.budget) && v.budget >= MIN_BUDGET;
 
 function loadConn() {
   const { safeStorage, readPref } = window.k8sPrefs;
@@ -112,7 +113,8 @@ function parseSSE(buf) {
   const events = [];
   for (const b of blocks) {
     for (const line of b.split("\n")) {
-      if (line.startsWith("data:")) events.push(JSON.parse(line.slice(5).trim()));
+      if (!line.startsWith("data:")) continue;
+      try { events.push(JSON.parse(line.slice(5).trim())); } catch (e) { /* skip a malformed line */ }
     }
   }
   return { events, rest };
