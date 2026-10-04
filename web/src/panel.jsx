@@ -9,12 +9,14 @@ const TABS = [
   { id: "changes", label: "Changes" },
   { id: "drain", label: "Drain simulation" },
   { id: "logs", label: "Logs" },
-  { id: "assistant", label: "Assistant" },
+  // The transcript needs the height: the Assistant opens maximized.
+  { id: "assistant", label: "Assistant", max: true },
 ];
+const showTab = (p, id) => ({ ...p, open: true, tab: id, max: p.max || !!TABS.find(t => t.id === id).max });
 const ROW_CAP = 100; // ponytail: plain list; virtualise if clusters routinely exceed this
 
 function BottomPanel({ panel, setPanel, counts, children }) {
-  const pick = id => setPanel(p => ({ ...p, open: true, tab: id }));
+  const pick = id => setPanel(p => showTab(p, id));
   const onKey = e => {
     const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
     if (!d || e.target.getAttribute("role") !== "tab") return;
@@ -175,4 +177,4 @@ function MapChips({ lit, ring, litPod, workload, onClearWorkload, onLogs, at, on
   );
 }
 
-window.k8sPanel = { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips };
+window.k8sPanel = { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips, showTab };

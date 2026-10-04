@@ -123,6 +123,8 @@ func viewerClient() *http.Client {
 	d := &net.Dialer{Timeout: 10 * time.Second, Control: publicOnly}
 	return &http.Client{
 		Transport:     &http.Transport{DialContext: d.DialContext, TLSHandshakeTimeout: 10 * time.Second, IdleConnTimeout: 90 * time.Second, ForceAttemptHTTP2: true},
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		CheckRedirect: noRedirect,
 	}
 }
+
+func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

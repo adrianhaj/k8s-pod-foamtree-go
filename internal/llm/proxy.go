@@ -66,7 +66,7 @@ type Proxy struct {
 }
 
 func New(cfg Config) *Proxy {
-	p := &Proxy{cfg: cfg, trusted: &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, viewer: viewerClient()}
+	p := &Proxy{cfg: cfg, trusted: &http.Client{CheckRedirect: noRedirect}, viewer: viewerClient()}
 	if cfg.AllowAnyURL {
 		p.viewer = p.trusted
 	}
@@ -125,7 +125,7 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatReque
 	var c compat
 	rd, err := t.call(ctx, &c, req.Messages, 0, s)
 	if err != nil {
-		s.fail(err)
+		s.fail(errors.New(t.scrub(err.Error())))
 		return
 	}
 	if rd.Finish == "length" {
@@ -215,7 +215,8 @@ type round struct {
 	done   bool
 }
 
-// scrub keeps what an upstream said short and free of the key it was called with.
+// scrub keeps what an upstream said short and free of the key it was called
+// with. Every error passes through it on the way to the viewer.
 func (t target) scrub(s string) string {
 	if t.key != "" {
 		s = strings.ReplaceAll(s, t.key, "[key]")
@@ -265,7 +266,7 @@ func (t target) call(parent context.Context, c *compat, msgs []Message, used int
 			slog.Warn("llm server key rejected", "status", resp.StatusCode)
 			return round{}, errors.New("the server's API key was rejected by the assistant endpoint: ask the operator to check it")
 		}
-		return round{}, fmt.Errorf("assistant endpoint returned %d: %s", resp.StatusCode, t.scrub(string(bytes.TrimSpace(msg))))
+		return round{}, fmt.Errorf("assistant endpoint returned %d: %s", resp.StatusCode, bytes.TrimSpace(msg))
 	}
 }
 
@@ -283,8 +284,8 @@ func (t target) read(parent context.Context, stop context.CancelFunc, c *compat,
 		}
 		n := utf8.RuneCountInString(text)
 		if limit >= 0 && chars+n >= limit {
-			text = string([]rune(text)[:limit-chars])
-			n, cut = len([]rune(text)), true
+			r := []rune(text)[:limit-chars]
+			text, n, cut = string(r), len(r), true
 		}
 		chars += n
 		if relay && text != "" {
@@ -301,7 +302,7 @@ func (t target) read(parent context.Context, stop context.CancelFunc, c *compat,
 		if errors.Is(parent.Err(), context.DeadlineExceeded) {
 			return rd, errTimeout
 		}
-		return rd, errors.New(t.scrub(err.Error()))
+		return rd, err
 	}
 	if rd.Usage.Total == 0 {
 		out := rd.chars / charsPerToken

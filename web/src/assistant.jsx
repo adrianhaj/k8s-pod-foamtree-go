@@ -1,11 +1,12 @@
 // The Assistant tab: transcript, composer, context column and connection
 // form. Only Send, Analyze with assistant and Test and save reach the model.
 
-const { useState, useRef } = React;
+const { useState, useRef, useMemo, useEffect, useCallback, useSyncExternalStore } = React;
 const { Icon, SevGlyph } = window.k8sIcons;
+const { podKey } = window.k8sWorkload;
 const {
-  DEFAULT_BUDGET, estimateMessages, fmtTokens, saveConn, forgetKey, connReady, effectiveBudget,
-  overCap, isOn, systemPrompt, streamChat,
+  DEFAULT_BUDGET, MIN_BUDGET, msgChars, estimateMessages, fmtTokens, loadConn, saveConn, forgetKey, connReady, effectiveBudget,
+  overCap, contextItems, isOn, systemPrompt, streamChat,
 } = window.k8sLLM;
 const { safeStorage, readPref, writePref } = window.k8sPrefs;
 
@@ -23,29 +24,81 @@ function applyEvent(ms, ev) {
   return [...ms.slice(0, -1), last];
 }
 
-function useAssistant(context) {
+// The composer text lives outside the dashboard's state, so typing
+// re-renders the composer, not everything around the hook's owner.
+function textStore() {
+  let v = "";
+  const subs = new Set();
+  return {
+    get: () => v,
+    set: f => { v = typeof f === "function" ? f(v) : f; subs.forEach(s => s()); },
+    sub: s => { subs.add(s); return () => subs.delete(s); },
+  };
+}
+
+function knownOf(nodes) {
+  const m = new Map();
+  for (const n of nodes) {
+    m.set(n.name, n);
+    for (const p of n.pods) m.set(podKey(p), n);
+  }
+  return m;
+}
+
+// The fixed part of a request: the system prompt with the ticked context, then
+// earlier turns. plan adds the question; the estimate covers exactly the array
+// that goes out, the way the server counts it.
+function head(items, tick, messages) {
+  const wire = [
+    { role: "system", content: systemPrompt(items, tick) },
+    ...messages.filter(m => m.content).map(m => ({ role: m.role, content: m.content })),
+  ];
+  return { wire, chars: msgChars(wire), labels: items.filter(i => isOn(tick, i.id)).map(i => i.label) };
+}
+
+function plan(h, text) {
+  const user = { role: "user", content: text };
+  return { wire: [...h.wire, user], tokens: estimateMessages([user], h.chars), labels: h.labels };
+}
+
+// Everything the Assistant needs from the dashboard. Context items and name
+// links are built only while the tab is open; Analyze builds them on demand.
+function useAssistant({ context, nodes, totals, problems, focused, logsPod, logsText, open, setPanel, setFocused }) {
+  const [conn, setConn] = useState(loadConn);
+  const [server, setServer] = useState(null);
+  useEffect(() => {
+    fetch("/api/llm/config").then(r => (r.ok ? r.json() : null)).then(setServer, () => setServer(null));
+  }, []);
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [draft, setDraft] = useState("");
+  const [draft] = useState(textStore);
   const [ticked, setTicked] = useState({});
   const [connecting, setConnecting] = useState(false);
   const [acked, setAcked] = useState(() => readPref(safeStorage(), ACK_KEY, false, v => v === true));
+  const [lastNode, setLastNode] = useState(null);
+  useEffect(() => { if (focused) setLastNode(focused.name); }, [focused]);
   const abort = useRef(null);
 
-  // The estimate covers exactly the array that goes out, the way the server counts it.
-  const plan = (items, tick, text) => {
-    const wire = [
-      { role: "system", content: systemPrompt(items, tick) },
-      ...messages.filter(m => m.content).map(m => ({ role: m.role, content: m.content })),
-      { role: "user", content: text },
-    ];
-    return { wire, tokens: estimateMessages(wire), labels: items.filter(i => isOn(tick, i.id)).map(i => i.label) };
-  };
+  const logsPodObj = useMemo(() => {
+    if (!logsPod) return null;
+    for (const n of nodes) {
+      const p = n.pods.find(x => x.namespace === logsPod.namespace && x.name === logsPod.name);
+      if (p) return { ...p, node: n.name };
+    }
+    return null;
+  }, [nodes, logsPod]);
+  const logsForPod = logsText && logsPod && logsText.namespace === logsPod.namespace && logsText.name === logsPod.name ? logsText : null;
+  const itemsWith = k => contextItems({
+    context, totals, problems, pod: logsPodObj, logs: logsForPod, node: (lastNode && k.get(lastNode)) || null,
+  });
+  const known = useMemo(() => (open ? knownOf(nodes) : null), [open, nodes]);
+  const items = useMemo(() => (known ? itemsWith(known) : null), [known, context, totals, problems, logsPodObj, logsForPod, lastNode]);
+  const pick = useCallback(name => setFocused((known && known.get(name)) || null), [known, setFocused]);
 
-  const send = async (conn, p, text) => {
+  const send = async (p, text) => {
     setMessages([...messages, { role: "user", content: text, sent: { tokens: p.tokens, items: p.labels } }, { role: "assistant", content: "", tools: [] }]);
-    setDraft("");
+    draft.set("");
     setBusy(true);
     setError(null);
     const ctl = new AbortController();
@@ -74,23 +127,41 @@ function useAssistant(context) {
     // strict chat templates require. Text typed meanwhile is kept.
     if (!got) {
       setMessages(ms => ms.slice(0, -2));
-      setDraft(d => (d.trim() ? d : text));
+      draft.set(d => (d.trim() ? d : text));
       setError(failed || note);
     } else if (failed && !ended) setError(failed);
   };
 
-  const ask = (conn, budget, items, tick, text) => {
-    const p = plan(items, tick, text);
-    if (busy || overCap(p.tokens, budget)) {
-      setDraft(text);
+  const ask = (its, tick, text) => {
+    const p = plan(head(its, tick, messages), text);
+    if (busy || overCap(p.tokens, effectiveBudget(conn, server))) {
+      draft.set(text);
       return;
     }
-    send(conn, p, text);
+    send(p, text);
+  };
+
+  // The one click in the Logs tab that spends tokens.
+  const analyzePod = () => {
+    if (!logsPodObj) return;
+    const tick = { ...ticked, pod: true, logs: true };
+    setTicked(tick);
+    setPanel(p => ({ ...p, open: true, tab: "assistant", max: true }));
+    const q = `Analyze pod ${podKey(logsPodObj)}. Use its status and the logs provided. What is the most likely cause, and how do I fix it?`;
+    // Until the privacy notice is acknowledged, the question waits in the composer.
+    if (!acked || !connReady(conn, server)) {
+      draft.set(q);
+      return;
+    }
+    setConnecting(false);
+    ask(itemsWith(known || knownOf(nodes)), tick, q);
   };
 
   return {
-    messages, busy, error, draft, setDraft, ticked, setTicked, connecting, setConnecting, plan, ask, acked,
+    conn, setConn, server, context, items, known, pick, messages, busy, error, draft, ticked, setTicked,
+    connecting, setConnecting, ask, analyzePod, acked,
     ack: () => { writePref(safeStorage(), ACK_KEY, true); setAcked(true); },
+    openConnection: () => { setConnecting(true); setPanel(p => ({ ...p, open: true, tab: "assistant" })); },
     stop: () => abort.current && abort.current.abort(),
     clear: () => { setMessages([]); setError(null); },
   };
@@ -135,7 +206,7 @@ function ConnectForm({ conn, server, context, onSaved, onBack, onForget, onAck }
   const [error, setError] = useState(null);
   const [forgot, setForgot] = useState(false);
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
-  const clean = () => ({ ...f, budget: Math.max(1000, Math.round(Number(f.budget)) || DEFAULT_BUDGET) });
+  const clean = () => ({ ...f, budget: Math.max(MIN_BUDGET, Math.round(Number(f.budget)) || DEFAULT_BUDGET) });
   const save = c => { saveConn(c); onSaved(c); };
 
   const test = async e => {
@@ -165,11 +236,11 @@ function ConnectForm({ conn, server, context, onSaved, onBack, onForget, onAck }
     }
   };
 
-  const capTag = f.mode === "server" && hasServer && server.maxTokens > 0
+  const capTag = f.mode === "server" && server.maxTokens > 0
     ? <> <span className="tag">max {server.maxTokens.toLocaleString()}</span></> : null;
   const budget = (
     <label className="sim-field narrow"><span>Token cap per question{capTag}</span>
-      <input id="llm-budget" type="number" min="1000" step="1000" value={f.budget} onChange={e => set("budget", e.target.value)} /></label>
+      <input id="llm-budget" type="number" min={MIN_BUDGET} step="1000" value={f.budget} onChange={e => set("budget", e.target.value)} /></label>
   );
   const back = onBack && !forgot && <button className="btn" type="button" onClick={onBack}>Back to chat</button>;
 
@@ -217,21 +288,49 @@ function ConnectForm({ conn, server, context, onSaved, onBack, onForget, onAck }
   );
 }
 
-function AssistantTab({ a, conn, setConn, server, items, known, onPick, context }) {
-  const ready = connReady(conn, server);
+function AssistantTab({ a }) {
+  const ready = connReady(a.conn, a.server);
   if (!ready || a.connecting) {
-    return <ConnectForm conn={conn} server={server} context={context} onBack={ready ? () => a.setConnecting(false) : null} onAck={a.acked ? null : a.ack}
-      onSaved={c => { setConn(c); a.setConnecting(false); }} onForget={() => setConn(c => ({ ...c, key: "" }))} />;
+    return <ConnectForm conn={a.conn} server={a.server} context={a.context} onBack={ready ? () => a.setConnecting(false) : null} onAck={a.acked ? null : a.ack}
+      onSaved={c => { a.setConn(c); a.setConnecting(false); }} onForget={() => a.setConn(c => ({ ...c, key: "" }))} />;
   }
+  return <Chat a={a} />;
+}
+
+// Memoized, so a streamed delta re-renders only the message it lands in.
+const Msg = React.memo(function Msg({ m, streaming, known, onPick }) {
+  return (
+    <div className={`msg${m.role === "user" ? " you" : ""}`}>
+      <div className="msg-role">{m.role === "user" ? "You" : "Assistant"}</div>
+      <div className="msg-body">
+        {(m.tools || []).map((t, j) => <div key={j} className="tool">{t}</div>)}
+        {renderText(m.content, known, onPick)}
+        {streaming && <span className="caret" />}
+        {m.note && <div className="msg-meta">{m.note}</div>}
+        {m.cut && <div className="msg-meta">The answer ended before the endpoint finished.</div>}
+        {m.error && <div className="sim-error">{m.error}</div>}
+        {m.sent && <div className="msg-meta">sent with: {m.sent.items.join(", ").toLowerCase()} · ≈ {fmtTokens(m.sent.tokens)} tokens</div>}
+        {m.usage && <div className="msg-meta">{usageText(m.usage)}</div>}
+        {m.masked > 0 && <div className="msg-meta">{m.masked} likely secret{m.masked === 1 ? "" : "s"} masked before sending</div>}
+      </div>
+    </div>
+  );
+});
+
+function Chat({ a }) {
+  const { conn, server, items } = a;
+  const srv = conn.mode === "server";
+  const draft = useSyncExternalStore(a.draft.sub, a.draft.get);
+  const h = useMemo(() => head(items, a.ticked, a.messages), [items, a.ticked, a.messages]);
   const budget = effectiveBudget(conn, server);
-  const next = a.plan(items, a.ticked, a.draft);
+  const next = plan(h, draft);
   const over = overCap(next.tokens, budget);
   const used = a.messages.reduce((s, m) => s + (m.usage ? m.usage.total : 0), 0);
   const submit = () => {
-    const text = a.draft.trim();
-    if (text && !a.busy && !over) a.ask(conn, budget, items, a.ticked, text);
+    const text = draft.trim();
+    if (text && !a.busy && !over) a.ask(items, a.ticked, text);
   };
-  const base = conn.mode === "server" ? server.url : conn.url;
+  const base = srv ? server.url : conn.url;
   let host = base;
   try { host = new URL(base).host; } catch (e) { /* show it as typed */ }
 
@@ -242,29 +341,16 @@ function AssistantTab({ a, conn, setConn, server, items, known, onPick, context 
         <div className="transcript" aria-live="polite">
           {a.messages.length === 0 && <div className="panel-empty">Ask about this cluster. Tick what to send in the context column. Nothing is sent until you press Send.</div>}
           {a.messages.map((m, i) => (
-            <div key={i} className={`msg${m.role === "user" ? " you" : ""}`}>
-              <div className="msg-role">{m.role === "user" ? "You" : "Assistant"}</div>
-              <div className="msg-body">
-                {(m.tools || []).map((t, j) => <div key={j} className="tool">{t}</div>)}
-                {renderText(m.content, known, onPick)}
-                {a.busy && i === a.messages.length - 1 && <span className="caret" />}
-                {m.note && <div className="msg-meta">{m.note}</div>}
-                {m.cut && <div className="msg-meta">The answer ended before the endpoint finished.</div>}
-                {m.error && <div className="sim-error">{m.error}</div>}
-                {m.sent && <div className="msg-meta">sent with: {m.sent.items.join(", ").toLowerCase()} · ≈ {fmtTokens(m.sent.tokens)} tokens</div>}
-                {m.usage && <div className="msg-meta">{usageText(m.usage)}</div>}
-                {m.masked > 0 && <div className="msg-meta">{m.masked} likely secret{m.masked === 1 ? "" : "s"} masked before sending</div>}
-              </div>
-            </div>
+            <Msg key={i} m={m} streaming={a.busy && i === a.messages.length - 1} known={a.known} onPick={a.pick} />
           ))}
           {a.error && <div className="panel-empty sim-error">{a.error}</div>}
         </div>
         <div className="composer">
-          <div className="panel-chips">{QUICK.map(q => <button key={q} onClick={() => a.setDraft(q)}>{q}</button>)}</div>
+          <div className="panel-chips">{QUICK.map(q => <button key={q} onClick={() => a.draft.set(q)}>{q}</button>)}</div>
           <div className="composer-row">
-            <textarea id="ast-input" rows="2" value={a.draft} aria-label="Message"
+            <textarea id="ast-input" rows="2" value={draft} aria-label="Message"
               placeholder="Ask about this cluster. Enter sends, Shift+Enter adds a line."
-              onChange={e => a.setDraft(e.target.value)}
+              onChange={e => a.draft.set(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); submit(); } }} />
             <div className="composer-side">
               <span className="cost" title="Rough estimate: 4 characters per token">
@@ -272,7 +358,7 @@ function AssistantTab({ a, conn, setConn, server, items, known, onPick, context 
               </span>
               {a.busy
                 ? <button className="btn" onClick={a.stop}><Icon name="stop" size={12} />Stop</button>
-                : <button className="btn-primary" disabled={!a.draft.trim() || over} onClick={submit}>Send</button>}
+                : <button className="btn-primary" disabled={!draft.trim() || over} onClick={submit}>Send</button>}
             </div>
           </div>
           {over && <div className="panel-note">Over the cap of {budget.toLocaleString()} tokens. Untick some context, or raise the cap in Connection.</div>}
@@ -287,7 +373,7 @@ function AssistantTab({ a, conn, setConn, server, items, known, onPick, context 
           </label>
         ))}
         <div className="ctx-foot">
-          <div>Model <b>{conn.mode === "server" ? server.model : conn.model}</b><br />at <b>{host}</b> · {conn.mode === "server" ? "server key" : "your key"}</div>
+          <div>Model <b>{srv ? server.model : conn.model}</b><br />at <b>{host}</b> · {srv ? "server key" : "your key"}</div>
           {used > 0 && <div>This chat: <b>{used.toLocaleString()}</b> tokens{budget > 0 ? <> · cap <b>{budget.toLocaleString()}</b> per question</> : null}</div>}
           <div className="acts">
             <button className="btn" onClick={() => a.setConnecting(true)}>Connection</button>
@@ -299,4 +385,4 @@ function AssistantTab({ a, conn, setConn, server, items, known, onPick, context 
   );
 }
 
-window.k8sAssistant = { useAssistant, AssistantTab, renderText };
+window.k8sAssistant = { useAssistant, AssistantTab };

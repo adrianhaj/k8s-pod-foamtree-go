@@ -4,8 +4,9 @@
 
 const THEME_PREFS = ["system", "light", "dark"];
 
-function safeStorage() {
-  try { return window.localStorage; } catch (e) { return null; }
+// kind is "localStorage" (the default) or "sessionStorage".
+function safeStorage(kind = "localStorage") {
+  try { return window[kind]; } catch (e) { return null; }
 }
 
 function readPref(storage, key, fallback, valid) {
@@ -21,6 +22,10 @@ function readPref(storage, key, fallback, valid) {
 
 function writePref(storage, key, value) {
   try { if (storage) storage.setItem(key, JSON.stringify(value)); } catch (e) { /* best effort */ }
+}
+
+function removePref(storage, key) {
+  try { if (storage) storage.removeItem(key); } catch (e) { /* best effort */ }
 }
 
 // "system" sets no attribute, so CSS alone follows prefers-color-scheme and
@@ -69,4 +74,4 @@ function viewSearch(state) {
   return s ? "?" + s : "";
 }
 
-window.k8sPrefs = { PANEL_KEY, PANEL_DEFAULT, validPanel, THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, watchTheme, readViewParams, viewSearch };
+window.k8sPrefs = { PANEL_KEY, PANEL_DEFAULT, validPanel, THEME_PREFS, safeStorage, readPref, writePref, removePref, applyThemePref, watchTheme, readViewParams, viewSearch };

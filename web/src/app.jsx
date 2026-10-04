@@ -19,10 +19,9 @@ const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY
 const { fmtMem, shortContext, clock } = window.k8sFormat;
 const { buildProblems, problemChips } = window.k8sProblems;
 const { pickShown } = window.k8sHighlight;
-const { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips } = window.k8sPanel;
+const { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips, showTab } = window.k8sPanel;
 const { TopBar, SummaryStrip, Toolbar, Rail, SettingsMenu, attentionBySev } = window.k8sChrome;
 const { useAssistant, AssistantTab } = window.k8sAssistant;
-const { loadConn, connReady, effectiveBudget, contextItems } = window.k8sLLM;
 const THEME_KEY = "k8sfoams.theme";
 const SIM_IDLE = { mode: "drain", node: null, result: null, error: null, busy: false };
 
@@ -525,56 +524,10 @@ function App() {
   const problems = useMemo(() => buildProblems(nodes), [nodes]);
   const chips = useMemo(() => problemChips(problems), [problems]);
 
-  const [conn, setConn] = useState(loadConn);
-  const [server, setServer] = useState(null);
-  useEffect(() => {
-    apiFetch("/api/llm/config").then(r => (r.ok ? r.json() : null)).then(setServer, () => setServer(null));
-  }, []);
-  const assistant = useAssistant(context);
-  const [lastNode, setLastNode] = useState(null);
-  useEffect(() => { if (focused) setLastNode(focused.name); }, [focused]);
-
-  const logsPodObj = useMemo(() => {
-    if (!logsPod) return null;
-    for (const n of nodes) {
-      const p = n.pods.find(x => x.namespace === logsPod.namespace && x.name === logsPod.name);
-      if (p) return { ...p, node: n.name };
-    }
-    return null;
-  }, [nodes, logsPod]);
-  const logsForPod = logsText && logsPod && logsText.namespace === logsPod.namespace && logsText.name === logsPod.name ? logsText : null;
-  const items = useMemo(() => contextItems({
-    context, totals, problems, pod: logsPodObj, logs: logsForPod,
-    node: lastNode ? nodes.find(n => n.name === lastNode) || null : null,
-  }), [context, totals, problems, logsPodObj, logsForPod, lastNode, nodes]);
-  const known = useMemo(() => {
-    const m = new Map();
-    for (const n of nodes) {
-      m.set(n.name, n);
-      for (const p of n.pods) m.set(`${p.namespace}/${p.name}`, n);
-    }
-    return m;
-  }, [nodes]);
-
-  // The one click in the Logs tab that spends tokens.
-  const analyzePod = () => {
-    if (!logsPodObj) return;
-    const ticked = { ...assistant.ticked, pod: true, logs: true };
-    assistant.setTicked(ticked);
-    setPanel(p => ({ ...p, open: true, tab: "assistant", max: true }));
-    const q = `Analyze pod ${logsPodObj.namespace}/${logsPodObj.name}. Use its status and the logs provided. What is the most likely cause, and how do I fix it?`;
-    // Until the privacy notice is acknowledged, the question waits in the composer.
-    if (!assistant.acked || !connReady(conn, server)) {
-      assistant.setDraft(q);
-      return;
-    }
-    assistant.setConnecting(false);
-    assistant.ask(conn, effectiveBudget(conn, server), items, ticked, q);
-  };
-  const openConnection = () => {
-    assistant.setConnecting(true);
-    setPanel(p => ({ ...p, open: true, tab: "assistant" }));
-  };
+  const assistant = useAssistant({
+    context, nodes, totals, problems, focused, logsPod, logsText, setPanel, setFocused,
+    open: panel.open && panel.tab === "assistant",
+  });
 
   // Every class gets a row, even at zero — "no BestEffort pods" is the answer
   // an SRE is usually looking for. Pods with no reported class are not counted.
@@ -598,8 +551,7 @@ function App() {
     label: `${ext.label} requested`, u: totals.extUsed / (totals.extCap || 1),
     value: fmtExt(totals.extUsed, activeMetric, memUnit), of: `of ${fmtExt(totals.extCap, activeMetric, memUnit, true)} ${extUnit(activeMetric, memUnit)}`,
   };
-  // The transcript needs the height: the Assistant opens maximized, like Analyze.
-  const openTab = id => setPanel(p => (p.open && p.tab === id ? { ...p, open: false } : { ...p, open: true, tab: id, max: p.max || id === "assistant" }));
+  const openTab = id => setPanel(p => (p.open && p.tab === id ? { ...p, open: false } : showTab(p, id)));
 
   return (
     <div className="app">
@@ -622,7 +574,7 @@ function App() {
           </div>
         )}
         <Rail view={view} setView={setView} panel={panel} openTab={openTab} findings={problems.length}
-          settings={<SettingsMenu themePref={themePref} setThemePref={setThemePref} memUnit={memUnit} setMemUnit={setMemUnit} onAssistant={openConnection} />} />
+          settings={<SettingsMenu themePref={themePref} setThemePref={setThemePref} memUnit={memUnit} setMemUnit={setMemUnit} onAssistant={assistant.openConnection} />} />
         <MapChips lit={shown.lit} ring={shown.ring}
           litPod={logsPod ? podKey(logsPod) : ""}
           onLogs={() => { const p = allPods.find(x => workloadKey(x.name) === selectedWorkload); if (p) openLogs(p); }}
@@ -686,11 +638,10 @@ function App() {
             fitBody={<><FitForm context={context} onResult={setFit} />{fit && <FitSummary result={fit} onClear={() => setFit(null)} />}</>} />
         )}
         {panel.tab === "logs" && (
-          <LogsTab context={context} sel={logsPod} setSel={setLogsPod} pods={allPods} onLoaded={setLogsText} onAnalyze={analyzePod} />
+          <LogsTab context={context} sel={logsPod} setSel={setLogsPod} pods={allPods} onLoaded={setLogsText} onAnalyze={assistant.analyzePod} />
         )}
         {panel.tab === "assistant" && (
-          <AssistantTab a={assistant} conn={conn} setConn={setConn} server={server} items={items} known={known}
-            context={context} onPick={name => setFocused(known.get(name) || null)} />
+          <AssistantTab a={assistant} />
         )}
       </BottomPanel>
 
