@@ -5,12 +5,17 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/auth"
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/foam"
@@ -20,6 +25,41 @@ import (
 type source interface {
 	Contexts() ([]kube.Context, error)
 	Snapshot(ctx context.Context, name string) ([]foam.Node, []foam.Pod, error)
+	Logs(ctx context.Context, name string, req kube.LogRequest) (io.ReadCloser, error)
+}
+
+const (
+	defaultLogTail = 500
+	maxLogTail     = 5000
+)
+
+// checkLogRequest rejects names the API server would refuse anyway, before
+// they become part of a request path.
+func checkLogRequest(r kube.LogRequest) error {
+	if r.Namespace == "" || r.Pod == "" {
+		return errors.New("namespace and pod are required")
+	}
+	if len(validation.IsDNS1123Label(r.Namespace)) > 0 {
+		return fmt.Errorf("invalid namespace %q", r.Namespace)
+	}
+	if len(validation.IsDNS1123Subdomain(r.Pod)) > 0 {
+		return fmt.Errorf("invalid pod name %q", r.Pod)
+	}
+	if r.Container != "" && len(validation.IsDNS1123Label(r.Container)) > 0 {
+		return fmt.Errorf("invalid container name %q", r.Container)
+	}
+	return nil
+}
+
+func logsStatus(err error) int {
+	switch {
+	case errors.Is(err, kube.ErrUnknownContext), apierrors.IsBadRequest(err):
+		return http.StatusBadRequest
+	case apierrors.IsNotFound(err):
+		return http.StatusNotFound
+	}
+	slog.Warn("logs", "err", err)
+	return http.StatusServiceUnavailable
 }
 
 // First load of a big cluster can take a while; later requests hit the cache.
@@ -96,6 +136,36 @@ func newHandler(src source, static fs.FS, a *auth.Auth) http.Handler {
 			return
 		}
 		http.Error(w, "no node "+strconv.Quote(name), http.StatusNotFound)
+	})
+	app.HandleFunc("GET /api/logs", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		req := kube.LogRequest{Namespace: q.Get("namespace"), Pod: q.Get("pod"), Container: q.Get("container"),
+			Tail: defaultLogTail, Previous: q.Get("previous") == "1"}
+		if t := q.Get("tail"); t != "" {
+			n, err := strconv.ParseInt(t, 10, 64)
+			if err != nil || n < 1 || n > maxLogTail {
+				http.Error(w, "tail must be 1 to 5000", http.StatusBadRequest)
+				return
+			}
+			req.Tail = n
+		}
+		if err := checkLogRequest(req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), snapshotTimeout)
+		defer cancel()
+		rc, err := src.Logs(ctx, q.Get("context"), req)
+		if err != nil {
+			http.Error(w, err.Error(), logsStatus(err))
+			return
+		}
+		defer rc.Close()
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		if _, err := io.Copy(w, rc); err != nil {
+			slog.Warn("logs", "err", err)
+		}
 	})
 	app.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
 		if u, ok := auth.UserFrom(r.Context()); ok {

@@ -4,21 +4,36 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"testing/fstest"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/foam"
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/kube"
 )
 
 type fakeSource struct {
-	nodes []foam.Node
-	pods  []foam.Pod
-	err   error
-	asked string
+	nodes  []foam.Node
+	pods   []foam.Pod
+	err    error
+	asked  string
+	logs   string
+	logErr error
+	logReq kube.LogRequest
+}
+
+func (f *fakeSource) Logs(_ context.Context, name string, req kube.LogRequest) (io.ReadCloser, error) {
+	f.asked, f.logReq = name, req
+	if f.logErr != nil {
+		return nil, f.logErr
+	}
+	return io.NopCloser(strings.NewReader(f.logs)), nil
 }
 
 func (f *fakeSource) Contexts() ([]kube.Context, error) {
@@ -207,5 +222,60 @@ func TestDrainRouteRejectsOversizedNode(t *testing.T) {
 	big := strings.Repeat("a", 4097)
 	if w := get(h, "/api/drain?node="+big); w.Code != 400 {
 		t.Fatalf("oversized node: %d", w.Code)
+	}
+}
+
+func TestLogsRoute(t *testing.T) {
+	src := &fakeSource{logs: "line 1\nline 2\n"}
+	h := newHandler(src, static, nil)
+	w := get(h, "/api/logs?context=kind&namespace=payments&pod=api-7f9c4-x2kqp&container=api&tail=200&previous=1")
+	if w.Code != 200 || w.Body.String() != "line 1\nline 2\n" || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") {
+		t.Fatalf("%d %q %q", w.Code, w.Body, w.Header())
+	}
+	want := kube.LogRequest{Namespace: "payments", Pod: "api-7f9c4-x2kqp", Container: "api", Tail: 200, Previous: true}
+	if src.asked != "kind" || src.logReq != want {
+		t.Fatalf("asked %q with %+v", src.asked, src.logReq)
+	}
+	get(h, "/api/logs?namespace=ns&pod=p")
+	if src.logReq.Tail != 500 || src.logReq.Previous {
+		t.Fatalf("defaults: %+v", src.logReq)
+	}
+}
+
+func TestLogsRouteRejectsBadInput(t *testing.T) {
+	h := newHandler(&fakeSource{}, static, nil)
+	for _, target := range []string{
+		"/api/logs?pod=p",
+		"/api/logs?namespace=ns",
+		"/api/logs?namespace=ns&pod=p&tail=0",
+		"/api/logs?namespace=ns&pod=p&tail=5001",
+		"/api/logs?namespace=ns&pod=p&tail=x",
+		"/api/logs?namespace=..&pod=p",
+		"/api/logs?namespace=ns&pod=a%2Fb",
+		"/api/logs?namespace=ns&pod=p&container=Bad_Name",
+	} {
+		if w := get(h, target); w.Code != 400 {
+			t.Errorf("%s: %d %q", target, w.Code, w.Body)
+		}
+	}
+}
+
+func TestLogsRouteMapsErrors(t *testing.T) {
+	gone := apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, "p")
+	noPrev := apierrors.NewBadRequest(`previous terminated container "app" in pod "p" not found`)
+	for _, tc := range []struct {
+		err  error
+		code int
+		body string
+	}{
+		{gone, 404, `pods "p" not found`},
+		{noPrev, 400, "previous terminated container"},
+		{fmt.Errorf("%w %q", kube.ErrUnknownContext, "prod"), 400, "unknown context"},
+		{errors.New("dial tcp: i/o timeout"), 503, "i/o timeout"},
+	} {
+		w := get(newHandler(&fakeSource{logErr: tc.err}, static, nil), "/api/logs?namespace=ns&pod=p")
+		if w.Code != tc.code || !strings.Contains(w.Body.String(), tc.body) {
+			t.Errorf("%v: %d %q", tc.err, w.Code, w.Body)
+		}
 	}
 }
