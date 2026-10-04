@@ -13,7 +13,9 @@ const masked = "[REDACTED]"
 const (
 	keyword = `(?:passw(?:or)?d|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|account[_-]?key|credentials?|signature)(?:[_.-][a-z0-9_.-]*)?`
 	edge    = `(?:^|[^a-z])(?:pass|sig|auth(?:orization)?)`
-	assign  = `(?im)((?:` + keyword + `|` + edge + `)\\?["']?[ \t]*[:=][ \t]*`
+	// These name a secret outright: any value of 4+ characters is masked.
+	plain  = `(?im)((?:passw(?:or)?d|pwd|secret|api[_-]?key|access[_-]?key|private[_-]?key|account[_-]?key|(?:^|[^a-z])pass)\\?["']?[ \t]*[:=][ \t]*)([^\s"',;&}\\]{4,})`
+	assign = `(?im)((?:` + keyword + `|` + edge + `)\\?["']?[ \t]*[:=][ \t]*`
 )
 
 type rule struct {
@@ -28,7 +30,10 @@ var (
 	plainWord = regexp.MustCompile(`^[A-Z]?[a-z]+$`)
 )
 
-func isValue(v string) bool { return v != masked }
+var notValues = map[string]bool{"true": true, "false": true, "null": true, "none": true, "nil": true, "empty": true, "unset": true}
+
+func isSecretValue(v string) bool { return v != masked && !notValues[strings.ToLower(v)] }
+func isValue(v string) bool       { return v != masked }
 func looksSecret(v string) bool {
 	return v != masked && !letters.MatchString(v) && !digits.MatchString(v)
 }
@@ -41,8 +46,8 @@ func realUserinfo(v string) bool {
 // the model. Order matters: the Authorization header first so it counts once,
 // then whole tokens, then name=value pairs.
 // ponytail: patterns, not entropy detection; a secret in an unusual shape can
-// pass, and a bare value of only letters or only digits is read as a word or a
-// number. Add a rule when one is found.
+// pass, and after token, auth and credential keys a bare value of only letters
+// or only digits is read as a word or a number. Add a rule when one is found.
 var secretRules = []rule{
 	{regexp.MustCompile(`(?i)\b(authorization:[ \t]*)([^\r\n]+)`), "${1}" + masked, isValue},
 	{regexp.MustCompile(`-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]*PRIVATE KEY-----|$)`), masked, nil},
@@ -56,6 +61,7 @@ var secretRules = []rule{
 	{regexp.MustCompile(`(?i)\b(bearer|basic)[ \t]+([A-Za-z0-9._~+/-]{8,}=*)`), "${1} " + masked, notWord},
 	{regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.-]*://)([^/\s:@]*:[^/\s@]+)@`), "${1}" + masked + "@", realUserinfo},
 	{regexp.MustCompile(`(?i)(--(?:password|passwd|pwd|secret|token|api-?key|access-?key|private-?key)(?:=|[ \t]+))([^\s"'\\,;&}-][^\s"'\\,;&}]{5,})`), "${1}" + masked, isValue},
+	{regexp.MustCompile(plain), "${1}" + masked, isSecretValue},
 	{regexp.MustCompile(assign + `\\?")([^"\\\n]{4,})`), "${1}" + masked, isValue},
 	{regexp.MustCompile(assign + `')([^'\n]{4,})`), "${1}" + masked, isValue},
 	{regexp.MustCompile(assign + `)([^\s"',;&}\\]{6,})`), "${1}" + masked, looksSecret},

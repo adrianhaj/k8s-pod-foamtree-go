@@ -60,6 +60,9 @@ func TestRedactKeepsProse(t *testing.T) {
 		"bearer authentication failed",
 		"Basic Authentication failed",
 		"password=[REDACTED]",
+		"password=true",
+		"password: null",
+		`secret: ""`,
 		"postgres://[REDACTED]:[REDACTED]@h/db",
 	} {
 		if got, n := redact(in); got != in || n != 0 {
@@ -92,6 +95,10 @@ func TestRedactLeaks(t *testing.T) {
 		"glpat-abcdefghij0123456789":                      "abcdefghij0123456789",
 		"hf_abcdefghijklmnopqrstuvwxyz0123456789":         "abcdefghijklmnopqrstuvwxyz",
 		"npm_abcdefghijklmnopqrstuvwxyz0123456789":        "abcdefghijklmnopqrstuvwxyz",
+		"password=hunter":                                 "hunter",
+		"password=12345678":                               "12345678",
+		`pwd: "abcd"`:                                     "abcd",
+		"client_secret=abcdefghij":                        "abcdefghij",
 	} {
 		if got, n := redact(in); strings.Contains(got, secret) || n < 1 {
 			t.Errorf("%q\n got %q (%d)", in, got, n)
