@@ -39,22 +39,25 @@ func (c Config) serverKey() (string, error) {
 
 func (c Config) checkURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
-	if err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") {
+	if err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") ||
+		u.Opaque != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawFragment != "" {
 		return "", fmt.Errorf("base URL must look like https://host/v1, got %q", raw)
 	}
+	// Rebuilt from the parts that were checked, so the string that is sent is the one that was validated.
+	clean := (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}).String()
 	if c.AllowAnyURL {
-		return u.String(), nil
+		return clean, nil
 	}
 	if u.Scheme != "https" {
 		return "", errors.New("base URL must use https")
 	}
 	host := strings.ToLower(u.Hostname())
 	if own, err := url.Parse(c.URL); err == nil && c.URL != "" && strings.ToLower(own.Hostname()) == host {
-		return u.String(), nil
+		return clean, nil
 	}
 	for _, g := range c.AllowedHosts {
 		if ok, _ := path.Match(strings.ToLower(g), host); ok {
-			return u.String(), nil
+			return clean, nil
 		}
 	}
 	return "", fmt.Errorf("host %s is not allowed: ask the operator to add it to --llm-allowed-hosts", host)
@@ -71,9 +74,10 @@ var blocked = []netip.Prefix{
 	netip.MustParsePrefix("::/96"),
 	netip.MustParsePrefix("2002::/16"),
 	netip.MustParsePrefix("fec0::/10"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
 }
 
-var nat64 = []netip.Prefix{netip.MustParsePrefix("64:ff9b::/96"), netip.MustParsePrefix("64:ff9b:1::/48")}
+var nat64 = netip.MustParsePrefix("64:ff9b::/96")
 
 func isPublic(ip netip.Addr) bool {
 	ip = ip.Unmap()
@@ -85,11 +89,9 @@ func isPublic(ip netip.Addr) bool {
 			return false
 		}
 	}
-	for _, p := range nat64 {
-		if p.Contains(ip) {
-			b := ip.As16()
-			return isPublic(netip.AddrFrom4([4]byte(b[12:])))
-		}
+	if nat64.Contains(ip) {
+		b := ip.As16()
+		return isPublic(netip.AddrFrom4([4]byte(b[12:])))
 	}
 	return true
 }

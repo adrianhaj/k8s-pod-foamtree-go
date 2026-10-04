@@ -27,10 +27,17 @@ func TestCheckURL(t *testing.T) {
 		"https://API.OpenAI.com/v1":               true,
 		"https://TEAM.openai.azure.com/v1":        true,
 		"https://LLM.Internal.Example/v1":         true,
+		"https://api.openai.com/v1?x=1":           false,
+		"https://api.openai.com/v1?":              false,
+		"https://api.openai.com/v1#frag":          false,
+		"https:api.openai.com/v1":                 false,
 	} {
 		if _, err := c.checkURL(raw); (err == nil) != ok {
 			t.Errorf("%q: err=%v", raw, err)
 		}
+	}
+	if got, err := c.checkURL("https://API.openai.com/v1/"); err != nil || got != "https://API.openai.com/v1/" {
+		t.Errorf("rebuilt URL: %q %v", got, err)
 	}
 	upper := Config{URL: "https://LLM.Internal.Example/v1"}
 	if _, err := upper.checkURL("https://llm.internal.example/v1"); err != nil {
@@ -39,6 +46,11 @@ func TestCheckURL(t *testing.T) {
 	local := Config{AllowAnyURL: true}
 	if _, err := local.checkURL("http://user:pw@localhost:11434/v1"); err == nil {
 		t.Error("userinfo accepted on a loopback run")
+	}
+	for _, raw := range []string{"http://localhost:11434/v1?x=1", "http://localhost:11434/v1#f"} {
+		if _, err := local.checkURL(raw); err == nil {
+			t.Errorf("loopback run accepted %q", raw)
+		}
 	}
 	for _, raw := range []string{"http://localhost:11434/v1", "http://10.0.0.5:8000/v1"} {
 		if _, err := local.checkURL(raw); err != nil {
@@ -49,33 +61,34 @@ func TestCheckURL(t *testing.T) {
 
 func TestPublicOnly(t *testing.T) {
 	for addr, ok := range map[string]bool{
-		"93.184.216.34:443":          true,
-		"[2606:4700:4700::1111]:443": true,
-		"127.0.0.1:443":              false,
-		"10.1.2.3:443":               false,
-		"172.16.0.1:443":             false,
-		"192.168.1.1:443":            false,
-		"169.254.169.254:80":         false,
-		"100.100.100.200:80":         false,
-		"0.0.0.0:443":                false,
-		"[::1]:443":                  false,
-		"[fd00::1]:443":              false,
-		"[fe80::1]:443":              false,
-		"[::ffff:10.0.0.1]:443":      false,
-		"[64:ff9b::a00:1]:443":       false,
-		"[64:ff9b:1::a00:1]:443":     false,
-		"[2002:a00:1::]:443":         false,
-		"[::a00:1]:443":              false,
-		"[64:ff9b::808:808]:443":     true,
-		"0.1.2.3:443":                false,
-		"240.0.0.1:443":              false,
-		"198.18.0.1:443":             false,
-		"198.19.255.255:443":         false,
-		"192.0.0.1:443":              false,
-		"[fec0::1]:443":              false,
-		"224.0.0.1:443":              false,
-		"[ff02::1]:443":              false,
-		"[::]:443":                   false,
+		"93.184.216.34:443":              true,
+		"[2606:4700:4700::1111]:443":     true,
+		"127.0.0.1:443":                  false,
+		"10.1.2.3:443":                   false,
+		"172.16.0.1:443":                 false,
+		"192.168.1.1:443":                false,
+		"169.254.169.254:80":             false,
+		"100.100.100.200:80":             false,
+		"0.0.0.0:443":                    false,
+		"[::1]:443":                      false,
+		"[fd00::1]:443":                  false,
+		"[fe80::1]:443":                  false,
+		"[::ffff:10.0.0.1]:443":          false,
+		"[64:ff9b::a00:1]:443":           false,
+		"[64:ff9b:1::a00:1]:443":         false,
+		"[64:ff9b:1:a00:1::808:808]:443": false,
+		"[2002:a00:1::]:443":             false,
+		"[::a00:1]:443":                  false,
+		"[64:ff9b::808:808]:443":         true,
+		"0.1.2.3:443":                    false,
+		"240.0.0.1:443":                  false,
+		"198.18.0.1:443":                 false,
+		"198.19.255.255:443":             false,
+		"192.0.0.1:443":                  false,
+		"[fec0::1]:443":                  false,
+		"224.0.0.1:443":                  false,
+		"[ff02::1]:443":                  false,
+		"[::]:443":                       false,
 	} {
 		if err := publicOnly("tcp", addr, nil); (err == nil) != ok {
 			t.Errorf("%s: err=%v", addr, err)
