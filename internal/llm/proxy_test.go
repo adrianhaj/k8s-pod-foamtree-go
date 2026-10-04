@@ -284,3 +284,127 @@ func TestConfigNeverReturnsTheKey(t *testing.T) {
 		t.Fatalf("%s", body)
 	}
 }
+
+func TestUpstreamErrorsDoNotLeakTheServerKey(t *testing.T) {
+	status := 401
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
+		http.Error(w, `{"error":{"message":"bad key server-secret"}}`, status)
+	})
+	p := New(Config{URL: up.URL + "/v1", Model: "m", Key: "server-secret"})
+	w := chat(p, "", `{`+q+`}`)
+	if w.Code != 502 || strings.Contains(w.Body.String(), "server-secret") || !strings.Contains(w.Body.String(), "API key was rejected") {
+		t.Fatalf("401: %d %q", w.Code, w.Body)
+	}
+	status = 500
+	w = chat(p, "", `{`+q+`}`)
+	if strings.Contains(w.Body.String(), "server-secret") || !strings.Contains(w.Body.String(), "[key]") {
+		t.Fatalf("500: %d %q", w.Code, w.Body)
+	}
+	w = chat(New(Config{AllowAnyURL: true}), "viewer-secret", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	if strings.Contains(w.Body.String(), "viewer-secret") {
+		t.Fatalf("viewer key echoed: %q", w.Body)
+	}
+}
+
+func TestRelayedUpstreamTextIsShort(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
+		http.Error(w, strings.Repeat("y", 3000), 500)
+	})
+	w := chat(New(Config{AllowAnyURL: true}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	if w.Body.Len() > 400 {
+		t.Fatalf("relayed %d bytes", w.Body.Len())
+	}
+}
+
+func TestUnreachableEndpointDoesNotEchoTheAddress(t *testing.T) {
+	gone := httptest.NewServer(http.NotFoundHandler())
+	addr := strings.TrimPrefix(gone.URL, "http://")
+	gone.Close()
+	w := chat(New(Config{AllowAnyURL: true}), "k", `{"url":"http://`+addr+`/v1","model":"m",`+q+`}`)
+	if w.Code != 502 || strings.Contains(w.Body.String(), "127.0.0.1") || strings.Contains(w.Body.String(), addr) || !strings.Contains(w.Body.String(), "unreachable") {
+		t.Fatalf("%d %q", w.Code, w.Body)
+	}
+}
+
+func TestServerConnectionDoesNotFollowRedirects(t *testing.T) {
+	other := newUpstream(t, answer("hi"))
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request, _ int, _ map[string]any) {
+		http.Redirect(w, r, other.URL+"/v1/chat/completions", http.StatusTemporaryRedirect)
+	})
+	w := chat(New(Config{URL: up.URL + "/v1", Model: "m", Key: "server-secret"}), "", `{`+q+`}`)
+	if w.Code != 502 || len(other.got()) != 0 {
+		t.Fatalf("%d %q, redirect target hit %d times", w.Code, w.Body, len(other.got()))
+	}
+}
+
+func TestCapHoldsWhenTheEndpointRejectsTheLimit(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request, _ int, body map[string]any) {
+		if body["max_tokens"] != nil || body["max_completion_tokens"] != nil {
+			http.Error(w, `{"error":{"message":"max_tokens is too large: 998. This model supports at most 4096 completion tokens"}}`, 400)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		for i := 0; i < 100000 && r.Context().Err() == nil; i++ {
+			fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"abcd"}}]}`+"\n\n")
+			w.(http.Flusher).Flush()
+		}
+	})
+	w := chat(New(Config{AllowAnyURL: true}), "k", `{"url":"`+up.URL+`/v1","model":"m","budget":1000,`+q+`}`)
+	ev := events(t, w.Body.String())
+	n := 0
+	for _, e := range ev[:len(ev)-2] {
+		if e.Type != "delta" {
+			t.Fatalf("%+v", e)
+		}
+		n += len([]rune(e.Text))
+	}
+	in := estimate([]Message{{Role: "user", Content: "q"}})
+	if want := (1000 - in) * charsPerToken; n != want {
+		t.Fatalf("streamed %d chars, want %d", n, want)
+	}
+	if ev[len(ev)-2].Type != "notice" || !strings.Contains(ev[len(ev)-2].Text, "token cap") || ev[len(ev)-1].Type != "done" {
+		t.Fatalf("%+v", ev[len(ev)-2:])
+	}
+	if c := up.got(); len(c) != 2 || c[1].body["max_tokens"] != nil || c[1].body["max_completion_tokens"] != nil {
+		t.Fatalf("calls %+v", c)
+	}
+}
+
+func TestEstimateCountsRunes(t *testing.T) {
+	if got, want := estimate([]Message{{Role: "user", Content: "日本語日本語"}}), (4+6)/charsPerToken+1; got != want {
+		t.Fatalf("estimate %d, want %d", got, want)
+	}
+}
+
+func TestSaysWhenTheStreamEndsEarlyOrIsMissing(t *testing.T) {
+	for name, tc := range map[string]struct {
+		reply func(http.ResponseWriter)
+		text  string
+	}{
+		"no DONE": {func(w http.ResponseWriter) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"half"}}]}`+"\n\n")
+		}, "ended the answer early"},
+		"not a stream": {func(w http.ResponseWriter) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"choices":[{"message":{"content":"whole"}}]}`)
+		}, "did not stream"},
+	} {
+		up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) { tc.reply(w) })
+		ev := events(t, chat(New(Config{AllowAnyURL: true}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`).Body.String())
+		if n := len(ev); n < 2 || ev[n-2].Type != "notice" || !strings.Contains(ev[n-2].Text, tc.text) || ev[n-1].Type != "done" {
+			t.Errorf("%s: %+v", name, ev)
+		}
+	}
+}
+
+func TestTurnDeadlineIsReadable(t *testing.T) {
+	up := newUpstream(t, answer("x"))
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	tg := target{base: up.URL + "/v1", model: "m", client: &http.Client{}}
+	_, err := tg.call(ctx, &compat{}, []Message{{Role: "user", Content: "q"}}, 0, &stream{w: httptest.NewRecorder()})
+	if err == nil || !strings.Contains(err.Error(), "longer than 2 minutes") {
+		t.Fatalf("%v", err)
+	}
+}

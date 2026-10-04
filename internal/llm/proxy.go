@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -21,7 +22,10 @@ const (
 	// The browser estimates the same way, so both sides agree on the cap.
 	charsPerToken   = 4
 	minAnswerTokens = 256
+	maxRelayed      = 300
 )
+
+var errTimeout = errors.New("the answer took longer than 2 minutes")
 
 type Message struct {
 	Role    string `json:"role"`
@@ -61,7 +65,7 @@ type Proxy struct {
 }
 
 func New(cfg Config) *Proxy {
-	p := &Proxy{cfg: cfg, trusted: &http.Client{}, viewer: viewerClient()}
+	p := &Proxy{cfg: cfg, trusted: &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, viewer: viewerClient()}
 	if cfg.AllowAnyURL {
 		p.viewer = p.trusted
 	}
@@ -103,7 +107,9 @@ func (p *Proxy) ServeChat(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), turnTimeout)
 	defer cancel()
-	p.converse(ctx, &stream{w: w, rc: http.NewResponseController(w)}, t, req)
+	rc := http.NewResponseController(w)
+	rc.SetWriteDeadline(time.Now().Add(turnTimeout + 10*time.Second))
+	p.converse(ctx, &stream{w: w, rc: rc}, t, req)
 }
 
 func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatRequest) {
@@ -123,6 +129,7 @@ type target struct {
 	base, model, key string
 	budget           int
 	client           *http.Client
+	server           bool
 }
 
 // target picks the connection. A body without url is the server connection;
@@ -141,7 +148,7 @@ func (p *Proxy) target(req chatRequest, viewerKey string) (target, error) {
 		if m := p.cfg.MaxTokens; m > 0 && (budget <= 0 || budget > m) {
 			budget = m
 		}
-		return target{p.cfg.URL, p.cfg.Model, key, budget, p.trusted}, nil
+		return target{p.cfg.URL, p.cfg.Model, key, budget, p.trusted, true}, nil
 	}
 	base, err := p.cfg.checkURL(req.URL)
 	if err != nil {
@@ -150,26 +157,41 @@ func (p *Proxy) target(req chatRequest, viewerKey string) (target, error) {
 	if req.Model == "" {
 		return target{}, errors.New("model is required")
 	}
-	return target{base, req.Model, viewerKey, budget, p.viewer}, nil
+	return target{base, req.Model, viewerKey, budget, p.viewer, false}, nil
 }
 
 func estimate(msgs []Message) int {
 	n := 0
 	for _, m := range msgs {
-		n += len(m.Role) + len(m.Content)
+		n += utf8.RuneCountInString(m.Role) + utf8.RuneCountInString(m.Content)
 	}
 	return n/charsPerToken + 1
 }
 
 // compat remembers what an endpoint rejected, so a retry leaves it out.
-type compat struct{ noUsage, completionTokens bool }
+// noLimit leaves the limit field out and the proxy counts the answer itself.
+type compat struct{ noUsage, completionTokens, noLimit bool }
+
+// limitTooLarge matches OpenAI and vLLM wording conservatively: a bare mention
+// of the field means "rename it", a number or a size complaint means "drop it".
+func limitTooLarge(msg string) bool {
+	msg = strings.ToLower(msg)
+	if strings.Contains(msg, "too large") || strings.Contains(msg, "maximum context length") || strings.Contains(msg, "at most") {
+		return true
+	}
+	return (strings.Contains(msg, "max_tokens") || strings.Contains(msg, "max_completion_tokens")) && strings.ContainsAny(msg, "0123456789")
+}
 
 func (c *compat) relax(msg string) bool {
 	switch {
 	case !c.noUsage && strings.Contains(msg, "stream_options"):
 		c.noUsage = true
+	case !c.noLimit && limitTooLarge(msg):
+		c.noLimit = true
 	case !c.completionTokens && strings.Contains(msg, "max_tokens"):
 		c.completionTokens = true
+	case !c.noLimit && c.completionTokens && (strings.Contains(msg, "max_tokens") || strings.Contains(msg, "max_completion_tokens")):
+		c.noLimit = true
 	default:
 		return false
 	}
@@ -180,18 +202,33 @@ type round struct {
 	Finish string
 	Usage  Usage
 	chars  int
+	events int
+	done   bool
+}
+
+// scrub keeps what an upstream said short and free of the key it was called with.
+func (t target) scrub(s string) string {
+	if t.key != "" {
+		s = strings.ReplaceAll(s, t.key, "[key]")
+	}
+	if r := []rune(s); len(r) > maxRelayed {
+		s = string(r[:maxRelayed]) + "…"
+	}
+	return s
 }
 
 // call runs one upstream completion and streams its text. used is what
 // earlier rounds of this question spent, so max_tokens keeps the total under the budget.
-func (t target) call(ctx context.Context, c *compat, msgs []Message, used int, s *stream) (round, error) {
+func (t target) call(parent context.Context, c *compat, msgs []Message, used int, s *stream) (round, error) {
+	ctx, stop := context.WithCancel(parent)
+	defer stop()
 	in := estimate(msgs)
 	for attempt := 0; ; attempt++ {
 		body := map[string]any{"model": t.model, "messages": msgs, "stream": true}
 		if !c.noUsage {
 			body["stream_options"] = map[string]bool{"include_usage": true}
 		}
-		if t.budget > 0 {
+		if t.budget > 0 && !c.noLimit {
 			k := "max_tokens"
 			if c.completionTokens {
 				k = "max_completion_tokens"
@@ -200,24 +237,74 @@ func (t target) call(ctx context.Context, c *compat, msgs []Message, used int, s
 		}
 		resp, err := t.post(ctx, body)
 		if err != nil {
-			return round{}, fmt.Errorf("assistant endpoint unreachable: %w", err)
+			slog.Warn("llm upstream unreachable", "err", err)
+			if errors.Is(parent.Err(), context.DeadlineExceeded) {
+				return round{}, errTimeout
+			}
+			return round{}, errors.New("assistant endpoint unreachable")
 		}
 		if resp.StatusCode/100 == 2 {
 			defer resp.Body.Close()
-			rd, err := readStream(resp.Body, func(text string) { s.send(event{Type: "delta", Text: text}) })
-			if rd.Usage.Total == 0 {
-				out := rd.chars / charsPerToken
-				rd.Usage = Usage{Prompt: in, Completion: out, Total: in + out, Estimated: true}
-			}
-			return rd, err
+			return t.read(parent, stop, c, resp.Body, in, used, s)
 		}
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		resp.Body.Close()
 		if attempt < 3 && resp.StatusCode == http.StatusBadRequest && c.relax(string(msg)) {
 			continue
 		}
-		return round{}, fmt.Errorf("assistant endpoint returned %d: %s", resp.StatusCode, bytes.TrimSpace(msg))
+		if t.server && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
+			slog.Warn("llm server key rejected", "status", resp.StatusCode)
+			return round{}, errors.New("the server's API key was rejected by the assistant endpoint: ask the operator to check it")
+		}
+		return round{}, fmt.Errorf("assistant endpoint returned %d: %s", resp.StatusCode, t.scrub(string(bytes.TrimSpace(msg))))
 	}
+}
+
+// read relays one streamed completion. Without a limit field the cap is kept
+// here: past the remaining budget the upstream request is cancelled.
+func (t target) read(parent context.Context, stop context.CancelFunc, c *compat, body io.Reader, in, used int, s *stream) (round, error) {
+	limit, chars, cut := -1, 0, false
+	if c.noLimit && t.budget > 0 {
+		limit = max(t.budget-used-in, 0) * charsPerToken
+	}
+	rd, err := readStream(body, func(text string) {
+		if cut {
+			return
+		}
+		n := utf8.RuneCountInString(text)
+		if limit >= 0 && chars+n >= limit {
+			text = string([]rune(text)[:limit-chars])
+			n, cut = len([]rune(text)), true
+		}
+		chars += n
+		if text != "" {
+			s.send(event{Type: "delta", Text: text})
+		}
+		if cut {
+			stop()
+		}
+	})
+	if cut {
+		rd.Finish, rd.chars, err = "length", chars, nil
+	}
+	if err != nil {
+		if errors.Is(parent.Err(), context.DeadlineExceeded) {
+			return rd, errTimeout
+		}
+		return rd, errors.New(t.scrub(err.Error()))
+	}
+	if rd.Usage.Total == 0 {
+		out := rd.chars / charsPerToken
+		rd.Usage = Usage{Prompt: in, Completion: out, Total: in + out, Estimated: true}
+	}
+	switch {
+	case cut || parent.Err() != nil:
+	case rd.events == 0:
+		s.send(event{Type: "notice", Text: "The endpoint did not stream an answer."})
+	case !rd.done && rd.Finish == "":
+		s.send(event{Type: "notice", Text: "The endpoint ended the answer early."})
+	}
+	return rd, nil
 }
 
 func (t target) post(ctx context.Context, body any) (*http.Response, error) {
@@ -264,7 +351,9 @@ func readStream(r io.Reader, onText func(string)) (round, error) {
 			continue
 		}
 		data = strings.TrimSpace(data)
+		rd.events++
 		if data == "[DONE]" {
+			rd.done = true
 			break
 		}
 		var c chunk
@@ -279,7 +368,7 @@ func readStream(r io.Reader, onText func(string)) (round, error) {
 		}
 		for _, ch := range c.Choices {
 			if ch.Delta.Content != "" {
-				rd.chars += len(ch.Delta.Content)
+				rd.chars += utf8.RuneCountInString(ch.Delta.Content)
 				onText(ch.Delta.Content)
 			}
 			if ch.FinishReason != "" {
@@ -287,7 +376,11 @@ func readStream(r io.Reader, onText func(string)) (round, error) {
 			}
 		}
 	}
-	return rd, sc.Err()
+	if err := sc.Err(); err != nil {
+		slog.Warn("llm upstream stream", "err", err)
+		return rd, errors.New("the connection to the assistant endpoint broke during the answer")
+	}
+	return rd, nil
 }
 
 type stream struct {
