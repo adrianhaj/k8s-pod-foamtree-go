@@ -1107,6 +1107,7 @@ button.ptr:hover > * { background: var(--bg-3); }
 @media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
 .composer { flex: none; border-top: 1px solid var(--line); padding: 8px 14px 10px; display: grid; gap: 8px; }
 .composer .panel-chips { padding: 0; }
+.composer .panel-note { padding: 0; }
 .composer-row { display: flex; gap: 10px; align-items: flex-end; }
 .composer textarea { flex: 1; min-width: 0; min-height: 34px; max-height: 120px; resize: vertical; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--panel); color: var(--text); font: 12.5px/1.4 var(--font-body); }
 .composer textarea:focus { outline: none; border-color: var(--accent); }

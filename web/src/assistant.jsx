@@ -47,22 +47,31 @@ function useAssistant(context) {
     setError(null);
     const ctl = new AbortController();
     abort.current = ctl;
-    let ended = false;
+    let ended = false, got = false, failed = null;
     try {
       await streamChat({
         conn, context, messages: p.wire, signal: ctl.signal,
         onEvent: ev => {
           if (ev.type === "done" || ev.type === "error") ended = true;
+          if (ev.type === "error") failed = ev.text;
+          if (ev.type === "delta" && ev.text) got = true;
           setMessages(ms => applyEvent(ms, ev));
         },
       });
       if (!ended) setMessages(ms => applyEvent(ms, { type: "cut" }));
     } catch (e) {
-      if (e.name !== "AbortError") setError(e.message);
+      if (e.name !== "AbortError") failed = e.message;
     } finally {
       setBusy(false);
       abort.current = null;
     }
+    // A question that got no answer is taken back, so the retry keeps user and
+    // assistant turns alternating, which strict chat templates require.
+    if (failed && !got) {
+      setMessages(ms => ms.slice(0, -2));
+      setDraft(text);
+      setError(failed);
+    } else if (failed && !ended) setError(failed);
   };
 
   const ask = (conn, budget, items, tick, text) => {
@@ -106,11 +115,12 @@ const usageText = u => (u.estimated
   ? `≈ ${fmtTokens(u.total)} tokens, estimated: the endpoint did not report usage`
   : `used ${u.total.toLocaleString()} tokens (${u.prompt.toLocaleString()} in · ${u.completion.toLocaleString()} out)`);
 
-function ConnectForm({ conn, server, context, onSaved, onBack }) {
+function ConnectForm({ conn, server, context, onSaved, onBack, onForget }) {
   const hasServer = !!(server && server.server);
   const [f, setF] = useState(() => ({ ...conn, mode: hasServer ? conn.mode : "own" }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [forgot, setForgot] = useState(false);
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
   const clean = () => ({ ...f, budget: Math.max(1000, Math.round(Number(f.budget)) || DEFAULT_BUDGET) });
   const save = c => { saveConn(c); onSaved(c); };
@@ -145,7 +155,7 @@ function ConnectForm({ conn, server, context, onSaved, onBack }) {
     <label className="sim-field narrow"><span>Token cap per question{capTag}</span>
       <input id="llm-budget" type="number" min="1000" step="1000" value={f.budget} onChange={e => set("budget", e.target.value)} /></label>
   );
-  const back = onBack && <button className="btn" type="button" onClick={onBack}>Back to chat</button>;
+  const back = onBack && !forgot && <button className="btn" type="button" onClick={onBack}>Back to chat</button>;
 
   return (
     <div className="connect">
@@ -180,7 +190,7 @@ function ConnectForm({ conn, server, context, onSaved, onBack }) {
             {budget}
             <label className="check"><input id="llm-remember" type="checkbox" checked={f.remember} onChange={e => set("remember", e.target.checked)} />Remember key in this browser</label>
             <button className="btn-primary" type="submit" disabled={busy || !f.url || !f.model}>{busy ? "Testing…" : "Test and save"}</button>
-            <button className="btn" type="button" onClick={() => { forgetKey(); set("key", ""); }}>Forget key</button>
+            <button className="btn" type="button" onClick={() => { forgetKey(); set("key", ""); onForget(); setForgot(true); }}>Forget key</button>
             {back}
           </form>
           {error && <p className="panel-note sim-error">{error}</p>}
@@ -195,7 +205,7 @@ function AssistantTab({ a, conn, setConn, server, items, known, onPick, context 
   const ready = connReady(conn, server);
   if (!ready || a.connecting) {
     return <ConnectForm conn={conn} server={server} context={context} onBack={ready ? () => a.setConnecting(false) : null}
-      onSaved={c => { setConn(c); a.setConnecting(false); }} />;
+      onSaved={c => { setConn(c); a.setConnecting(false); }} onForget={() => setConn(c => ({ ...c, key: "" }))} />;
   }
   const budget = effectiveBudget(conn, server);
   const next = a.plan(items, a.ticked, a.draft);
@@ -237,7 +247,7 @@ function AssistantTab({ a, conn, setConn, server, items, known, onPick, context 
             <textarea id="ast-input" rows="2" value={a.draft} aria-label="Message"
               placeholder="Ask about this cluster. Enter sends, Shift+Enter adds a line."
               onChange={e => a.setDraft(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }} />
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }} />
             <div className="composer-side">
               <span className="cost" title="Rough estimate: 4 characters per token">
                 next message ≈ {fmtTokens(next.tokens)}{budget > 0 ? ` of ${fmtTokens(budget)} cap` : ""} tokens
@@ -247,7 +257,7 @@ function AssistantTab({ a, conn, setConn, server, items, known, onPick, context 
                 : <button className="btn-primary" disabled={!a.draft.trim() || over} onClick={submit}>Send</button>}
             </div>
           </div>
-          {over && <div className="sim-error">Over the cap of {budget.toLocaleString()} tokens. Untick some context, or raise the cap in Connection.</div>}
+          {over && <div className="panel-note">Over the cap of {budget.toLocaleString()} tokens. Untick some context, or raise the cap in Connection.</div>}
         </div>
       </div>
       <aside className="ctx" aria-label="Context sent with your next message">

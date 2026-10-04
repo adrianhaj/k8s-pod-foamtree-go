@@ -596,7 +596,8 @@ function App() {
     label: `${ext.label} requested`, u: totals.extUsed / (totals.extCap || 1),
     value: fmtExt(totals.extUsed, activeMetric, memUnit), of: `of ${fmtExt(totals.extCap, activeMetric, memUnit, true)} ${extUnit(activeMetric, memUnit)}`,
   };
-  const openTab = id => setPanel(p => (p.open && p.tab === id ? { ...p, open: false } : { ...p, open: true, tab: id }));
+  // The transcript needs the height: the Assistant opens maximized, like Analyze.
+  const openTab = id => setPanel(p => (p.open && p.tab === id ? { ...p, open: false } : { ...p, open: true, tab: id, max: p.max || id === "assistant" }));
 
   return (
     <div className="app">
