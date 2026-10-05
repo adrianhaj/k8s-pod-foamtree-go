@@ -99,3 +99,28 @@ func TestFindings(t *testing.T) {
 		}
 	}
 }
+
+func TestCrashFindings(t *testing.T) {
+	ok := Container{Name: "app", CPU: 100, Memory: 100, MemoryLimit: new(int64(200))}
+	n := Node{CPU: 10_000, Memory: 10_000}
+	cases := []struct {
+		name     string
+		statuses []ContainerStatus
+		want     []string
+	}{
+		{"healthy", []ContainerStatus{{Name: "app", Ready: true}}, []string{}},
+		{"no status yet", nil, []string{}},
+		{"crash loop after OOM", []ContainerStatus{{Name: "app", Restarts: 3, Waiting: "CrashLoopBackOff", LastExitReason: "OOMKilled", LastExitCode: 137}}, []string{"crashloop", "oom-killed"}},
+		{"OOM then recovered", []ContainerStatus{{Name: "app", Ready: true, Restarts: 1, LastExitReason: "OOMKilled"}}, []string{"oom-killed"}},
+		{"image pull back-off", []ContainerStatus{{Name: "app", Waiting: "ImagePullBackOff"}}, []string{"image-pull"}},
+		{"first pull error", []ContainerStatus{{Name: "app", Waiting: "ErrImagePull"}}, []string{"image-pull"}},
+		{"sidecar crashing", []ContainerStatus{{Name: "app", Ready: true}, {Name: "proxy", Waiting: "CrashLoopBackOff"}}, []string{"crashloop"}},
+		{"exit 1 is not OOM", []ContainerStatus{{Name: "app", Ready: true, LastExitReason: "Error", LastExitCode: 1}}, []string{}},
+	}
+	for _, tc := range cases {
+		p := Pod{CPU: 100, Memory: 100, Containers: []Container{ok}, Statuses: tc.statuses}
+		if got := Findings(p, n); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: %v", tc.name, got)
+		}
+	}
+}

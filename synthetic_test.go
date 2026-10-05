@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/foam"
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/kube"
 )
 
@@ -192,5 +193,19 @@ func TestSyntheticLogs(t *testing.T) {
 	b, _ = io.ReadAll(rc)
 	if !strings.Contains(string(b), "out of memory") {
 		t.Fatalf("previous run should end in an OOM: %q", b)
+	}
+}
+
+func TestSyntheticCrashes(t *testing.T) {
+	s, _ := parseSynthetic("20x20")
+	_, pods, _ := s.Snapshot(context.Background(), "")
+	seen := map[string]int{}
+	for _, p := range pods {
+		for _, f := range foam.Findings(p, foam.Node{CPU: 16_000, Memory: 64_000_000_000}) {
+			seen[f]++
+		}
+	}
+	if seen["crashloop"] == 0 || seen["oom-killed"] == 0 || seen["image-pull"] == 0 {
+		t.Fatalf("synthetic cluster should show every crash finding: %v", seen)
 	}
 }

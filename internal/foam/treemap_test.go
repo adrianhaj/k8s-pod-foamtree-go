@@ -3,6 +3,7 @@ package foam
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -238,5 +239,18 @@ func TestTreemapExtended(t *testing.T) {
 	}
 	if _, ok := children(bare)[0]["extended"]; ok {
 		t.Fatal("a pod without extended requests must omit the field")
+	}
+}
+
+func TestTreemapCarriesPodStatus(t *testing.T) {
+	n := Node{Name: "n", CPU: 1000, Memory: 1000}
+	crashing := Pod{Name: "a", NodeName: "n", Phase: "Running", Containers: []Container{{Name: "app", CPU: 1, Memory: 1}},
+		Statuses: []ContainerStatus{{Name: "app", Restarts: 2, Waiting: "CrashLoopBackOff"}}}
+	quiet := Pod{Name: "b", NodeName: "n", Containers: []Container{{Name: "app", CPU: 1, Memory: 1}}}
+	b, _ := json.Marshal(Treemap([]Node{n}, []Pod{crashing, quiet}, CPU))
+	for _, want := range []string{`"phase":"Running"`, `"statuses":[{"name":"app","ready":false,"restarts":2,"waiting":"CrashLoopBackOff"}]`, `"statuses":[]`, `"crashloop"`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("missing %s in %s", want, b)
+		}
 	}
 }

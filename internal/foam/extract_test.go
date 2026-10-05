@@ -387,3 +387,25 @@ func TestFromNodeCapacityType(t *testing.T) {
 		}
 	}
 }
+
+func TestFromPodStatuses(t *testing.T) {
+	p := &corev1.Pod{
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "api"}}, InitContainers: []corev1.Container{{Name: "migrate"}}},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			InitContainerStatuses: []corev1.ContainerStatus{{Name: "migrate", Ready: true,
+				State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Completed"}}}},
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "api", RestartCount: 14,
+				State:                corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff", Message: "back-off 5m0s"}},
+				LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "OOMKilled", ExitCode: 137}}}},
+		},
+	}
+	got := FromPod(p)
+	want := []ContainerStatus{
+		{Name: "migrate", Ready: true, LastExitReason: "Completed"},
+		{Name: "api", Restarts: 14, Waiting: "CrashLoopBackOff", LastExitReason: "OOMKilled", LastExitCode: 137},
+	}
+	if got.Phase != "Running" || !reflect.DeepEqual(got.Statuses, want) {
+		t.Fatalf("phase %q statuses %+v", got.Phase, got.Statuses)
+	}
+}

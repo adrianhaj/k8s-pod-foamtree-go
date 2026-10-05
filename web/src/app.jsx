@@ -7,7 +7,7 @@ const { workloadKey, podKey } = window.k8sWorkload;
 const { Icon } = window.k8sIcons;
 const { LogsTab, selFor } = window.k8sLogs;
 const { warnInfo, statusOf } = window.k8sNodeStatus;
-const { findingInfo, PodAuditBadge } = window.k8sPodAudit;
+const { FindingPill } = window.k8sPodAudit;
 const { ExportMenu } = window.k8sExport;
 const { getJSON, fitMatch, FitForm, FitSummary, FitVerdict, DrainResults } = window.k8sSimulate;
 const { QOS_INFO, QOS_ORDER } = window.k8sQos;
@@ -120,6 +120,9 @@ function mergeResources(cpuData, memData) {
         hasInit: !!cp.hasInitContainers,
         // Best-practice rule slugs, decided by the backend.
         findings: cp.findings || [],
+        // Container status: restarts, waiting reason, last exit. Absent on an older backend.
+        phase: cp.phase || "",
+        statuses: cp.statuses || [],
         // Effective request (what the scheduler reserves) — init containers
         // run sequentially, so this is max(sum regular, max init), not a sum.
         cpu: podCpu,
@@ -918,12 +921,7 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, str
                     )}
                     {p.findings.length > 0 && (
                       <div className="pod-row-findings">
-                        {p.findings.map(f => (
-                          <span key={f} className={`audit-pill sev-${findingInfo(f).sev}`} title={findingInfo(f).why}>
-                            <PodAuditBadge findings={[f]} size={10} />
-                            {findingInfo(f).label}
-                          </span>
-                        ))}
+                        {p.findings.map(f => <FindingPill key={f} f={f} />)}
                       </div>
                     )}
                   </div>

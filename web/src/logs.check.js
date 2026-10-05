@@ -26,5 +26,9 @@
   if (lit.lit !== "logs" || lit.ring !== "n2" || !lit.pods.has(pod)) return { FAIL: lit };
   const typed = window.k8sHighlight.pickShown({ match: { ...none, active: true }, tab: "logs", nodes, logsPod: pod });
   if (typed.lit !== null) return { FAIL: "a typed query must win" };
+  const crashed = L.selFor({ namespace: "ns", name: "p", containers: [{ name: "app" }], statuses: [{ name: "app", restarts: 3 }] });
+  if (!crashed.previous) return { FAIL: "a restarted container should open on its previous run" };
+  const proxy = L.selFor({ namespace: "ns", name: "p", containers: [{ name: "app" }, { name: "proxy" }], statuses: [{ name: "app", ready: true, restarts: 0 }, { name: "proxy", waiting: "CrashLoopBackOff", restarts: 2 }] });
+  if (proxy.container !== "proxy" || !proxy.previous) return { FAIL: proxy };
   return "ok";
 })()

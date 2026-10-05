@@ -18,13 +18,37 @@ function logsURL(context, sel) {
 // Treemap leaves are labels: init containers carry " (init)", and unclaimed
 // pod-level budget is a leaf of its own, not a container.
 function containerNames(pod) {
+  if (pod.statuses && pod.statuses.length) return pod.statuses.map(s => s.name);
   return pod.containers.filter(c => c.name !== "(pod-level)").map(c => c.name.replace(/ \(init\)$/, ""));
 }
 
 function selFor(pod, container) {
+  const statuses = pod.statuses || [];
   const regular = pod.containers.find(c => !c.init && c.name !== "(pod-level)");
-  const name = container || (regular ? regular.name : containerNames(pod)[0] || "");
-  return { namespace: pod.namespace, name: pod.name, container: name, previous: false, tail: TAILS[0] };
+  const troubled = statuses.find(s => s.restarts > 0 && !s.ready);
+  const name = container || (troubled ? troubled.name : regular ? regular.name : containerNames(pod)[0] || "");
+  const st = statuses.find(s => s.name === name);
+  return { namespace: pod.namespace, name: pod.name, container: name, previous: !!st && st.restarts > 0, tail: TAILS[0] };
+}
+
+function PodState({ pod, container }) {
+  const { findingInfo, FindingPill } = window.k8sPodAudit;
+  const st = (pod.statuses || []).find(s => s.name === container);
+  const flags = (pod.findings || []).filter(f => findingInfo(f).status);
+  if (!st && flags.length === 0) return null;
+  return (
+    <div className="pod-state">
+      {flags.map(f => <FindingPill key={f} f={f} />)}
+      {st && (
+        <span>
+          {st.restarts} restart{st.restarts === 1 ? "" : "s"}
+          {st.waiting ? ` · ${st.waiting}` : ""}
+          {st.lastExitReason ? ` · last exit ${st.lastExitReason} (${st.lastExitCode ?? 0})` : ""}
+          {pod.phase ? ` · ${pod.phase}` : ""}
+        </span>
+      )}
+    </div>
+  );
 }
 
 // Highlight, never remove: matches light up and every line stays.
@@ -89,7 +113,7 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
           placeholder="namespace/pod" aria-label="Pod" onChange={e => pickPod(e.target.value)} />
         <datalist id="log-pods">{podOptions}</datalist>
         {pod && (
-          <select id="log-container" aria-label="Container" value={sel.container} onChange={e => setSel({ ...sel, container: e.target.value })}>
+          <select id="log-container" aria-label="Container" value={sel.container} onChange={e => setSel({ ...selFor(pod, e.target.value), tail: sel.tail })}>
             {containerNames(pod).map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         )}
@@ -112,6 +136,7 @@ function LogsTab({ context, sel, setSel, pods, onLoaded, onAnalyze }) {
           </>
         )}
       </div>
+      {pod && <PodState pod={pod} container={sel.container} />}
       {!sel ? <div className="panel-empty">Pick a pod above, or use Logs on a selected workload or in a node's pod list. Logs load only when you open or reload them.</div>
         : cur.error ? <div className="panel-empty sim-error">{cur.error}</div>
         : cur.text == null ? <div className="panel-empty">Loading logs…</div>

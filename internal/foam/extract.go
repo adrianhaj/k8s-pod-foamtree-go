@@ -8,6 +8,17 @@ import (
 	resourcehelper "k8s.io/component-helpers/resource"
 )
 
+// ContainerStatus is what the crash findings and the Logs tab read; the
+// API's free-text messages are left behind.
+type ContainerStatus struct {
+	Name           string `json:"name"`
+	Ready          bool   `json:"ready"`
+	Restarts       int32  `json:"restarts"`
+	Waiting        string `json:"waiting,omitempty"`
+	LastExitReason string `json:"lastExitReason,omitempty"`
+	LastExitCode   int32  `json:"lastExitCode,omitempty"`
+}
+
 // CPU is in millicores, memory in bytes — the scheduler's own units.
 type Container struct {
 	Name   string
@@ -39,6 +50,8 @@ type Pod struct {
 	Tolerations  []corev1.Toleration
 	// Kind of the controlling owner, "" for a bare pod: decides what a drain does with it.
 	Controller string
+	Phase      string
+	Statuses   []ContainerStatus
 }
 
 type Taint struct {
@@ -198,6 +211,8 @@ func FromPod(p *corev1.Pod) Pod {
 		NodeSelector: p.Spec.NodeSelector,
 		Affinity:     p.Spec.Affinity,
 		Tolerations:  p.Spec.Tolerations,
+		Phase:        string(p.Status.Phase),
+		Statuses:     statuses(p),
 	}
 	if ref := metav1.GetControllerOf(p); ref != nil {
 		out.Controller = ref.Kind
@@ -221,6 +236,30 @@ func FromPod(p *corev1.Pod) Pod {
 	if bounded(p, corev1.ResourceMemory) {
 		v := lim.Memory().Value()
 		out.MemoryLimit = &v
+	}
+	return out
+}
+
+// statuses lists init containers first, like the pod spec. A container that
+// has stopped reports its own exit; a running one reports the previous run's.
+func statuses(p *corev1.Pod) []ContainerStatus {
+	init, regular := p.Status.InitContainerStatuses, p.Status.ContainerStatuses
+	out := make([]ContainerStatus, 0, len(init)+len(regular))
+	for _, group := range [][]corev1.ContainerStatus{init, regular} {
+		for _, c := range group {
+			s := ContainerStatus{Name: c.Name, Ready: c.Ready, Restarts: c.RestartCount}
+			if w := c.State.Waiting; w != nil {
+				s.Waiting = w.Reason
+			}
+			last := c.LastTerminationState.Terminated
+			if t := c.State.Terminated; t != nil {
+				last = t
+			}
+			if last != nil {
+				s.LastExitReason, s.LastExitCode = last.Reason, last.ExitCode
+			}
+			out = append(out, s)
+		}
 	}
 	return out
 }

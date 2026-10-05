@@ -310,7 +310,9 @@ func slimPod(obj any) (any, error) {
 			Affinity:       affinity,
 			Tolerations:    p.Spec.Tolerations,
 		},
-		Status: corev1.PodStatus{QOSClass: p.Status.QOSClass},
+		Status: corev1.PodStatus{QOSClass: p.Status.QOSClass, Phase: p.Status.Phase,
+			ContainerStatuses:     slimStatuses(p.Status.ContainerStatuses),
+			InitContainerStatuses: slimStatuses(p.Status.InitContainerStatuses)},
 	}, nil
 }
 
@@ -318,6 +320,30 @@ func slimContainers(cs []corev1.Container) []corev1.Container {
 	out := make([]corev1.Container, 0, len(cs))
 	for _, c := range cs {
 		out = append(out, corev1.Container{Name: c.Name, Resources: c.Resources, RestartPolicy: c.RestartPolicy})
+	}
+	return out
+}
+
+// slimStatuses keeps what the crash findings read: no images, IDs or messages.
+func slimStatuses(cs []corev1.ContainerStatus) []corev1.ContainerStatus {
+	if len(cs) == 0 {
+		return nil
+	}
+	term := func(t *corev1.ContainerStateTerminated) *corev1.ContainerStateTerminated {
+		if t == nil {
+			return nil
+		}
+		return &corev1.ContainerStateTerminated{Reason: t.Reason, ExitCode: t.ExitCode}
+	}
+	out := make([]corev1.ContainerStatus, 0, len(cs))
+	for _, c := range cs {
+		s := corev1.ContainerStatus{Name: c.Name, Ready: c.Ready, RestartCount: c.RestartCount}
+		if w := c.State.Waiting; w != nil {
+			s.State.Waiting = &corev1.ContainerStateWaiting{Reason: w.Reason}
+		}
+		s.State.Terminated = term(c.State.Terminated)
+		s.LastTerminationState.Terminated = term(c.LastTerminationState.Terminated)
+		out = append(out, s)
 	}
 	return out
 }
