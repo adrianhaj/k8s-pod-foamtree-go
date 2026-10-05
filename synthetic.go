@@ -169,6 +169,7 @@ func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam
 		pods = append(pods, foam.Pod{
 			Name: fmt.Sprintf("batch-%d", i), Namespace: "team-0", CPU: c.CPU, Memory: c.Memory,
 			Containers: []foam.Container{c}, QOS: "Burstable", Controller: "Job",
+			Phase:        "Pending",
 			SchedReason:  "Unschedulable",
 			SchedMessage: fmt.Sprintf("0/%d nodes are available: %d Insufficient cpu.", s.nodes, s.nodes),
 		})
