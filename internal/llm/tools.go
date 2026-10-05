@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"unicode/utf8"
 )
 
 // Tool is one read-only function the model may call. Parameters is a JSON
@@ -28,11 +29,17 @@ type ToolCall struct {
 	} `json:"function"`
 }
 
-func toolDefs(ts []Tool) []map[string]any {
+// toolDefs builds the tools schema and estimates its tokens: it goes out with
+// every request that offers tools, so it counts toward the cap each time.
+func toolDefs(ts []Tool) ([]map[string]any, int) {
+	if len(ts) == 0 {
+		return nil, 0
+	}
 	out := make([]map[string]any, 0, len(ts))
 	for _, t := range ts {
 		out = append(out, map[string]any{"type": "function", "function": map[string]any{
 			"name": t.Name, "description": t.Description, "parameters": t.Parameters}})
 	}
-	return out
+	b, _ := json.Marshal(out)
+	return out, utf8.RuneCount(b) / charsPerToken
 }

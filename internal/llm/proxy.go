@@ -87,7 +87,7 @@ func New(cfg Config) *Proxy {
 func (p *Proxy) ServeConfig(w http.ResponseWriter, _ *http.Request) {
 	tools := 0
 	if p.Tools != nil {
-		tools = toolTokens(p.Tools("").Tools())
+		_, tools = toolDefs(p.Tools("").Tools())
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"server": p.cfg.URL != "", "url": p.cfg.URL, "model": p.cfg.Model, "maxTokens": p.cfg.MaxTokens, "toolTokens": tools})
@@ -130,15 +130,14 @@ func (p *Proxy) ServeChat(w http.ResponseWriter, r *http.Request) {
 	var box Toolbox
 	if p.Tools != nil {
 		box = p.Tools(req.Context)
-		t.tools = box.Tools()
+		t.defs, t.schema = toolDefs(box.Tools())
 	}
 	var hidden int
 	req.Messages, hidden = redactMessages(req.Messages)
-	schema := toolTokens(t.tools)
-	if in := estimate(req.Messages) + schema; t.budget > 0 && in+minAnswerTokens > t.budget {
+	if in := estimate(req.Messages) + t.schema; t.budget > 0 && in+minAnswerTokens > t.budget {
 		msg := fmt.Sprintf("this question needs about %d tokens before the answer, over the cap of %d: untick some context or raise the cap", in, t.budget)
-		if schema > 0 {
-			msg += fmt.Sprintf(" (the cluster lookups themselves need about %d tokens)", schema)
+		if t.schema > 0 {
+			msg += fmt.Sprintf(" (the cluster lookups themselves need about %d tokens)", t.schema)
 		}
 		http.Error(w, msg, http.StatusUnprocessableEntity)
 		return
@@ -154,8 +153,14 @@ func (p *Proxy) ServeChat(w http.ResponseWriter, r *http.Request) {
 // with the cap checked before each later round and usage summed across them.
 // ServeChat's pre-check already refused a first round over the cap.
 func (p *Proxy) converse(ctx context.Context, s *stream, t target, box Toolbox, msgs []Message, hidden int) {
-	c := compat{noTools: len(t.tools) == 0}
+	c := compat{noTools: len(t.defs) == 0}
 	var total Usage
+	finish := func(notice string) {
+		if notice != "" {
+			s.send(event{Type: "notice", Text: notice})
+		}
+		s.send(event{Type: "done", Usage: &total, Masked: hidden})
+	}
 	// Every error leaves here. Once this question has spent tokens, done follows
 	// the error so the viewer still sees and counts the real total.
 	stop := func(err error) {
@@ -164,7 +169,7 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, box Toolbox, 
 			return
 		}
 		s.send(event{Type: "error", Text: t.scrub(err.Error())})
-		s.send(event{Type: "done", Usage: &total, Masked: hidden})
+		finish("")
 	}
 	toolBytes, ran := 0, 0
 	for i := range maxRounds {
@@ -174,8 +179,7 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, box Toolbox, 
 			c.noTools = true
 		}
 		if i > 0 && t.budget > 0 && total.Total+t.prompt(&c, msgs)+minAnswerTokens > t.budget {
-			s.send(event{Type: "notice", Text: fmt.Sprintf("Stopped: the next step would pass the cap of %d tokens.", t.budget)})
-			s.send(event{Type: "done", Usage: &total, Masked: hidden})
+			finish(fmt.Sprintf("Stopped: the next step would pass the cap of %d tokens.", t.budget))
 			return
 		}
 		offered := !c.noTools
@@ -191,17 +195,17 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, box Toolbox, 
 		// Any finish but the cap's is a tool round when calls came: Ollama sends "stop".
 		if len(rd.Calls) == 0 || rd.Finish == "length" || c.noTools && !final {
 			if rd.Finish == "length" {
-				s.send(event{Type: "notice", Text: "The answer stopped at the token cap."})
+				finish("The answer stopped at the token cap.")
+			} else {
+				finish("")
 			}
-			s.send(event{Type: "done", Usage: &total, Masked: hidden})
 			return
 		}
 		if final {
 			break
 		}
 		if ran += len(rd.Calls); ran > maxToolCalls {
-			s.send(event{Type: "notice", Text: fmt.Sprintf("Stopped: this question reached its limit of %d tool calls.", maxToolCalls)})
-			s.send(event{Type: "done", Usage: &total, Masked: hidden})
+			finish(fmt.Sprintf("Stopped: this question reached its limit of %d tool calls.", maxToolCalls))
 			return
 		}
 		msgs = append(msgs, Message{Role: "assistant", Content: rd.Text, ToolCalls: rd.Calls})
@@ -233,7 +237,8 @@ type target struct {
 	budget           int
 	client           *http.Client
 	server           bool
-	tools            []Tool
+	defs             []map[string]any // the tools schema, built once per question
+	schema           int              // its estimated tokens
 }
 
 // target picks the connection. A body without url is the server connection;
@@ -252,7 +257,7 @@ func (p *Proxy) target(req chatRequest, viewerKey string) (target, error) {
 		if m := p.cfg.MaxTokens; m > 0 && (budget <= 0 || budget > m) {
 			budget = m
 		}
-		return target{p.cfg.URL, p.cfg.Model, key, budget, p.trusted, true, nil}, nil
+		return target{p.cfg.URL, p.cfg.Model, key, budget, p.trusted, true, nil, 0}, nil
 	}
 	base, err := p.cfg.checkURL(req.URL)
 	if err != nil {
@@ -261,16 +266,7 @@ func (p *Proxy) target(req chatRequest, viewerKey string) (target, error) {
 	if req.Model == "" {
 		return target{}, errors.New("model is required")
 	}
-	return target{base, req.Model, viewerKey, budget, p.viewer, false, nil}, nil
-}
-
-// toolTokens estimates the tools schema, which goes out with every request that offers tools.
-func toolTokens(ts []Tool) int {
-	if len(ts) == 0 {
-		return 0
-	}
-	b, _ := json.Marshal(toolDefs(ts))
-	return utf8.RuneCount(b) / charsPerToken
+	return target{base, req.Model, viewerKey, budget, p.viewer, false, nil, 0}, nil
 }
 
 // prompt estimates one request: the messages, plus the tools schema while it is sent.
@@ -278,7 +274,7 @@ func (t target) prompt(c *compat, msgs []Message) int {
 	if c.noTools {
 		return estimate(msgs)
 	}
-	return estimate(msgs) + toolTokens(t.tools)
+	return estimate(msgs) + t.schema
 }
 
 func estimate(msgs []Message) int {
@@ -308,7 +304,6 @@ func limitTooLarge(msg string) bool {
 }
 
 func (c *compat) relax(msg string) bool {
-	lower := strings.ToLower(msg)
 	switch {
 	case !c.noUsage && strings.Contains(msg, "stream_options"):
 		c.noUsage = true
@@ -318,11 +313,13 @@ func (c *compat) relax(msg string) bool {
 		c.completionTokens = true
 	case !c.noLimit && c.completionTokens && (strings.Contains(msg, "max_tokens") || strings.Contains(msg, "max_completion_tokens")):
 		c.noLimit = true
-	// Last, so a limit complaint that names a function is still read as one.
-	case !c.noTools && (strings.Contains(lower, "tool") || strings.Contains(lower, "function")):
-		c.noTools = true
 	default:
-		return false
+		// Last, so a limit complaint that names a function is still read as one.
+		lower := strings.ToLower(msg)
+		if c.noTools || !strings.Contains(lower, "tool") && !strings.Contains(lower, "function") {
+			return false
+		}
+		c.noTools = true
 	}
 	return true
 }
@@ -368,7 +365,7 @@ func (t target) call(parent context.Context, c *compat, msgs []Message, used int
 			body[k] = t.budget - used - in
 		}
 		if !c.noTools {
-			body["tools"] = toolDefs(t.tools)
+			body["tools"] = t.defs
 		}
 		resp, err := t.post(ctx, body)
 		if err != nil {

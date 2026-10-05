@@ -294,7 +294,7 @@ func TestConfigReportsTheToolSchemaCost(t *testing.T) {
 		json.Unmarshal(w.Body.Bytes(), &got)
 		want := 0
 		if p.Tools != nil {
-			want = toolTokens((&fakeBox{}).Tools())
+			_, want = toolDefs((&fakeBox{}).Tools())
 		}
 		if got.ToolTokens != want || p.Tools != nil && want == 0 {
 			t.Fatalf("toolTokens %d, want %d: %s", got.ToolTokens, want, w.Body)

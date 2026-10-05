@@ -139,13 +139,45 @@ func TestDescribePodNamesContainerUnits(t *testing.T) {
 	limit := int64(2 << 30)
 	src := &fakeSource{pods: []foam.Pod{{Name: "api", Namespace: "pay",
 		Containers: []foam.Container{{Name: "api", CPU: 500, Memory: 1 << 30, MemoryLimit: &limit}}}}}
-	out, err := (clusterTools{src: src}).Call(context.Background(), "describe_pod", json.RawMessage(`{"namespace":"pay","name":"api"}`))
+	out, err := (&clusterTools{src: src}).Call(context.Background(), "describe_pod", json.RawMessage(`{"namespace":"pay","name":"api"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := `"containers":[{"name":"api","cpuRequestMillicores":500,"memoryRequestBytes":1073741824,"memoryLimitBytes":2147483648}]`
 	if !strings.Contains(out, want) {
 		t.Fatalf("%s", out)
+	}
+}
+
+type countingSource struct {
+	*fakeSource
+	snapshots   int
+	hadDeadline bool
+}
+
+func (c *countingSource) Snapshot(ctx context.Context, name string) ([]foam.Node, []foam.Pod, error) {
+	c.snapshots++
+	_, c.hadDeadline = ctx.Deadline()
+	return c.fakeSource.Snapshot(ctx, name)
+}
+
+// One question reads one snapshot, and only once a lookup needs it.
+func TestOneSnapshotPerQuestion(t *testing.T) {
+	src := &countingSource{fakeSource: &fakeSource{nodes: []foam.Node{{Name: "n1"}}, logs: "x\n"}}
+	tools := &clusterTools{src: src, cluster: "kind"}
+	for _, name := range []string{"nope", "get_pod_logs"} {
+		tools.Call(context.Background(), name, json.RawMessage(`{"namespace":"pay","name":"api"}`))
+	}
+	if src.snapshots != 0 {
+		t.Fatalf("%d snapshots before a lookup needed one", src.snapshots)
+	}
+	for _, name := range []string{"cluster_summary", "list_problems", "describe_node"} {
+		if _, err := tools.Call(context.Background(), name, json.RawMessage(`{"name":"n1"}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if src.snapshots != 1 || !src.hadDeadline {
+		t.Fatalf("%d snapshots, deadline %v", src.snapshots, src.hadDeadline)
 	}
 }
 

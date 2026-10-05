@@ -172,7 +172,7 @@ func run(ctx context.Context, o options) error {
 		src = o.synthetic
 	}
 	assistant := llm.New(o.llm)
-	assistant.Tools = func(cluster string) llm.Toolbox { return clusterTools{src: src, cluster: cluster} }
+	assistant.Tools = func(cluster string) llm.Toolbox { return &clusterTools{src: src, cluster: cluster} }
 	h := newHandler(src, web.Static, a, assistant)
 	if a == nil && isLoopback(o.host) {
 		h = loopbackHostOnly(h)
