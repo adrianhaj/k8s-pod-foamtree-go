@@ -13,7 +13,7 @@ const POD_FINDINGS = {
   "crashloop":  { label: "crash loop", sev: "danger", why: "a container keeps crashing and Kubernetes is backing off restarts", status: true },
   "oom-killed": { label: "OOM killed", sev: "danger", why: "a container's last run was killed for running out of memory", status: true },
   "image-pull": { label: "image pull", sev: "warn",   why: "a container image cannot be pulled", status: true },
-  "resize-deferred":   { label: "resize deferred",   sev: "info", why: "in-place resize waits for room on its node — the old requests still apply" },
+  "resize-deferred":   { label: "resize deferred",   sev: "info", why: "in-place resize waits for room on its node — the scheduler already reserves the larger request" },
   "resize-infeasible": { label: "resize infeasible", sev: "warn", why: "in-place resize can never fit its node — it stays on the old requests" },
 };
 

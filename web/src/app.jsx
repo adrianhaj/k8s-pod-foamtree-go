@@ -123,7 +123,7 @@ function mergeResources(cpuData, memData) {
         findings: cp.findings || [],
         // Pending in-place resize; cpu/mem are what spec asks for.
         resize: cp.resize ? { state: cp.resize.state, message: cp.resize.message,
-          cpu: cp.resize.desired, mem: kbToMib(mp.resize?.desired ?? 0) } : null,
+          cpu: cp.resize.desired, mem: mp.resize ? kbToMib(mp.resize.desired) : null } : null,
         // Container status: restarts, waiting reason, last exit. Absent on an older backend.
         phase: cp.phase || "",
         statuses: cp.statuses || [],
@@ -941,7 +941,7 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, str
                     {p.resize && (
                       <div className="pod-row-containers">
                         <span className="container-pill" title={p.resize.message || undefined}>
-                          wants {(p.resize.cpu / 1000).toFixed(2)} cores · {fmtMem(p.resize.mem, memUnit)} {memUnit}
+                          wants {(p.resize.cpu / 1000).toFixed(2)} cores{p.resize.mem != null && ` · ${fmtMem(p.resize.mem, memUnit)} ${memUnit}`}
                         </span>
                       </div>
                     )}
