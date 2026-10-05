@@ -121,6 +121,9 @@ function mergeResources(cpuData, memData) {
         hasInit: !!cp.hasInitContainers,
         // Best-practice rule slugs, decided by the backend.
         findings: cp.findings || [],
+        // Pending in-place resize; cpu/mem are what spec asks for.
+        resize: cp.resize ? { state: cp.resize.state, message: cp.resize.message,
+          cpu: cp.resize.desired, mem: kbToMib(mp.resize?.desired ?? 0) } : null,
         // Container status: restarts, waiting reason, last exit. Absent on an older backend.
         phase: cp.phase || "",
         statuses: cp.statuses || [],
@@ -933,6 +936,13 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, str
                     {p.findings.length > 0 && (
                       <div className="pod-row-findings">
                         {p.findings.map(f => <FindingPill key={f} f={f} />)}
+                      </div>
+                    )}
+                    {p.resize && (
+                      <div className="pod-row-containers">
+                        <span className="container-pill" title={p.resize.message || undefined}>
+                          wants {(p.resize.cpu / 1000).toFixed(2)} cores · {fmtMem(p.resize.mem, memUnit)} {memUnit}
+                        </span>
                       </div>
                     )}
                   </div>
