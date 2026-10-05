@@ -11,7 +11,7 @@ const { getJSON, fitMatch, FitForm, FitSummary, FitVerdict, DrainResults } = win
 const { QOS_INFO, QOS_ORDER } = window.k8sQos;
 const { assignNamespaces, utilTone, COLOR_MODES } = window.k8sPalette;
 const { Legend } = window.k8sLegend;
-const { groupNodes, GROUP_BY } = window.k8sTopology;
+const { groupNodes, GROUP_BY, podShape, stranded, largestFit } = window.k8sTopology;
 const { pack, unpack, record, diff } = window.k8sHistory;
 const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY, PANEL_DEFAULT, validPanel, readViewParams, viewSearch } = window.k8sPrefs;
 const { fmtMem, shortContext, clock } = window.k8sFormat;
@@ -477,6 +477,10 @@ function App() {
     return t;
   }, [nodes, activeMetric]);
 
+  // Judged against the snapshot on screen, so history playback stays honest.
+  const shape = useMemo(() => podShape(nodes), [nodes]);
+  const largest = useMemo(() => largestFit(nodes, shape), [nodes, shape]);
+
   // Auto-refresh tick — re-fetch live cluster data every refreshInterval seconds.
   useEffect(() => {
     if (!refreshInterval) return;
@@ -539,7 +543,7 @@ function App() {
         exportMenu={<ExportMenu view={view} context={context} gridRef={gridRef} sceneRef={sceneRef}
           treemap={{ nodes, metric: activeMetric, match: shown, highlight, highlightActive, colorBy, nsMap }} />} />
       <SummaryStrip totals={totals} memUnit={memUnit} qosBreakdown={qosBreakdown} attention={attention}
-        extCell={extCell} query={query} setQuery={setQuery} />
+        extCell={extCell} query={query} setQuery={setQuery} largest={largest} />
       <Toolbar view={view} metric={activeMetric} metrics={metrics} setMetric={setMetric} zoom={zoom} setZoom={setZoom}
         groupBy={groupBy} setGroupBy={setGroupBy} showGroupBy={showGroupBy} colorBy={colorBy} setColorBy={setColorBy}
         legend={<Legend colorBy={colorBy} nsMap={nsMap} view={view} />} />
@@ -576,6 +580,7 @@ function App() {
         ) : (
           <TreemapGrid
             nodes={nodes}
+            shape={shape}
             match={shown}
             metric={activeMetric}
             groupBy={groupBy}
@@ -615,6 +620,7 @@ function App() {
 
       {focused && (
         <FocusOverlay node={focused} onClose={() => setFocused(null)} metric={metric} memUnit={memUnit}
+          strand={stranded(focused, shape)}
           fitReasons={fit && (fit.find(v => v.node === focused.name) || {}).reasons}
           onDrain={name => { setPanel(p => ({ ...p, open: true, tab: "drain" })); setFocused(null); runDrain(name); }} />
       )}
@@ -698,7 +704,7 @@ function QueryBar({ query, setQuery, match, hintOpen, setHintOpen }) {
 const GROUP_HEAD = 24;
 
 function TreemapGrid({
-  nodes, match, metric, groupBy, colorBy, nsMap, fmtReq, onFocus,
+  nodes, shape, match, metric, groupBy, colorBy, nsMap, fmtReq, onFocus,
   highlight, highlightActive, onPodSelect, onPodHover,
 }) {
   const containerRef = useRef(null);
@@ -759,11 +765,17 @@ function TreemapGrid({
       {ready && groupBy === "none" && cards(nodes.map(node => ({ node })), 0, 0, box.w, box.h)}
       {groups.map(g => {
         const u = g.members.reduce((s, m) => s + used(m.node), 0) / (g.value || 1), n = g.members.length;
+        const s = g.members.reduce((t, m) => {
+          const x = stranded(m.node, shape);
+          return { cpu: t.cpu + x.cpu, mem: t.mem + x.mem };
+        }, { cpu: 0, mem: 0 });
         return (
           <div key={g.key} className="group-box" style={{ left: g.x, top: g.y, width: g.w - 8, height: g.h - 8 }}>
             <div className="group-label" style={{ height: GROUP_HEAD }}>
               <span className="group-name">{g.key}</span>
               <span className="group-meta">{n} node{n === 1 ? "" : "s"}</span>
+              {s.cpu >= 1 && <span className="group-meta" title="Free CPU with no memory to pair at the median pod shape">{fmtReq(s.cpu, "cpu")} stranded</span>}
+              {s.mem >= 1 && <span className="group-meta" title="Free memory with no CPU to pair at the median pod shape">{fmtReq(s.mem, "mem")} stranded</span>}
               <span className={`group-util${utilTone(u) ? ` tone-${utilTone(u)}` : ""}`}>{Math.round(u * 100)}%</span>
             </div>
             {cards(g.members, 6, GROUP_HEAD, g.w - 16, g.h - GROUP_HEAD - 10)}
@@ -776,7 +788,7 @@ function TreemapGrid({
 
 /* ─────────── Focus overlay ─────────── */
 
-function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain }) {
+function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, strand }) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card" onClick={e => e.stopPropagation()}>
@@ -845,6 +857,16 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain }) {
                 ))}
               </div>
             )}
+          </div>
+        )}
+        {(strand.cpu >= 1 || strand.mem >= 1) && (
+          <div className="overlay-sched">
+            <div className="ov-section-title">Stranded capacity</div>
+            <span className="ov-chips-note">
+              {strand.cpu >= 1
+                ? `${(strand.cpu / 1000).toFixed(2)} cores free with no memory to pair`
+                : `${fmtMem(strand.mem, memUnit)} ${memUnit} free with no CPU to pair`} at the median pod shape.
+            </span>
           </div>
         )}
         {fitReasons && <FitVerdict reasons={fitReasons} />}

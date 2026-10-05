@@ -127,7 +127,7 @@ function Metric({ label, u, value, of }) {
   );
 }
 
-function SummaryStrip({ totals, memUnit, qosBreakdown, attention, extCell, query, setQuery }) {
+function SummaryStrip({ totals, memUnit, qosBreakdown, attention, extCell, query, setQuery, largest }) {
   const q = query.trim();
   const toggle = token => setQuery(q === token ? "" : token);
   const be = qosBreakdown.find(x => x.qos === "BestEffort");
@@ -150,7 +150,11 @@ function SummaryStrip({ totals, memUnit, qosBreakdown, attention, extCell, query
         </div>
       </div>
       <div className="metric">
-        <div className="metric-l">Nodes</div>
+        <div className="metric-l">Nodes{largest && (
+          <b title={largest.cpu >= 1 ? `Largest pod at the median pod shape that fits on a node with no warnings (${largest.node})` : "No node with no warnings has room for a pod of the median shape"}>
+            {largest.cpu >= 1 ? `fits ${(largest.cpu / 1000).toFixed(1)} c · ${fmtMem(largest.mem, memUnit)} ${memUnit}` : "full"}
+          </b>
+        )}</div>
         <div className="metric-v">{totals.nodes} <small>· {needy ? `${needy} need attention` : "all schedulable"}</small></div>
         <div className="metric-glyphs">
           {attention.map(a => (
