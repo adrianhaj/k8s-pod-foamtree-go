@@ -142,6 +142,16 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatReque
 	}
 	c := compat{noTools: len(t.tools) == 0}
 	var total Usage
+	// Every error leaves here. Once this question has spent tokens, done follows
+	// the error so the viewer still sees and counts the real total.
+	stop := func(err error) {
+		if total.Total == 0 {
+			s.fail(errors.New(t.scrub(err.Error())))
+			return
+		}
+		s.send(event{Type: "error", Text: t.scrub(err.Error())})
+		s.send(event{Type: "done", Usage: &total, Masked: hidden})
+	}
 	msgs, toolBytes := req.Messages, 0
 	for i := range maxRounds {
 		if i > 0 && t.budget > 0 && total.Total+estimate(msgs)+minAnswerTokens > t.budget {
@@ -152,10 +162,11 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatReque
 		rd, err := t.call(ctx, &c, msgs, total.Total, s)
 		total = total.add(rd.Usage)
 		if err != nil {
-			s.fail(errors.New(t.scrub(err.Error())))
+			stop(err)
 			return
 		}
-		if rd.Finish != "tool_calls" || len(rd.Calls) == 0 || c.noTools {
+		// Any finish but the cap's is a tool round when calls came: Ollama sends "stop".
+		if len(rd.Calls) == 0 || rd.Finish == "length" || c.noTools {
 			if rd.Finish == "length" {
 				s.send(event{Type: "notice", Text: "The answer stopped at the token cap."})
 			}
@@ -180,7 +191,7 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatReque
 			msgs = append(msgs, Message{Role: "tool", ToolCallID: call.ID, Content: out})
 		}
 	}
-	s.fail(fmt.Errorf("Stopped after %d tool rounds without an answer.", maxRounds))
+	stop(fmt.Errorf("Stopped after %d tool rounds without an answer.", maxRounds))
 }
 
 type target struct {

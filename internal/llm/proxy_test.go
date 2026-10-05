@@ -526,11 +526,48 @@ func TestToolLoopRunsToolsThenAnswers(t *testing.T) {
 }
 
 func TestToolLoopStopsAfterMaxRounds(t *testing.T) {
-	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) { sse(w, toolStart, toolEnd) })
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
+		sse(w, toolStart, toolEnd, `{"choices":[],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10}}`)
+	})
 	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: "{}"}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
 	ev := events(t, w.Body.String())
-	if len(up.got()) != maxRounds || ev[len(ev)-1].Type != "error" || !strings.Contains(ev[len(ev)-1].Text, "8 tool rounds") {
-		t.Fatalf("%d calls, last %+v", len(up.got()), ev[len(ev)-1])
+	n := len(ev)
+	if len(up.got()) != maxRounds || ev[n-2].Type != "error" || !strings.Contains(ev[n-2].Text, "8 tool rounds") ||
+		ev[n-1].Type != "done" || ev[n-1].Usage.Total != 10*maxRounds {
+		t.Fatalf("%d calls, last %+v", len(up.got()), ev[n-2:])
+	}
+}
+
+// Spend from earlier rounds reaches the viewer even when a later round fails.
+func TestToolLoopReportsSpendWhenALaterRoundFails(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		if call == 1 {
+			sse(w, toolStart, toolEnd, `{"choices":[],"usage":{"prompt_tokens":50,"completion_tokens":10,"total_tokens":60}}`)
+			return
+		}
+		http.Error(w, "overloaded", 500)
+	})
+	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: "{}"}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	ev := events(t, w.Body.String())
+	n := len(ev)
+	if ev[n-2].Type != "error" || !strings.Contains(ev[n-2].Text, "500") || ev[n-1].Type != "done" || ev[n-1].Usage.Total != 60 {
+		t.Fatalf("%+v", ev)
+	}
+}
+
+// Ollama sends tool calls with finish_reason "stop".
+func TestToolCallsRunWhateverTheFinishReason(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		if call == 1 {
+			sse(w, toolStart, strings.Replace(toolEnd, `"finish_reason":"tool_calls"`, `"finish_reason":"stop"`, 1))
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	})
+	box := &fakeBox{out: "{}"}
+	w := chat(withBox(New(Config{AllowAnyURL: true}), box), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	if len(box.calls) != 1 || len(up.got()) != 2 || !strings.Contains(w.Body.String(), `"ok"`) {
+		t.Fatalf("%q %d %s", box.calls, len(up.got()), w.Body)
 	}
 }
 
