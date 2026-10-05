@@ -45,4 +45,28 @@ const PANEL_TABS = ["problems", "changes", "drain"];
 const PANEL_DEFAULT = { open: true, tab: "problems", max: false };
 const validPanel = v => !!v && typeof v.open === "boolean" && typeof v.max === "boolean" && PANEL_TABS.includes(v.tab);
 
-window.k8sPrefs = { PANEL_KEY, PANEL_DEFAULT, validPanel, THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, watchTheme };
+// A shareable view: the toolbar state lives in the query string, which
+// survives the OIDC round trip (a hash would not). Defaults are left out, so
+// a plain visit keeps a clean URL.
+const VIEW_DEFAULTS = { context: "", view: "2d", size: "cpu", group: "none", color: "namespace", q: "" };
+
+function readViewParams(search, allowed) {
+  const params = new URLSearchParams(search);
+  const out = { ...VIEW_DEFAULTS };
+  for (const k of Object.keys(VIEW_DEFAULTS)) {
+    const v = params.get(k);
+    if (v && (!allowed[k] || allowed[k].includes(v))) out[k] = v;
+  }
+  return out;
+}
+
+function viewSearch(state) {
+  const params = new URLSearchParams();
+  for (const k of Object.keys(VIEW_DEFAULTS)) {
+    if (state[k] && state[k] !== VIEW_DEFAULTS[k]) params.set(k, state[k]);
+  }
+  const s = params.toString();
+  return s ? "?" + s : "";
+}
+
+window.k8sPrefs = { PANEL_KEY, PANEL_DEFAULT, validPanel, THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, watchTheme, readViewParams, viewSearch };

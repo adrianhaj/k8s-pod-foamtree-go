@@ -63,6 +63,7 @@ A node without the label goes to its own group, `no zone`, `no pool`, and so on.
 - **Refresh**: the Auto-refresh menu in the top bar (Off, 15 s … 10 min), plus a *Refresh now* button beside it.
 - **Filter**: the query bar in the top bar highlights matching pods and dims the rest — nothing is removed from the view. See [Filtering](#filtering) for the full grammar.
 - **Focus**: click a node to open an overlay listing its pods with per-pod CPU/memory and container breakdown, plus its instance type, zone and pool.
+- **Share**: the address bar always links to the view on screen. Context, 2D or 3D, Size by, Group by, Color by and the query are kept in the URL (`/?view=3d&group=zone&q=ns%3Apayments`), so a pasted link opens the same picture, also after an OIDC sign-in. With more than one kubeconfig context the URL also names the context, so the link opens the same cluster. Theme, memory unit and panel state stay per browser.
 
 ## Themes
 
