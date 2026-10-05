@@ -13,7 +13,7 @@ It visualizes **resource requests** — what the scheduler reserves — not live
 ## How it works
 
 1. Keeps a watch cache of nodes (`status.capacity`) and all non-terminated pods per kubeconfig context, started on the first request for that context — a refresh reads memory and never LISTs the API server. Pods in `Succeeded`/`Failed` are excluded — they still report requests via the API but no longer reserve anything.
-2. Normalizes CPU to millicores and memory to decimal kB with Kubernetes' own quantity parser. A pod's **effective request** is the scheduler's formula (`k8s.io/component-helpers` `PodRequests`): regular containers and native sidecars (init containers with `restartPolicy: Always`) are summed, plain init containers run one at a time so the largest of them is maxed against that sum, and pod overhead and pod-level resources are added.
+2. Normalizes CPU to millicores and memory to decimal kB with Kubernetes' own quantity parser. A pod's **effective request** is the scheduler's formula (`k8s.io/component-helpers` `PodRequests`): regular containers and native sidecars (init containers with `restartPolicy: Always`) are summed, plain init containers run one at a time so the largest of them is maxed against that sum, and pod overhead and pod-level resources are added. During a pending in-place resize the scheduler counts the larger of the spec and the kubelet's allocated/actuated resources, or only the allocated/actuated ones when the resize is Infeasible.
 3. Nests the result node → pod → container and adds a synthetic `empty` child per node for free capacity, then serves it as JSON.
 4. A React single-page app, compiled at build time by `go tool esbuild` and embedded in the binary together with React's production build — nothing loads from a CDN. It fetches CPU and memory in parallel, merges them, and renders. The view auto-refreshes every 60 seconds by default.
 
@@ -102,7 +102,7 @@ On a node with `c` free millicores, `m` free MiB and shape `r` (MiB per millicor
 
 ## Audit & hygiene
 
-Every pod is checked against seven rules: four best-practice rules and three crash signals. A pod that breaks one gets a **small warning glyph in the top-right corner** of its box (hover it for the reasons). The **Problems** tab of the bottom panel counts the affected pods per rule. Click a chip to highlight those pods in 2D and 3D. This sets the query to `audit:<rule>`; click the chip again to clear it. A clean cluster reads `No problems found`.
+Every pod is checked against nine rules: four best-practice rules, three crash signals and two resize signals. A pod that breaks one gets a **small warning glyph in the top-right corner** of its box (hover it for the reasons). The **Problems** tab of the bottom panel counts the affected pods per rule. Click a chip to highlight those pods in 2D and 3D. This sets the query to `audit:<rule>`; click the chip again to clear it. A clean cluster reads `No problems found`.
 
 | Marker | Rule | Flagged when |
 | --- | --- | --- |
@@ -113,12 +113,15 @@ Every pod is checked against seven rules: four best-practice rules and three cra
 | red | `crash loop` | a container is waiting in `CrashLoopBackOff` |
 | red | `OOM killed` | a container's last run ended `OOMKilled`, even if it has recovered since |
 | amber | `image pull` | a container is waiting in `ImagePullBackOff` or `ErrImagePull` |
+| blue | `resize deferred` | an in-place resize is waiting for room (`PodResizePending`, reason `Deferred`); the map still counts the larger of old and new requests, as the scheduler does |
+| amber | `resize infeasible` | an in-place resize can never fit the node (`PodResizePending`, reason `Infeasible`); the map counts the old, allocated requests |
 
-Three details are worth knowing:
+Four details are worth knowing:
 
 - **Init containers are not audited against the best-practice rules.** They finish before the app runs, so their requests and limits say nothing about how the pod behaves once it is running. The crash signals do cover them.
 - **CPU limits are not required.** Only a missing *memory* limit is flagged. A memory leak without a limit can take the whole node down; a CPU spike without a limit only gets throttled.
 - **Ratio asymmetry ignores small pods.** A sidecar asking for 5% of the CPU and almost no memory has an extreme ratio, but it leaves no meaningful capacity stranded.
+- **A pending resize shows what the pod wants.** The node overlay's pod row reads `wants <cores> · <memory>`; hover it for the kubelet's message.
 
 ## QoS & eviction risk
 
@@ -170,7 +173,7 @@ An empty query matches everything. A query that contains a malformed token is **
 | `node:<glob>` | node the pod is scheduled on | `*` is the only wildcard; anchored (whole name must match); case-insensitive |
 | `qos:<class>` | [QoS class](#qos--eviction-risk): `Guaranteed`, `Burstable`, `BestEffort` | case-insensitive; anything else is an error |
 | `has:init-containers` | pods declaring at least one init container | currently the only `has:` field |
-| `audit:<rule>` | pods breaking an [audit rule](#audit--hygiene) | `missing-requests`, `missing-limits`, `monolith`, `ratio-asymmetry`, `crashloop`, `oom-killed`, `image-pull` |
+| `audit:<rule>` | pods breaking an [audit rule](#audit--hygiene) | `missing-requests`, `missing-limits`, `monolith`, `ratio-asymmetry`, `crashloop`, `oom-killed`, `image-pull`, `resize-deferred`, `resize-infeasible` |
 | `health:<warning>` | nodes carrying a [health warning](#node-health), and every pod on them | `cordoned`, `not-ready`, `memory-pressure`, `disk-pressure`, `pid-pressure`, `tainted` |
 | `key=value` | pod label equals value | key and value are **case-sensitive** (Kubernetes labels are) |
 | `key!=value` | pod label differs from value | a **missing** label counts as unequal, so it matches too |

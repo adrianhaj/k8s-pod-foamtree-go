@@ -97,6 +97,13 @@ type PodGroup struct {
 	Statuses          []ContainerStatus `json:"statuses"`
 	Limit             *float64          `json:"limit"`
 	Extended          map[string]int64  `json:"extended,omitempty"`
+	Resize            *PodResize        `json:"resize,omitempty"`
+}
+
+type PodResize struct {
+	State   string  `json:"state"`
+	Message string  `json:"message"`
+	Desired float64 `json:"desired"`
 }
 
 type Leaf struct {
@@ -174,6 +181,10 @@ func podGroup(p Pod, n Node, axis Axis) PodGroup {
 			leaves = append(leaves, Leaf{Label: c.Name + " (init)", Weight: axis.weight(w), Color: initColor, Extended: c.Extended})
 		}
 	}
+	var rz *PodResize
+	if r := p.Resize; r != nil {
+		rz = &PodResize{State: r.State, Message: r.Message, Desired: axis.weight(axis.container(r.Desired))}
+	}
 	return PodGroup{
 		Label:             p.Name,
 		Weight:            axis.weight(axis.pod(p)),
@@ -187,6 +198,7 @@ func podGroup(p Pod, n Node, axis Axis) PodGroup {
 		Statuses:          orEmpty(p.Statuses),
 		Limit:             axis.limit(p),
 		Extended:          p.Extended,
+		Resize:            rz,
 	}
 }
 

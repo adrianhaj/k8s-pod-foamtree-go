@@ -29,6 +29,14 @@ type Container struct {
 	Extended    map[string]int64
 }
 
+// Resize is an in-place resize the kubelet has not applied yet. Desired is
+// what spec asks for; the pod's CPU and Memory stay what the scheduler counts.
+type Resize struct {
+	State   string // "deferred" or "infeasible"
+	Message string
+	Desired Container
+}
+
 type Pod struct {
 	Name, NodeName, Namespace string
 	// Effective request — what the scheduler reserves for the pod.
@@ -50,6 +58,8 @@ type Pod struct {
 	Tolerations  []corev1.Toleration
 	// Kind of the controlling owner, "" for a bare pod: decides what a drain does with it.
 	Controller string
+	// nil unless a resize waits on the kubelet.
+	Resize *Resize
 	// The scheduler's PodScheduled=False reason and message; "" once
 	// scheduled, and before the scheduler has tried.
 	SchedReason, SchedMessage string
@@ -185,11 +195,42 @@ func bounded(p *corev1.Pod, r corev1.ResourceName) bool {
 	return len(p.Spec.Containers) > 0
 }
 
-func containers(cs []corev1.Container) []Container {
+func containers(p *corev1.Pod, cs []corev1.Container) []Container {
 	out := make([]Container, 0, len(cs))
 	for _, c := range cs {
-		out = append(out, container(c))
+		out = append(out, podContainer(p, c))
 	}
+	return out
+}
+
+// podContainer counts a container as the scheduler counts its pod: the
+// larger of spec, allocated and actuated requests, or only the last two while
+// the resize is Infeasible, so container boxes add up to the pod box.
+func podContainer(p *corev1.Pod, c corev1.Container) Container {
+	out := container(c)
+	reqs := corev1.ResourceList{}
+	if !resourcehelper.IsPodResizeInfeasible(p) {
+		reqs = c.Resources.Requests.DeepCopy()
+	}
+	for _, group := range [][]corev1.ContainerStatus{p.Status.ContainerStatuses, p.Status.InitContainerStatuses} {
+		for _, s := range group {
+			if s.Name != c.Name {
+				continue
+			}
+			lists := []corev1.ResourceList{s.AllocatedResources}
+			if s.Resources != nil {
+				lists = append(lists, s.Resources.Requests)
+			}
+			for _, l := range lists {
+				for name, q := range l {
+					if cur, ok := reqs[name]; !ok || q.Cmp(cur) > 0 {
+						reqs[name] = q
+					}
+				}
+			}
+		}
+	}
+	out.CPU, out.Memory, out.Extended = reqs.Cpu().MilliValue(), reqs.Memory().Value(), extended(reqs)
 	return out
 }
 
@@ -217,7 +258,7 @@ func FromPod(p *corev1.Pod) Pod {
 		Namespace:    p.Namespace,
 		CPU:          req.Cpu().MilliValue(),
 		Memory:       req.Memory().Value(),
-		Containers:   containers(p.Spec.Containers),
+		Containers:   containers(p, p.Spec.Containers),
 		Labels:       p.Labels,
 		QOS:          string(p.Status.QOSClass),
 		Extended:     extended(req),
@@ -236,14 +277,15 @@ func FromPod(p *corev1.Pod) Pod {
 	// Native sidecars run for the pod's whole life, so they count as regular.
 	for _, c := range p.Spec.InitContainers {
 		if c.RestartPolicy != nil && *c.RestartPolicy == corev1.ContainerRestartPolicyAlways {
-			out.Containers = append(out.Containers, container(c))
+			out.Containers = append(out.Containers, podContainer(p, c))
 		} else {
-			out.InitContainers = append(out.InitContainers, container(c))
+			out.InitContainers = append(out.InitContainers, podContainer(p, c))
 		}
 	}
 	if r := p.Spec.Resources; r != nil {
 		out.PodLevel = container(corev1.Container{Resources: *r})
 	}
+	out.Resize = resize(p)
 	lim := resourcehelper.PodLimits(p, resourcehelper.PodResourcesOptions{})
 	if bounded(p, corev1.ResourceCPU) {
 		v := lim.Cpu().MilliValue()
@@ -254,6 +296,28 @@ func FromPod(p *corev1.Pod) Pod {
 		out.MemoryLimit = &v
 	}
 	return out
+}
+
+// resize reads the first PodResizePending condition, as resourcehelper's
+// IsPodResizeInfeasible and IsPodResizeDeferred do.
+func resize(p *corev1.Pod) *Resize {
+	for _, c := range p.Status.Conditions {
+		if c.Type != corev1.PodResizePending {
+			continue
+		}
+		var state string
+		switch c.Reason {
+		case corev1.PodReasonInfeasible:
+			state = "infeasible"
+		case corev1.PodReasonDeferred:
+			state = "deferred"
+		default:
+			return nil
+		}
+		want := resourcehelper.PodRequests(p, resourcehelper.PodResourcesOptions{})
+		return &Resize{State: state, Message: c.Message, Desired: Container{CPU: want.Cpu().MilliValue(), Memory: want.Memory().Value()}}
+	}
+	return nil
 }
 
 // statuses lists init containers first, like the pod spec. A container that

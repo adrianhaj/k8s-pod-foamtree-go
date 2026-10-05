@@ -124,3 +124,13 @@ func TestCrashFindings(t *testing.T) {
 		}
 	}
 }
+
+func TestResizeFindings(t *testing.T) {
+	p := auditPod(400, 1_600_000_000, true)
+	for state, want := range map[string]string{"deferred": "resize-deferred", "infeasible": "resize-infeasible"} {
+		p.Resize = &Resize{State: state}
+		if got := Findings(p, worker); !reflect.DeepEqual(got, []string{want}) {
+			t.Fatalf("%s: got %v", state, got)
+		}
+	}
+}
