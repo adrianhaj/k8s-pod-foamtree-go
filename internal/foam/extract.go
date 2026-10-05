@@ -195,11 +195,42 @@ func bounded(p *corev1.Pod, r corev1.ResourceName) bool {
 	return len(p.Spec.Containers) > 0
 }
 
-func containers(cs []corev1.Container) []Container {
+func containers(p *corev1.Pod, cs []corev1.Container) []Container {
 	out := make([]Container, 0, len(cs))
 	for _, c := range cs {
-		out = append(out, container(c))
+		out = append(out, podContainer(p, c))
 	}
+	return out
+}
+
+// podContainer counts a container as the scheduler counts its pod: the
+// larger of spec, allocated and actuated requests, or only the last two while
+// the resize is Infeasible, so container boxes add up to the pod box.
+func podContainer(p *corev1.Pod, c corev1.Container) Container {
+	out := container(c)
+	reqs := corev1.ResourceList{}
+	if !resourcehelper.IsPodResizeInfeasible(p) {
+		reqs = c.Resources.Requests.DeepCopy()
+	}
+	for _, group := range [][]corev1.ContainerStatus{p.Status.ContainerStatuses, p.Status.InitContainerStatuses} {
+		for _, s := range group {
+			if s.Name != c.Name {
+				continue
+			}
+			lists := []corev1.ResourceList{s.AllocatedResources}
+			if s.Resources != nil {
+				lists = append(lists, s.Resources.Requests)
+			}
+			for _, l := range lists {
+				for name, q := range l {
+					if cur, ok := reqs[name]; !ok || q.Cmp(cur) > 0 {
+						reqs[name] = q
+					}
+				}
+			}
+		}
+	}
+	out.CPU, out.Memory, out.Extended = reqs.Cpu().MilliValue(), reqs.Memory().Value(), extended(reqs)
 	return out
 }
 
@@ -227,7 +258,7 @@ func FromPod(p *corev1.Pod) Pod {
 		Namespace:    p.Namespace,
 		CPU:          req.Cpu().MilliValue(),
 		Memory:       req.Memory().Value(),
-		Containers:   containers(p.Spec.Containers),
+		Containers:   containers(p, p.Spec.Containers),
 		Labels:       p.Labels,
 		QOS:          string(p.Status.QOSClass),
 		Extended:     extended(req),
@@ -246,9 +277,9 @@ func FromPod(p *corev1.Pod) Pod {
 	// Native sidecars run for the pod's whole life, so they count as regular.
 	for _, c := range p.Spec.InitContainers {
 		if c.RestartPolicy != nil && *c.RestartPolicy == corev1.ContainerRestartPolicyAlways {
-			out.Containers = append(out.Containers, container(c))
+			out.Containers = append(out.Containers, podContainer(p, c))
 		} else {
-			out.InitContainers = append(out.InitContainers, container(c))
+			out.InitContainers = append(out.InitContainers, podContainer(p, c))
 		}
 	}
 	if r := p.Spec.Resources; r != nil {

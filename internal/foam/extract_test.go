@@ -463,3 +463,26 @@ func TestFromPodResizePodLevel(t *testing.T) {
 		t.Fatalf("pod-level desired: %+v", got)
 	}
 }
+
+// Containers follow the pod: a container box never claims more than the pod
+// the scheduler counts, and a downsize keeps the larger allocated request.
+func TestFromPodContainersFollowResize(t *testing.T) {
+	cases := []struct {
+		name string
+		in   *corev1.Pod
+		cpu  int64
+	}{
+		{"infeasible uses allocated", resizing(corev1.PodReasonInfeasible, "8", "500m"), 500},
+		{"deferred upsize uses spec", resizing(corev1.PodReasonDeferred, "2", "500m"), 2000},
+		{"deferred downsize keeps allocated", resizing(corev1.PodReasonDeferred, "200m", "1"), 1000},
+		{"no status uses spec", pod([]corev1.Container{ctr("app", "2", "1G")}), 2000},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := FromPod(tc.in)
+			if got.Containers[0].CPU != tc.cpu || got.Containers[0].CPU != got.CPU {
+				t.Fatalf("container %d, pod %d, want %d", got.Containers[0].CPU, got.CPU, tc.cpu)
+			}
+		})
+	}
+}
