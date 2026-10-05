@@ -679,3 +679,40 @@ func TestBrowserCannotSendToolCalls(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestOversizedToolCallFailsTheRound(t *testing.T) {
+	for name, delta := range map[string]string{
+		"arguments": fmt.Sprintf(`{"index":0,"id":"c","function":{"name":"describe_pod","arguments":%q}}`, strings.Repeat("x", maxToolArgs+1)),
+		"name":      fmt.Sprintf(`{"index":0,"id":"c","function":{"name":%q,"arguments":"{}"}}`, strings.Repeat("n", maxToolName+1)),
+	} {
+		up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+			if call == 1 {
+				sse(w, toolStart, toolEnd, `{"choices":[],"usage":{"prompt_tokens":50,"completion_tokens":10,"total_tokens":60}}`)
+				return
+			}
+			sse(w, `{"choices":[{"delta":{"tool_calls":[`+delta+`]},"finish_reason":"tool_calls"}]}`)
+		})
+		box := &fakeBox{out: "{}"}
+		ev := events(t, chat(withBox(New(Config{AllowAnyURL: true}), box), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`).Body.String())
+		n := len(ev)
+		if len(box.calls) != 1 || ev[n-2].Type != "error" || !strings.Contains(ev[n-2].Text, "tool call") || ev[n-1].Type != "done" || ev[n-1].Usage.Total != 60 {
+			t.Errorf("%s: %d tool runs, %+v", name, len(box.calls), ev[n-2:])
+		}
+	}
+}
+
+func TestToolCallsAreLimitedPerQuestion(t *testing.T) {
+	var calls []string
+	for i := range 5 {
+		calls = append(calls, fmt.Sprintf(`{"index":%d,"id":"c%d","function":{"name":"describe_pod","arguments":"{}"}}`, i, i))
+	}
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
+		sse(w, `{"choices":[{"delta":{"tool_calls":[`+strings.Join(calls, ",")+`]},"finish_reason":"tool_calls"}]}`)
+	})
+	box := &fakeBox{out: "{}"}
+	ev := events(t, chat(withBox(New(Config{AllowAnyURL: true}), box), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`).Body.String())
+	n := len(ev)
+	if len(box.calls) != 15 || len(up.got()) != 4 || ev[n-2].Type != "notice" || !strings.Contains(ev[n-2].Text, "16 tool calls") || ev[n-1].Type != "done" {
+		t.Fatalf("%d tool runs, %d rounds, %+v", len(box.calls), len(up.got()), ev[n-2:])
+	}
+}

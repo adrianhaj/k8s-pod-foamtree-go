@@ -25,7 +25,9 @@ const (
 	maxRelayed      = 300
 	maxRounds       = 8
 	maxToolBytes    = 64 << 10
-	maxToolCalls    = 16
+	maxToolCalls    = 16 // per question, across rounds
+	maxToolArgs     = 16 << 10
+	maxToolName     = 128
 )
 
 var errTimeout = errors.New("the answer took longer than 2 minutes")
@@ -152,7 +154,7 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatReque
 		s.send(event{Type: "error", Text: t.scrub(err.Error())})
 		s.send(event{Type: "done", Usage: &total, Masked: hidden})
 	}
-	msgs, toolBytes := req.Messages, 0
+	msgs, toolBytes, ran := req.Messages, 0, 0
 	for i := range maxRounds {
 		if i > 0 && t.budget > 0 && total.Total+estimate(msgs)+minAnswerTokens > t.budget {
 			s.send(event{Type: "notice", Text: fmt.Sprintf("Stopped: the next step would pass the cap of %d tokens.", t.budget)})
@@ -170,6 +172,11 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatReque
 			if rd.Finish == "length" {
 				s.send(event{Type: "notice", Text: "The answer stopped at the token cap."})
 			}
+			s.send(event{Type: "done", Usage: &total, Masked: hidden})
+			return
+		}
+		if ran += len(rd.Calls); ran > maxToolCalls {
+			s.send(event{Type: "notice", Text: fmt.Sprintf("Stopped: this question reached its limit of %d tool calls.", maxToolCalls)})
 			s.send(event{Type: "done", Usage: &total, Masked: hidden})
 			return
 		}
@@ -485,6 +492,9 @@ func readStream(r io.Reader, onText func(text string, relay bool)) (round, error
 				}
 				tc.Function.Name += d.Function.Name
 				tc.Function.Arguments += d.Function.Arguments
+				if len(tc.Function.Name) > maxToolName || len(tc.Function.Arguments) > maxToolArgs {
+					return rd, fmt.Errorf("assistant endpoint sent a tool call over %d KiB of arguments or %d bytes of name", maxToolArgs>>10, maxToolName)
+				}
 				if text := d.Function.Name + d.Function.Arguments; text != "" {
 					rd.chars += utf8.RuneCountInString(text)
 					onText(text, false)
