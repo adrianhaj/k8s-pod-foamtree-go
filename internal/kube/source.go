@@ -299,10 +299,8 @@ func slimPod(obj any) (any, error) {
 			RequiredDuringSchedulingIgnoredDuringExecution: a.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution}}
 	}
 	var unscheduled []corev1.PodCondition
-	for _, c := range p.Status.Conditions {
-		if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse {
-			unscheduled = []corev1.PodCondition{{Type: c.Type, Status: c.Status, Reason: c.Reason, Message: c.Message}}
-		}
+	if c, ok := foam.Unscheduled(p); ok {
+		unscheduled = []corev1.PodCondition{{Type: c.Type, Status: c.Status, Reason: c.Reason, Message: c.Message}}
 	}
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: p.Name, Namespace: p.Namespace, UID: p.UID, ResourceVersion: p.ResourceVersion,
