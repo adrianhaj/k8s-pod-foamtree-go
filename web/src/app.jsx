@@ -775,7 +775,7 @@ function TreemapGrid({
               <span className="group-name">{g.key}</span>
               <span className="group-meta">{n} node{n === 1 ? "" : "s"}</span>
               {s.cpu >= 1 && <span className="group-meta" title="Free CPU with no memory to pair at the median pod shape">{fmtReq(s.cpu, "cpu")} stranded</span>}
-              {s.mem >= 1 && <span className="group-meta" title="Free memory with no CPU to pair at the median pod shape">{fmtReq(s.mem, "mem")} stranded</span>}
+              {parseFloat(fmtReq(s.mem, "mem")) > 0 && <span className="group-meta" title="Free memory with no CPU to pair at the median pod shape">{fmtReq(s.mem, "mem")} stranded</span>}
               <span className={`group-util${utilTone(u) ? ` tone-${utilTone(u)}` : ""}`}>{Math.round(u * 100)}%</span>
             </div>
             {cards(g.members, 6, GROUP_HEAD, g.w - 16, g.h - GROUP_HEAD - 10)}
@@ -859,11 +859,11 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, str
             )}
           </div>
         )}
-        {(strand.cpu >= 1 || strand.mem >= 1) && (
+        {(strand.cpu >= 5 || Number(fmtMem(strand.mem, memUnit)) > 0) && (
           <div className="overlay-sched">
             <div className="ov-section-title">Stranded capacity</div>
             <span className="ov-chips-note">
-              {strand.cpu >= 1
+              {strand.cpu >= 5
                 ? `${(strand.cpu / 1000).toFixed(2)} cores free with no memory to pair`
                 : `${fmtMem(strand.mem, memUnit)} ${memUnit} free with no CPU to pair`} at the median pod shape.
             </span>
