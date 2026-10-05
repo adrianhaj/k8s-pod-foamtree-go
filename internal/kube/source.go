@@ -312,7 +312,9 @@ func slimPod(obj any) (any, error) {
 			Tolerations:    p.Spec.Tolerations,
 		},
 		Status: corev1.PodStatus{QOSClass: p.Status.QOSClass, Phase: p.Status.Phase,
-			Conditions:            slimConditions(p.Status.Conditions),
+			Conditions: slimConditions(p.Status.Conditions),
+			// ponytail: the kubelet fills these for every running pod on 1.33+ (~few KB/pod); if cache memory measures high,
+			// keep them only while a PodResize condition is set or when they differ from spec.
 			AllocatedResources:    p.Status.AllocatedResources,
 			Resources:             p.Status.Resources,
 			ContainerStatuses:     slimStatuses(p.Status.ContainerStatuses),
@@ -341,7 +343,7 @@ func slimConditions(cs []corev1.PodCondition) []corev1.PodCondition {
 	return out
 }
 
-// slimStatuses keeps what the crash findings read: no images, IDs or messages.
+// slimStatuses keeps what the crash findings and the scheduler formula (allocated/actuated resources) read: no images, IDs or messages.
 func slimStatuses(cs []corev1.ContainerStatus) []corev1.ContainerStatus {
 	if len(cs) == 0 {
 		return nil
