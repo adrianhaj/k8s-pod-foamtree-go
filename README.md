@@ -261,7 +261,7 @@ Focusing the input opens a popover with the same token list; it is replaced by t
 | `GET /contexts` | `[{"context": "...", "active": true}]` |
 | `GET /api/logs` | one container's logs as plain text. `namespace` and `pod` are required; optional `container`, `tail` (1–5000, default 500), `previous=1` for the run before the last restart, and `context`. At most 1 MiB. 404 when the pod is gone, 400 when there is no previous run. |
 | `GET /api/llm/config` | `{"server", "url", "model", "maxTokens"}`; never the key |
-| `POST /api/llm/chat` | takes JSON `{url?, model?, context, budget, messages}` and an optional `X-LLM-Key` header; streams `text/event-stream` events `delta`, `notice`, `error` and `done` (with `usage` and `masked`, the count of values masked before sending) |
+| `POST /api/llm/chat` | takes JSON `{url?, model?, context, budget, messages}` and an optional `X-LLM-Key` header; a question is limited to 8 rounds, 16 lookups and 64 KiB of lookup output; streams `text/event-stream` events `delta`, `tool` (one per lookup the model makes), `notice`, `error` and `done` (with `usage` and `masked`, the count of values masked before sending) |
 | `GET /api/me` | `{"auth": "none"}`, or `{"auth": "oidc", "email": "...", "name": "..."}` for the signed-in user |
 | `GET /auth/login`, `GET /auth/callback`, `POST /auth/logout` | OIDC sign-in and sign-out (only with `--auth=oidc`) |
 
@@ -333,6 +333,8 @@ The **Assistant** tab chats with any OpenAI-compatible API: OpenAI, Azure OpenAI
 - **My own key.** URL, model and key typed in the browser. The key lasts until the tab closes unless you tick **Remember key in this browser**; then it stays in this browser's storage. The server relays it and never logs or stores it. On a shared deployment the URL's host must match `--llm-allowed-hosts`, and private addresses are refused.
 
 The column on the right lists what goes with your next message: a cluster summary, the Problems list, the pod and logs open in the Logs tab, and the last node you opened, which starts unticked. Untick anything you do not want to send. Nothing is sent until you press **Send**, **Analyze with assistant** in the Logs tab, or **Test and save** (which sends one short test message). The first time you open the tab it explains what leaves the cluster, until you press OK.
+
+The assistant can also look things up itself, read-only: a cluster summary, the problem list, one pod or node, a container's logs (at most 500 lines), and the **Fit a pod** and **Drain a node** dry runs. Each lookup shows as a line in the answer. A question stops after 8 rounds, 16 lookups or 64 KiB of lookup output, or before a step that would pass the token cap. Endpoints without tool support get a plain chat.
 
 Every question has a token cap, 20,000 by default, set in Connection; on the server connection `--llm-max-tokens-per-question` (default 50000) is the ceiling. The composer shows an estimate of the next message against the cap, and Send is disabled when it is over. After each answer the tab shows the tokens actually used, as reported by the endpoint, or an estimate marked as such when it reports none.
 
