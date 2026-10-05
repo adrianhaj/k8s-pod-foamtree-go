@@ -6,6 +6,7 @@ const { clock } = window.k8sFormat;
 
 const TABS = [
   { id: "problems", label: "Problems" },
+  { id: "pending", label: "Pending" },
   { id: "changes", label: "Changes" },
   { id: "drain", label: "Drain simulation" },
   { id: "logs", label: "Logs" },
@@ -82,6 +83,23 @@ function ProblemsTab({ rows, chips, query, setQuery, onPickNode }) {
         {shown.length > ROW_CAP && <div className="ptr more">+{shown.length - ROW_CAP} more. Pick a chip to narrow the list.</div>}
       </div>
     </>
+  );
+}
+
+// Pods no node has taken, with the scheduler's own words. Nothing on the map
+// to light, so rows are not buttons.
+function PendingTab({ pods }) {
+  if (pods.length === 0) return <div className="panel-empty">No pending pods. Every pod has a node.</div>;
+  return (
+    <div className="ptable pending" role="table" aria-label="Pending pods">
+      <div className="ptr th" role="row"><span>Pod</span><span>Reason</span><span>Scheduler message</span></div>
+      {pods.slice(0, ROW_CAP).map(p => (
+        <div key={`${p.namespace}/${p.name}`} className="ptr" role="row" title={p.message}>
+          <span>{p.namespace}/{p.name}</span><span>{p.reason || "Waiting"}</span><span className="mut">{p.message}</span>
+        </div>
+      ))}
+      {pods.length > ROW_CAP && <div className="ptr more">+{pods.length - ROW_CAP} more</div>}
+    </div>
   );
 }
 
@@ -178,4 +196,4 @@ function MapChips({ lit, ring, litPod, workload, onClearWorkload, onLogs, at, on
   );
 }
 
-window.k8sPanel = { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips, showTab };
+window.k8sPanel = { BottomPanel, ProblemsTab, PendingTab, ChangesTab, DrainTab, MapChips, showTab };
