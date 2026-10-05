@@ -43,6 +43,23 @@ func TestRedact(t *testing.T) {
 	}
 }
 
+func TestRedactKeyWithoutBeginLine(t *testing.T) {
+	body := strings.Repeat("MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7\n", 3) + "AbC=\n"
+	for in, want := range map[string]string{
+		body + "-----END RSA PRIVATE KEY-----\nnext line":                                                            "[REDACTED]\nnext line",
+		"tls.key: |\n" + strings.ReplaceAll("    "+body, "\n", "\n    ") + "-----END PRIVATE KEY-----\nkind: Secret": "tls.key: |\n    [REDACTED]\nkind: Secret",
+		"-----BEGIN PRIVATE KEY-----\n" + body + "-----END PRIVATE KEY-----\nnext":                                   "[REDACTED]\nnext",
+	} {
+		if got, n := redact(in); got != want || n != 1 {
+			t.Errorf("%q\n got %q (%d)\nwant %q (1)", in, got, n, want)
+		}
+	}
+	digest := "sha512-" + strings.Repeat("z9Y8x7W6", 11) + "==\n" + strings.Repeat("QUJDREVGR0hJSktMTU5PUA", 3) + "\ndone\n"
+	if got, n := redact(digest); got != digest || n != 0 {
+		t.Errorf("base64 with no END line was masked: %q (%d)", got, n)
+	}
+}
+
 func TestRedactKeepsProse(t *testing.T) {
 	for _, in := range []string{
 		"failed to authorize: failed to fetch oauth token: unexpected status: 401 Unauthorized",
