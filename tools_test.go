@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -42,8 +43,10 @@ func TestClusterTools(t *testing.T) {
 		src.logReq.Tail != 500 || !src.logReq.Previous || src.asked != "kind" {
 		t.Errorf("get_pod_logs: %q %+v on %q", out, src.logReq, src.asked)
 	}
-	if call("get_pod_logs", `{"namespace":"pay","name":"api"}`); src.logReq.Tail != 200 {
-		t.Errorf("default tail %d", src.logReq.Tail)
+	for _, tail := range []string{``, `,"tail":0`, `,"tail":-5`} {
+		if call("get_pod_logs", `{"namespace":"pay","name":"api"`+tail+`}`); src.logReq.Tail != 200 {
+			t.Errorf("tail %q: got %d, want the default 200", tail, src.logReq.Tail)
+		}
 	}
 	if out := call("fit_pod", `{"cpu":"500m","memory":"1Gi"}`); !strings.Contains(out, `"node":"n1"`) {
 		t.Errorf("fit_pod: %s", out)
@@ -79,6 +82,70 @@ func TestPodLogsKeepTheNewestLines(t *testing.T) {
 	}
 	if len(out) > maxToolLogBytes || !strings.HasSuffix(out, "the crash\n") || strings.Contains(out, "first") || !strings.HasPrefix(out, "line ") {
 		t.Errorf("want the last <=32 KiB from a line start, got %d bytes starting %q", len(out), out[:20])
+	}
+}
+
+func TestPodLogsKeepAnOverlongLastLine(t *testing.T) {
+	long := strings.Repeat("y", maxToolLogBytes+100) + "END\n"
+	out := logsTool(t, "first\n"+long)
+	if out == "" || len(out) != maxToolLogBytes || !strings.HasSuffix(out, "yEND\n") {
+		t.Errorf("want the newest %d bytes of the last line, got %d bytes", maxToolLogBytes, len(out))
+	}
+}
+
+func TestPodLogsCutAtALineBoundary(t *testing.T) {
+	newest := strings.Repeat(strings.Repeat("x", 1023)+"\n", maxToolLogBytes/1024)
+	if out := logsTool(t, "old line\n"+newest); out != newest {
+		t.Errorf("want exactly the newest %d bytes, got %d bytes", len(newest), len(out))
+	}
+}
+
+func logsTool(t *testing.T, logs string) string {
+	t.Helper()
+	tools := clusterTools{src: &fakeSource{logs: logs}, cluster: "kind"}
+	out, err := tools.Call(context.Background(), "get_pod_logs", json.RawMessage(`{"namespace":"pay","name":"api"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestFitPodListsFittingNodesFirstAndCapsRows(t *testing.T) {
+	var nodes []foam.Node
+	for i := range 100 {
+		nodes = append(nodes, foam.Node{Name: fmt.Sprintf("a%03d", i)}) // no room: refuses
+	}
+	for i := range 50 {
+		nodes = append(nodes, foam.Node{Name: fmt.Sprintf("b%03d", i), AllocCPU: 4000, AllocMemory: 8 << 30, AllocPods: 110})
+	}
+	tools := clusterTools{src: &fakeSource{nodes: nodes}, cluster: "kind"}
+	out, err := tools.Call(context.Background(), "fit_pod", json.RawMessage(`{"cpu":"500m","memory":"1Gi"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Nodes   []foam.Verdict
+		Omitted int
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Nodes) != maxToolRows || got.Omitted != 50 || len(got.Nodes[49].Reasons) != 0 || len(got.Nodes[50].Reasons) == 0 {
+		t.Fatalf("%d rows, %d omitted, row 49 %+v, row 50 %+v", len(got.Nodes), got.Omitted, got.Nodes[49], got.Nodes[50])
+	}
+}
+
+func TestDescribePodNamesContainerUnits(t *testing.T) {
+	limit := int64(2 << 30)
+	src := &fakeSource{pods: []foam.Pod{{Name: "api", Namespace: "pay",
+		Containers: []foam.Container{{Name: "api", CPU: 500, Memory: 1 << 30, MemoryLimit: &limit}}}}}
+	out, err := (clusterTools{src: src}).Call(context.Background(), "describe_pod", json.RawMessage(`{"namespace":"pay","name":"api"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `"containers":[{"name":"api","cpuRequestMillicores":500,"memoryRequestBytes":1073741824,"memoryLimitBytes":2147483648}]`
+	if !strings.Contains(out, want) {
+		t.Fatalf("%s", out)
 	}
 }
 

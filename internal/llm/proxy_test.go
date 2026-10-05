@@ -285,6 +285,23 @@ func TestConfigNeverReturnsTheKey(t *testing.T) {
 	}
 }
 
+// The browser adds the schema to its estimate, so both sides count the same.
+func TestConfigReportsTheToolSchemaCost(t *testing.T) {
+	for _, p := range []*Proxy{New(Config{}), withBox(New(Config{}), &fakeBox{})} {
+		w := httptest.NewRecorder()
+		p.ServeConfig(w, httptest.NewRequest("GET", "/", nil))
+		var got struct{ ToolTokens int }
+		json.Unmarshal(w.Body.Bytes(), &got)
+		want := 0
+		if p.Tools != nil {
+			want = toolTokens((&fakeBox{}).Tools())
+		}
+		if got.ToolTokens != want || p.Tools != nil && want == 0 {
+			t.Fatalf("toolTokens %d, want %d: %s", got.ToolTokens, want, w.Body)
+		}
+	}
+}
+
 func TestUpstreamErrorsDoNotLeakTheServerKey(t *testing.T) {
 	status := 401
 	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
@@ -536,6 +553,36 @@ func TestToolLoopStopsAfterMaxRounds(t *testing.T) {
 		ev[n-1].Type != "done" || ev[n-1].Usage.Total != 10*maxRounds {
 		t.Fatalf("%d calls, last %+v", len(up.got()), ev[n-2:])
 	}
+	tools := 0
+	for _, e := range ev {
+		if e.Type == "tool" {
+			tools++
+		}
+	}
+	if up.got()[maxRounds-1].body["tools"] != nil || tools != maxRounds-1 {
+		t.Fatalf("last round offered tools, or %d tool events for %d tool rounds", tools, maxRounds-1)
+	}
+}
+
+// The last round offers no tools, so a model that keeps looking things up still answers.
+func TestLastRoundAnswersWithoutTools(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, body map[string]any) {
+		if body["tools"] != nil {
+			sse(w, toolStart, toolEnd)
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"From what I saw."},"finish_reason":"stop"}]}`)
+	})
+	ev := events(t, chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: "{}"}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`).Body.String())
+	n := len(ev)
+	if len(up.got()) != maxRounds || ev[n-2].Text != "From what I saw." || ev[n-1].Type != "done" {
+		t.Fatalf("%d calls, last %+v", len(up.got()), ev[n-2:])
+	}
+	for _, e := range ev {
+		if e.Type == "error" || e.Type == "notice" {
+			t.Fatalf("%+v", e)
+		}
+	}
 }
 
 // Spend from earlier rounds reaches the viewer even when a later round fails.
@@ -728,7 +775,8 @@ func TestToolSchemaCountsTowardTheCap(t *testing.T) {
 	up := newUpstream(t, answer("ok"))
 	p := New(Config{AllowAnyURL: true})
 	p.Tools = func(string) Toolbox { return &bigBox{} }
-	if w := chat(p, "k", `{"url":"`+up.URL+`/v1","model":"m","budget":1000,`+q+`}`); w.Code != http.StatusUnprocessableEntity || len(up.got()) != 0 {
+	if w := chat(p, "k", `{"url":"`+up.URL+`/v1","model":"m","budget":1000,`+q+`}`); w.Code != http.StatusUnprocessableEntity || len(up.got()) != 0 ||
+		!strings.Contains(w.Body.String(), "the cluster lookups themselves need about 20") {
 		t.Fatalf("%d %q, %d upstream calls", w.Code, w.Body, len(up.got()))
 	}
 	chat(p, "k", `{"url":"`+up.URL+`/v1","model":"m","budget":5000,`+q+`}`)
@@ -740,7 +788,7 @@ func TestToolSchemaCountsTowardTheCap(t *testing.T) {
 func TestToolCallsWithoutNameOrIDAreTidied(t *testing.T) {
 	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
 		if call == 1 {
-			sse(w, `{"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"name":"describe_pod","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`)
+			sse(w, `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"nameless"},{"index":1,"function":{"name":"describe_pod","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`)
 			return
 		}
 		sse(w, `{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
@@ -751,6 +799,26 @@ func TestToolCallsWithoutNameOrIDAreTidied(t *testing.T) {
 	asked, answered := msgs[len(msgs)-2].(map[string]any), msgs[len(msgs)-1].(map[string]any)
 	if len(box.calls) != 1 || len(asked["tool_calls"].([]any)) != 1 || answered["tool_call_id"] != "call_1" {
 		t.Fatalf("%q %+v", box.calls, msgs)
+	}
+}
+
+// Some endpoints reuse index 0 for every call; a new id there starts a new call.
+func TestNewIDAtTheSameIndexIsANewCall(t *testing.T) {
+	delta := func(id, name, args string) string {
+		return fmt.Sprintf("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":%q,\"function\":{\"name\":%q,\"arguments\":%q}}]}}]}\n\n", id, name, args)
+	}
+	body := delta("a", "describe_pod", `{"name":`) + delta("", "", `"p"}`) + delta("b", "describe_node", `{}`) + delta("b", "", "")
+	rd, err := readStream(strings.NewReader(body), func(string, bool) {})
+	if err != nil || len(rd.Calls) != 2 || rd.Calls[0].ID != "a" || rd.Calls[0].Function.Arguments != `{"name":"p"}` ||
+		rd.Calls[1].ID != "b" || rd.Calls[1].Function.Name != "describe_node" {
+		t.Fatalf("%v %+v", err, rd.Calls)
+	}
+	var many strings.Builder
+	for i := range maxToolCalls + 1 {
+		many.WriteString(delta(fmt.Sprint(i), "describe_pod", "{}"))
+	}
+	if _, err := readStream(strings.NewReader(many.String()), func(string, bool) {}); err == nil {
+		t.Fatalf("%d calls at one index were accepted", maxToolCalls+1)
 	}
 }
 

@@ -94,7 +94,7 @@ func (t clusterTools) Call(ctx context.Context, name string, raw json.RawMessage
 		if err != nil {
 			return "", err
 		}
-		v = foam.Fit(nodes, pods, p)
+		v = fitRows(foam.Fit(nodes, pods, p))
 	case "drain_node":
 		d, ok := foam.Drain(nodes, pods, a.Name)
 		if !ok {
@@ -125,16 +125,8 @@ func (t clusterTools) logs(ctx context.Context, req kube.LogRequest) (string, er
 	if err != nil {
 		return "", err
 	}
-	// The crash is at the end, so keep the newest bytes, starting at a line.
-	if cut := len(b) - maxToolLogBytes; cut > 0 {
-		if b[cut-1] != '\n' {
-			if i := bytes.IndexByte(b[cut:], '\n'); i >= 0 {
-				cut += i + 1
-			}
-		}
-		b = b[cut:]
-	}
-	return string(b), nil
+	// The crash is at the end, so keep the newest bytes.
+	return string(kube.LastBytes(b, maxToolLogBytes)), nil
 }
 
 func summarize(nodes []foam.Node, pods []foam.Pod) map[string]any {
@@ -188,7 +180,31 @@ func describePod(p foam.Pod, n foam.Node) map[string]any {
 		"qos": p.QOS, "controller": p.Controller, "labels": p.Labels,
 		"cpuRequestMillicores": p.CPU, "memoryRequestBytes": p.Memory,
 		"cpuLimitMillicores": p.CPULimit, "memoryLimitBytes": p.MemoryLimit,
-		"containers": p.Containers, "statuses": p.Statuses, "findings": foam.Findings(p, n)}
+		"containers": containers(p.Containers), "statuses": p.Statuses, "findings": foam.Findings(p, n)}
+}
+
+// container is foam.Container with its units in the keys, so the model does not guess them.
+type container struct {
+	Name        string           `json:"name"`
+	CPU         int64            `json:"cpuRequestMillicores"`
+	Memory      int64            `json:"memoryRequestBytes"`
+	MemoryLimit *int64           `json:"memoryLimitBytes"`
+	Extended    map[string]int64 `json:"extendedRequests,omitempty"`
+}
+
+func containers(cs []foam.Container) []container {
+	out := make([]container, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, container(c))
+	}
+	return out
+}
+
+// fitRows puts the nodes that fit first and keeps at most maxToolRows.
+func fitRows(vs []foam.Verdict) map[string]any {
+	slices.SortStableFunc(vs, func(a, b foam.Verdict) int { return cmp.Compare(min(len(a.Reasons), 1), min(len(b.Reasons), 1)) })
+	n := min(len(vs), maxToolRows)
+	return map[string]any{"nodes": vs[:n], "omitted": len(vs) - n}
 }
 
 func describeNode(n foam.Node, pods []foam.Pod) map[string]any {

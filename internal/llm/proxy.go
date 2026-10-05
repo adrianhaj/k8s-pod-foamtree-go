@@ -82,9 +82,15 @@ func New(cfg Config) *Proxy {
 	return p
 }
 
+// ServeConfig also reports what the tools schema costs, since it goes out on
+// both connections and the browser's estimate must match the server's.
 func (p *Proxy) ServeConfig(w http.ResponseWriter, _ *http.Request) {
+	tools := 0
+	if p.Tools != nil {
+		tools = toolTokens(p.Tools("").Tools())
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"server": p.cfg.URL != "", "url": p.cfg.URL, "model": p.cfg.Model, "maxTokens": p.cfg.MaxTokens})
+	json.NewEncoder(w).Encode(map[string]any{"server": p.cfg.URL != "", "url": p.cfg.URL, "model": p.cfg.Model, "maxTokens": p.cfg.MaxTokens, "toolTokens": tools})
 }
 
 func (p *Proxy) ServeChat(w http.ResponseWriter, r *http.Request) {
@@ -128,8 +134,13 @@ func (p *Proxy) ServeChat(w http.ResponseWriter, r *http.Request) {
 	}
 	var hidden int
 	req.Messages, hidden = redactMessages(req.Messages)
-	if in := estimate(req.Messages) + toolTokens(t.tools); t.budget > 0 && in+minAnswerTokens > t.budget {
-		http.Error(w, fmt.Sprintf("this question needs about %d tokens before the answer, over the cap of %d: untick some context or raise the cap", in, t.budget), http.StatusUnprocessableEntity)
+	schema := toolTokens(t.tools)
+	if in := estimate(req.Messages) + schema; t.budget > 0 && in+minAnswerTokens > t.budget {
+		msg := fmt.Sprintf("this question needs about %d tokens before the answer, over the cap of %d: untick some context or raise the cap", in, t.budget)
+		if schema > 0 {
+			msg += fmt.Sprintf(" (the cluster lookups themselves need about %d tokens)", schema)
+		}
+		http.Error(w, msg, http.StatusUnprocessableEntity)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), turnTimeout)
@@ -157,6 +168,11 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, box Toolbox, 
 	}
 	toolBytes, ran := 0, 0
 	for i := range maxRounds {
+		// The last round offers no tools, so the model answers from what it has.
+		final := i == maxRounds-1
+		if final {
+			c.noTools = true
+		}
 		if i > 0 && t.budget > 0 && total.Total+t.prompt(&c, msgs)+minAnswerTokens > t.budget {
 			s.send(event{Type: "notice", Text: fmt.Sprintf("Stopped: the next step would pass the cap of %d tokens.", t.budget)})
 			s.send(event{Type: "done", Usage: &total, Masked: hidden})
@@ -173,12 +189,15 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, box Toolbox, 
 			s.send(event{Type: "notice", Text: "This endpoint rejected tools; answering without cluster lookups."})
 		}
 		// Any finish but the cap's is a tool round when calls came: Ollama sends "stop".
-		if len(rd.Calls) == 0 || rd.Finish == "length" || c.noTools {
+		if len(rd.Calls) == 0 || rd.Finish == "length" || c.noTools && !final {
 			if rd.Finish == "length" {
 				s.send(event{Type: "notice", Text: "The answer stopped at the token cap."})
 			}
 			s.send(event{Type: "done", Usage: &total, Masked: hidden})
 			return
+		}
+		if final {
+			break
 		}
 		if ran += len(rd.Calls); ran > maxToolCalls {
 			s.send(event{Type: "notice", Text: fmt.Sprintf("Stopped: this question reached its limit of %d tool calls.", maxToolCalls)})
@@ -473,6 +492,8 @@ type chunk struct {
 
 func readStream(r io.Reader, onText func(text string, relay bool)) (round, error) {
 	var rd round
+	// Where each stream index writes. A new id at a used index is a new call.
+	at := map[int]int{}
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
@@ -512,10 +533,16 @@ func readStream(r io.Reader, onText func(text string, relay bool)) (round, error
 				if d.Index < 0 || d.Index >= maxToolCalls {
 					return rd, fmt.Errorf("assistant endpoint sent tool call index %d", d.Index)
 				}
-				for len(rd.Calls) <= d.Index {
+				p, ok := at[d.Index]
+				if !ok || d.ID != "" && rd.Calls[p].ID != "" && d.ID != rd.Calls[p].ID {
+					if len(rd.Calls) == maxToolCalls {
+						return rd, fmt.Errorf("assistant endpoint sent more than %d tool calls", maxToolCalls)
+					}
+					p = len(rd.Calls)
+					at[d.Index] = p
 					rd.Calls = append(rd.Calls, ToolCall{Type: "function"})
 				}
-				tc := &rd.Calls[d.Index]
+				tc := &rd.Calls[p]
 				if d.ID != "" {
 					tc.ID = d.ID
 				}

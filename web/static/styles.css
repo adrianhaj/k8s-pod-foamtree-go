@@ -1105,7 +1105,7 @@ button.ptr:hover > * { background: var(--bg-3); }
 .msg-body pre { margin: 6px 0; padding: 8px 10px; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel-2); font: 11.5px/1.5 var(--font-mono); }
 .msg-body .obj { font: 11.5px var(--font-mono); color: var(--accent); text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 2px; }
 .msg-body .obj:hover { text-decoration-color: var(--accent); }
-.tool { display: flex; align-items: center; gap: 8px; font: 11px/1.4 var(--font-mono); color: var(--text-dim); padding: 1px 0; }
+.tool { display: flex; align-items: center; gap: 8px; font: 11px/1.4 var(--font-mono); color: var(--text-dim); padding: 1px 0; overflow-wrap: anywhere; }
 .tool::before { content: "›"; color: var(--accent); }
 .msg-meta { margin-top: 6px; font: 10.5px var(--font-mono); color: var(--text-dim); }
 .caret { display: inline-block; width: 7px; height: 13px; vertical-align: -2px; background: var(--accent); animation: blink 1s steps(1) infinite; }
