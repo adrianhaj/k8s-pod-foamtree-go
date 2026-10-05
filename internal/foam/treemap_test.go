@@ -3,6 +3,7 @@ package foam
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -252,5 +253,24 @@ func TestTreemapCarriesPodStatus(t *testing.T) {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("missing %s in %s", want, b)
 		}
+	}
+}
+
+// Pending = no node yet. A pod bound to a vanished node is not pending; the
+// report lists it, the queue does not. Not-yet-tried pods have no reason.
+func TestTreemapListsPendingPods(t *testing.T) {
+	msg := "0/1 nodes are available: 1 Insufficient cpu."
+	pods := []Pod{etcdPod(),
+		{Name: "b", Namespace: "dev", SchedReason: "Unschedulable", SchedMessage: msg},
+		{Name: "a", Namespace: "dev"},
+		{Name: "orphan", Namespace: "dev", NodeName: "gone"},
+	}
+	want := []PendingPod{{Namespace: "dev", Name: "a"}, {Namespace: "dev", Name: "b", Reason: "Unschedulable", Message: msg}}
+	if got := Treemap([]Node{minikube}, pods, CPU).Pending; !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v", got)
+	}
+	b, _ := json.Marshal(Treemap([]Node{minikube}, []Pod{etcdPod()}, Memory))
+	if !strings.Contains(string(b), `"pending":[]`) {
+		t.Fatalf("pending must be [], not null: %s", b)
 	}
 }

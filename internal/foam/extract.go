@@ -50,8 +50,11 @@ type Pod struct {
 	Tolerations  []corev1.Toleration
 	// Kind of the controlling owner, "" for a bare pod: decides what a drain does with it.
 	Controller string
-	Phase      string
-	Statuses   []ContainerStatus
+	// The scheduler's PodScheduled=False reason and message; "" once
+	// scheduled, and before the scheduler has tried.
+	SchedReason, SchedMessage string
+	Phase                     string
+	Statuses                  []ContainerStatus
 }
 
 type Taint struct {
@@ -216,6 +219,11 @@ func FromPod(p *corev1.Pod) Pod {
 	}
 	if ref := metav1.GetControllerOf(p); ref != nil {
 		out.Controller = ref.Kind
+	}
+	for _, c := range p.Status.Conditions {
+		if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse {
+			out.SchedReason, out.SchedMessage = c.Reason, c.Message
+		}
 	}
 	// Native sidecars run for the pod's whole life, so they count as regular.
 	for _, c := range p.Spec.InitContainers {
