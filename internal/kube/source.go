@@ -314,7 +314,7 @@ func slimPod(obj any) (any, error) {
 		Status: corev1.PodStatus{QOSClass: p.Status.QOSClass, Phase: p.Status.Phase,
 			Conditions: slimConditions(p.Status.Conditions),
 			// ponytail: the kubelet fills these for every running pod on 1.33+ (~few KB/pod); if cache memory measures high,
-			// keep them only while a PodResize condition is set or when they differ from spec.
+			// keep them only while a PodResizePending condition is set or when they differ from spec.
 			AllocatedResources:    p.Status.AllocatedResources,
 			Resources:             p.Status.Resources,
 			ContainerStatuses:     slimStatuses(p.Status.ContainerStatuses),

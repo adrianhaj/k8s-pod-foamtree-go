@@ -300,9 +300,9 @@ func TestSlimPodKeepsContainerStatusWithoutMessages(t *testing.T) {
 	}
 }
 
-// The Pending tab shows why the scheduler refused a pod; nothing else in
-// the conditions is read, and a scheduled pod's True condition is noise.
-func TestSlimPodKeepsOnlyTheUnschedulableCondition(t *testing.T) {
+// The Pending tab shows why the scheduler refused a pod; a scheduled pod's
+// True condition is noise.
+func TestSlimPodKeepsTheUnschedulableCondition(t *testing.T) {
 	want := corev1.PodCondition{Type: corev1.PodScheduled, Status: corev1.ConditionFalse,
 		Reason: "Unschedulable", Message: "0/3 nodes are available: 3 Insufficient cpu."}
 	in := &corev1.Pod{Status: corev1.PodStatus{Conditions: []corev1.PodCondition{

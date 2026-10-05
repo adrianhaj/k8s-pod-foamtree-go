@@ -122,7 +122,7 @@ function mergeResources(cpuData, memData) {
         // Best-practice rule slugs, decided by the backend.
         findings: cp.findings || [],
         // Pending in-place resize; cpu/mem are what spec asks for.
-        resize: cp.resize ? { state: cp.resize.state, message: cp.resize.message,
+        resize: cp.resize ? { message: cp.resize.message,
           cpu: cp.resize.desired, mem: mp.resize ? kbToMib(mp.resize.desired) : null } : null,
         // Container status: restarts, waiting reason, last exit. Absent on an older backend.
         phase: cp.phase || "",
