@@ -19,8 +19,9 @@ const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY
 const { fmtMem, shortContext, clock } = window.k8sFormat;
 const { buildProblems, problemChips } = window.k8sProblems;
 const { pickShown } = window.k8sHighlight;
-const { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips } = window.k8sPanel;
+const { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips, showTab } = window.k8sPanel;
 const { TopBar, SummaryStrip, Toolbar, Rail, SettingsMenu, attentionBySev } = window.k8sChrome;
+const { useAssistant, AssistantTab } = window.k8sAssistant;
 const THEME_KEY = "k8sfoams.theme";
 const SIM_IDLE = { mode: "drain", node: null, result: null, error: null, busy: false };
 
@@ -523,6 +524,11 @@ function App() {
   const problems = useMemo(() => buildProblems(nodes), [nodes]);
   const chips = useMemo(() => problemChips(problems), [problems]);
 
+  const assistant = useAssistant({
+    context, nodes, totals, problems, focused, logsPod, logsText, setPanel, setFocused,
+    open: panel.open && panel.tab === "assistant",
+  });
+
   // Every class gets a row, even at zero — "no BestEffort pods" is the answer
   // an SRE is usually looking for. Pods with no reported class are not counted.
   const qosBreakdown = useMemo(() => {
@@ -545,7 +551,7 @@ function App() {
     label: `${ext.label} requested`, u: totals.extUsed / (totals.extCap || 1),
     value: fmtExt(totals.extUsed, activeMetric, memUnit), of: `of ${fmtExt(totals.extCap, activeMetric, memUnit, true)} ${extUnit(activeMetric, memUnit)}`,
   };
-  const openTab = id => setPanel(p => (p.open && p.tab === id ? { ...p, open: false } : { ...p, open: true, tab: id }));
+  const openTab = id => setPanel(p => (p.open && p.tab === id ? { ...p, open: false } : showTab(p, id)));
 
   return (
     <div className="app">
@@ -568,7 +574,7 @@ function App() {
           </div>
         )}
         <Rail view={view} setView={setView} panel={panel} openTab={openTab} findings={problems.length}
-          settings={<SettingsMenu themePref={themePref} setThemePref={setThemePref} memUnit={memUnit} setMemUnit={setMemUnit} />} />
+          settings={<SettingsMenu themePref={themePref} setThemePref={setThemePref} memUnit={memUnit} setMemUnit={setMemUnit} onAssistant={assistant.openConnection} />} />
         <MapChips lit={shown.lit} ring={shown.ring}
           litPod={logsPod ? podKey(logsPod) : ""}
           onLogs={() => { const p = allPods.find(x => workloadKey(x.name) === selectedWorkload); if (p) openLogs(p); }}
@@ -632,7 +638,10 @@ function App() {
             fitBody={<><FitForm context={context} onResult={setFit} />{fit && <FitSummary result={fit} onClear={() => setFit(null)} />}</>} />
         )}
         {panel.tab === "logs" && (
-          <LogsTab context={context} sel={logsPod} setSel={setLogsPod} pods={allPods} onLoaded={setLogsText} />
+          <LogsTab context={context} sel={logsPod} setSel={setLogsPod} pods={allPods} onLoaded={setLogsText} onAnalyze={assistant.analyzePod} />
+        )}
+        {panel.tab === "assistant" && (
+          <AssistantTab a={assistant} />
         )}
       </BottomPanel>
 

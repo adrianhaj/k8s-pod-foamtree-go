@@ -27,6 +27,11 @@ spec:
             - --oidc-client-id=k8sfoams
             - --oidc-redirect-url=https://k8sfoams.example.com/auth/callback
             - --oidc-allowed-groups=k8sfoams-viewers
+            # Optional assistant connection shared by every viewer. Viewers can
+            # also use their own key from Settings.
+            # - --llm-url=https://api.openai.com/v1
+            # - --llm-model=gpt-4.1-mini
+            # - --llm-allowed-hosts=api.openai.com
           env:
             # kubectl -n k8sfoams create secret generic k8sfoams-oidc \
             #   --from-literal=client-secret=... --from-literal=session-key="$(openssl rand -base64 32)"
@@ -34,6 +39,12 @@ spec:
               valueFrom: {secretKeyRef: {name: k8sfoams-oidc, key: client-secret}}
             - name: K8SFOAMS_SESSION_KEY
               valueFrom: {secretKeyRef: {name: k8sfoams-oidc, key: session-key}}
+            # kubectl -n k8sfoams create secret generic k8sfoams-llm --from-literal=api-key=...
+            # Either as an environment variable:
+            # - name: K8SFOAMS_LLM_API_KEY
+            #   valueFrom: {secretKeyRef: {name: k8sfoams-llm, key: api-key, optional: true}}
+            # or mounted, with --llm-api-key-file=/var/run/secrets/k8sfoams-llm/api-key,
+            # so a rotated Secret applies without a restart.
           ports:
             - {name: http, containerPort: 8080}
           readinessProbe:

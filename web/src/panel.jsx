@@ -9,17 +9,21 @@ const TABS = [
   { id: "changes", label: "Changes" },
   { id: "drain", label: "Drain simulation" },
   { id: "logs", label: "Logs" },
+  // The transcript needs the height: the Assistant opens maximized.
+  { id: "assistant", label: "Assistant", max: true },
 ];
+const showTab = (p, id) => ({ ...p, open: true, tab: id, max: p.max || !!TABS.find(t => t.id === id).max });
 const ROW_CAP = 100; // ponytail: plain list; virtualise if clusters routinely exceed this
 
 function BottomPanel({ panel, setPanel, counts, children }) {
-  const pick = id => setPanel(p => ({ ...p, open: true, tab: id }));
+  const pick = id => setPanel(p => showTab(p, id));
   const onKey = e => {
     const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
     if (!d || e.target.getAttribute("role") !== "tab") return;
     const i = TABS.findIndex(t => t.id === panel.tab);
     const next = TABS[(i + d + TABS.length) % TABS.length].id;
-    pick(next);
+    // Cycling only switches tabs; a click on a tab may also maximize it.
+    setPanel(p => ({ ...p, open: true, tab: next }));
     const el = document.getElementById(`tab-${next}`);
     if (el) el.focus();
   };
@@ -174,4 +178,4 @@ function MapChips({ lit, ring, litPod, workload, onClearWorkload, onLogs, at, on
   );
 }
 
-window.k8sPanel = { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips };
+window.k8sPanel = { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips, showTab };

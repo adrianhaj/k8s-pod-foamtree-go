@@ -203,13 +203,15 @@ function Toolbar({ view, metric, metrics, setMetric, zoom, setZoom, groupBy, set
   );
 }
 
-function SettingsMenu({ themePref, setThemePref, memUnit, setMemUnit }) {
+function SettingsMenu({ themePref, setThemePref, memUnit, setMemUnit, onAssistant }) {
   return (
     <Menu className="settings" title="Settings" label={<Icon name="gear" />}>
       <div className="menu-h">Theme</div>
       {[["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(([id, l]) => radio(id, themePref === id, () => setThemePref(id), l))}
       <div className="menu-h">Memory unit</div>
       {["MiB", "GiB", "TiB"].map(u => radio(u, memUnit === u, () => setMemUnit(u), u))}
+      <div className="menu-h">Assistant</div>
+      <button role="menuitem" onClick={onAssistant}><span className="menu-check" />Connection…</button>
     </Menu>
   );
 }
@@ -239,6 +241,7 @@ function Rail({ view, setView, panel, openTab, findings, settings }) {
       {tabBtn("changes", "clock", "Changes")}
       {tabBtn("drain", "flask", "Drain simulation")}
       {tabBtn("logs", "terminal", "Logs")}
+      {tabBtn("assistant", "chat", "Assistant")}
       <span className="rail-div" />
       {settings}
     </nav>
