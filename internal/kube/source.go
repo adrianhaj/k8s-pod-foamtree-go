@@ -177,7 +177,7 @@ func tail(r io.Reader, limit int) ([]byte, error) {
 			buf = append(buf[:0], buf[len(buf)-limit-1:]...)
 		}
 		if err == io.EOF {
-			return lastBytes(buf, limit), nil
+			return LastBytes(buf, limit), nil
 		}
 		if err != nil {
 			return nil, err
@@ -185,8 +185,9 @@ func tail(r io.Reader, limit int) ([]byte, error) {
 	}
 }
 
-// lastBytes keeps the newest limit bytes, starting at a line boundary.
-func lastBytes(b []byte, limit int) []byte {
+// LastBytes keeps the newest limit bytes, starting at a line boundary unless
+// that would drop the last line.
+func LastBytes(b []byte, limit int) []byte {
 	if len(b) <= limit {
 		return b
 	}

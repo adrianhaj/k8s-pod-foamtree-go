@@ -12,12 +12,19 @@ const { safeStorage, readPref, writePref } = window.k8sPrefs;
 
 const ACK_KEY = "k8sfoams.llm.ack";
 const QUICK = ["Explain the problems", "Which nodes have the least room left?", "Which pods have no memory limit?"];
+const TOOL_ARGS = 120;
+
+const joinNote = (a, b) => (a ? `${a} · ${b}` : b);
+const clip = s => {
+  const cs = [...s];
+  return cs.length > TOOL_ARGS ? `${cs.slice(0, TOOL_ARGS).join("")}…` : s;
+};
 
 function applyEvent(ms, ev) {
   const last = { ...ms[ms.length - 1] };
   if (ev.type === "delta") last.content += ev.text;
-  else if (ev.type === "tool") last.tools = [...last.tools, `${ev.name} ${ev.args || ""}`.trim()];
-  else if (ev.type === "notice") last.note = ev.text;
+  else if (ev.type === "tool") last.tools = [...last.tools, `${ev.name} ${clip(ev.args || "")}`.trim()];
+  else if (ev.type === "notice") last.note = joinNote(last.note, ev.text);
   else if (ev.type === "error") last.error = ev.text;
   else if (ev.type === "done") { last.usage = ev.usage; last.masked = ev.masked || 0; }
   else if (ev.type === "cut") last.cut = true;
@@ -47,7 +54,8 @@ function knownOf(nodes) {
 
 // The fixed part of a request: the system prompt with the ticked context, then
 // earlier turns. plan adds the question; the estimate covers exactly the array
-// that goes out, the way the server counts it.
+// that goes out, plus the tools schema the server sends with it, the way the
+// server counts them.
 function head(items, tick, messages) {
   const wire = [
     { role: "system", content: systemPrompt(items, tick) },
@@ -56,9 +64,11 @@ function head(items, tick, messages) {
   return { wire, chars: msgChars(wire), labels: items.filter(i => isOn(tick, i.id)).map(i => i.label) };
 }
 
-function plan(h, text) {
+const toolTokens = server => (server && server.toolTokens) || 0;
+
+function plan(h, text, server) {
   const user = { role: "user", content: text };
-  return { wire: [...h.wire, user], tokens: estimateMessages([user], h.chars), labels: h.labels };
+  return { wire: [...h.wire, user], tokens: estimateMessages([user], h.chars) + toolTokens(server), labels: h.labels };
 }
 
 // Everything the Assistant needs from the dashboard. Context items and name
@@ -113,7 +123,7 @@ function useAssistant({ context, nodes, totals, problems, focused, logsPod, logs
           if (ev.type === "done" || ev.type === "error") ended = true;
           if (ev.type === "error") failed = ev.text;
           if (ev.type === "delta" && ev.text) got = true;
-          if (ev.type === "notice") note = ev.text;
+          if (ev.type === "notice") note = joinNote(note, ev.text);
           if (ev.type === "done") { usage = ev.usage; masked = ev.masked || 0; }
           setMessages(ms => applyEvent(ms, ev));
         },
@@ -142,7 +152,7 @@ function useAssistant({ context, nodes, totals, problems, focused, logsPod, logs
   };
 
   const ask = (its, tick, text) => {
-    const p = plan(head(its, tick, messages), text);
+    const p = plan(head(its, tick, messages), text, server);
     if (busy || overCap(p.tokens, effectiveBudget(conn, server))) {
       draft.set(text);
       return;
@@ -333,7 +343,8 @@ function Chat({ a }) {
   const draft = useSyncExternalStore(a.draft.sub, a.draft.get);
   const h = useMemo(() => head(items, a.ticked, a.messages), [items, a.ticked, a.messages]);
   const budget = effectiveBudget(conn, server);
-  const next = plan(h, draft);
+  const next = plan(h, draft, server);
+  const lookups = toolTokens(server);
   const over = overCap(next.tokens, budget);
   const used = a.messages.reduce((s, m) => s + (m.usage ? m.usage.total : 0), a.spent);
   const submit = () => {
@@ -363,7 +374,7 @@ function Chat({ a }) {
               onChange={e => a.draft.set(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); submit(); } }} />
             <div className="composer-side">
-              <span className="cost" title="Rough estimate: 4 characters per token">
+              <span className="cost" title={`Rough estimate: 4 characters per token${lookups ? `, including about ${lookups} for the cluster lookups` : ""}`}>
                 next message ≈ {fmtTokens(next.tokens)}{budget > 0 ? ` of ${fmtTokens(budget)} cap` : ""} tokens
               </span>
               {a.busy
@@ -371,7 +382,7 @@ function Chat({ a }) {
                 : <button className="btn-primary" disabled={!draft.trim() || over} onClick={submit}>Send</button>}
             </div>
           </div>
-          {over && <div className="panel-note">Over the cap of {budget.toLocaleString()} tokens. Untick some context, or raise the cap in Connection.</div>}
+          {over && <div className="panel-note">Over the cap of {budget.toLocaleString()} tokens. Untick some context, or raise the cap in Connection{lookups ? ` (the cluster lookups themselves need about ${lookups} tokens)` : ""}.</div>}
         </div>
       </div>
       <aside className="ctx" aria-label="Context sent with your next message">

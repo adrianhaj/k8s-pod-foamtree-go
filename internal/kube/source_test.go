@@ -248,9 +248,9 @@ func TestLastBytesKeepsTheNewestWholeLines(t *testing.T) {
 		{"xxxx\nabc\n", 4, "abc\n"},
 		{"xxabc\n", 4, "abc\n"},
 	} {
-		got := string(lastBytes([]byte(tc.in), tc.max))
+		got := string(LastBytes([]byte(tc.in), tc.max))
 		if got != tc.want || len(got) > tc.max && len(tc.in) > tc.max {
-			t.Errorf("lastBytes(%q, %d) = %q, want %q", tc.in, tc.max, got, tc.want)
+			t.Errorf("LastBytes(%q, %d) = %q, want %q", tc.in, tc.max, got, tc.want)
 		}
 	}
 }

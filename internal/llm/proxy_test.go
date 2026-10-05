@@ -285,6 +285,23 @@ func TestConfigNeverReturnsTheKey(t *testing.T) {
 	}
 }
 
+// The browser adds the schema to its estimate, so both sides count the same.
+func TestConfigReportsTheToolSchemaCost(t *testing.T) {
+	for _, p := range []*Proxy{New(Config{}), withBox(New(Config{}), &fakeBox{})} {
+		w := httptest.NewRecorder()
+		p.ServeConfig(w, httptest.NewRequest("GET", "/", nil))
+		var got struct{ ToolTokens int }
+		json.Unmarshal(w.Body.Bytes(), &got)
+		want := 0
+		if p.Tools != nil {
+			_, want = toolDefs((&fakeBox{}).Tools())
+		}
+		if got.ToolTokens != want || p.Tools != nil && want == 0 {
+			t.Fatalf("toolTokens %d, want %d: %s", got.ToolTokens, want, w.Body)
+		}
+	}
+}
+
 func TestUpstreamErrorsDoNotLeakTheServerKey(t *testing.T) {
 	status := 401
 	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
@@ -458,5 +475,385 @@ func TestUnknownRoleIsRejected(t *testing.T) {
 	body := `{"url":"` + up.URL + `/v1","model":"m","messages":[{"role":"tool","content":"x"}]}`
 	if w := chat(New(Config{AllowAnyURL: true}), "k", body); w.Code != http.StatusBadRequest || len(up.got()) != 0 {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+}
+
+type fakeBox struct {
+	mu      sync.Mutex
+	cluster string
+	calls   []string
+	out     string
+}
+
+func (b *fakeBox) Tools() []Tool {
+	return []Tool{{Name: "describe_pod", Description: "One pod.", Parameters: json.RawMessage(`{"type":"object","properties":{}}`)}}
+}
+
+func (b *fakeBox) Call(_ context.Context, name string, args json.RawMessage) (string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.calls = append(b.calls, name+" "+string(args))
+	return b.out, nil
+}
+
+func withBox(p *Proxy, b *fakeBox) *Proxy {
+	p.Tools = func(cluster string) Toolbox { b.cluster = cluster; return b }
+	return p
+}
+
+// The arguments arrive split over two chunks, as real endpoints send them.
+const (
+	toolStart = `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"describe_pod","arguments":"{\"namespace\":"}}]}}]}`
+	toolEnd   = `{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"ns\",\"name\":\"p\"}"}}]},"finish_reason":"tool_calls"}]}`
+)
+
+func TestToolLoopRunsToolsThenAnswers(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		if call == 1 {
+			sse(w, toolStart, toolEnd, `{"choices":[],"usage":{"prompt_tokens":50,"completion_tokens":10,"total_tokens":60}}`)
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"It is running."},"finish_reason":"stop"}]}`,
+			`{"choices":[],"usage":{"prompt_tokens":80,"completion_tokens":5,"total_tokens":85}}`)
+	})
+	box := &fakeBox{out: `{"phase":"Running"}`}
+	w := chat(withBox(New(Config{AllowAnyURL: true}), box), "k", `{"url":"`+up.URL+`/v1","model":"m","context":"kind",`+q+`}`)
+
+	want := []event{
+		{Type: "tool", Name: "describe_pod", Args: `{"namespace":"ns","name":"p"}`},
+		{Type: "delta", Text: "It is running."},
+		{Type: "done", Usage: &Usage{Prompt: 130, Completion: 15, Total: 145}},
+	}
+	if got := events(t, w.Body.String()); !reflect.DeepEqual(got, want) {
+		t.Fatalf("%+v", got)
+	}
+	if box.cluster != "kind" || len(box.calls) != 1 || box.calls[0] != `describe_pod {"namespace":"ns","name":"p"}` {
+		t.Fatalf("tool calls %q on %q", box.calls, box.cluster)
+	}
+	c := up.got()
+	if c[0].body["tools"] == nil {
+		t.Fatal("tools were not offered")
+	}
+	msgs := c[1].body["messages"].([]any)
+	asked, answered := msgs[len(msgs)-2].(map[string]any), msgs[len(msgs)-1].(map[string]any)
+	if asked["role"] != "assistant" || asked["tool_calls"] == nil ||
+		answered["role"] != "tool" || answered["tool_call_id"] != "call_1" || answered["content"] != `{"phase":"Running"}` {
+		t.Fatalf("second request messages: %+v", msgs)
+	}
+}
+
+func TestToolLoopStopsAfterMaxRounds(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
+		sse(w, toolStart, toolEnd, `{"choices":[],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10}}`)
+	})
+	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: "{}"}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	ev := events(t, w.Body.String())
+	n := len(ev)
+	if len(up.got()) != maxRounds || ev[n-2].Type != "error" || !strings.Contains(ev[n-2].Text, "8 tool rounds") ||
+		ev[n-1].Type != "done" || ev[n-1].Usage.Total != 10*maxRounds {
+		t.Fatalf("%d calls, last %+v", len(up.got()), ev[n-2:])
+	}
+	tools := 0
+	for _, e := range ev {
+		if e.Type == "tool" {
+			tools++
+		}
+	}
+	if up.got()[maxRounds-1].body["tools"] != nil || tools != maxRounds-1 {
+		t.Fatalf("last round offered tools, or %d tool events for %d tool rounds", tools, maxRounds-1)
+	}
+}
+
+// The last round offers no tools, so a model that keeps looking things up still answers.
+func TestLastRoundAnswersWithoutTools(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, body map[string]any) {
+		if body["tools"] != nil {
+			sse(w, toolStart, toolEnd)
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"From what I saw."},"finish_reason":"stop"}]}`)
+	})
+	ev := events(t, chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: "{}"}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`).Body.String())
+	n := len(ev)
+	if len(up.got()) != maxRounds || ev[n-2].Text != "From what I saw." || ev[n-1].Type != "done" {
+		t.Fatalf("%d calls, last %+v", len(up.got()), ev[n-2:])
+	}
+	for _, e := range ev {
+		if e.Type == "error" || e.Type == "notice" {
+			t.Fatalf("%+v", e)
+		}
+	}
+}
+
+// Spend from earlier rounds reaches the viewer even when a later round fails.
+func TestToolLoopReportsSpendWhenALaterRoundFails(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		if call == 1 {
+			sse(w, toolStart, toolEnd, `{"choices":[],"usage":{"prompt_tokens":50,"completion_tokens":10,"total_tokens":60}}`)
+			return
+		}
+		http.Error(w, "overloaded", 500)
+	})
+	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: "{}"}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	ev := events(t, w.Body.String())
+	n := len(ev)
+	if ev[n-2].Type != "error" || !strings.Contains(ev[n-2].Text, "500") || ev[n-1].Type != "done" || ev[n-1].Usage.Total != 60 {
+		t.Fatalf("%+v", ev)
+	}
+}
+
+// Ollama sends tool calls with finish_reason "stop".
+func TestToolCallsRunWhateverTheFinishReason(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		if call == 1 {
+			sse(w, toolStart, strings.Replace(toolEnd, `"finish_reason":"tool_calls"`, `"finish_reason":"stop"`, 1))
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	})
+	box := &fakeBox{out: "{}"}
+	w := chat(withBox(New(Config{AllowAnyURL: true}), box), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	if len(box.calls) != 1 || len(up.got()) != 2 || !strings.Contains(w.Body.String(), `"ok"`) {
+		t.Fatalf("%q %d %s", box.calls, len(up.got()), w.Body)
+	}
+}
+
+func TestToolLoopStopsAtTheCap(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
+		sse(w, toolStart, toolEnd, `{"choices":[],"usage":{"prompt_tokens":1800,"completion_tokens":100,"total_tokens":1900}}`)
+	})
+	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: "{}"}), "k", `{"url":"`+up.URL+`/v1","model":"m","budget":2000,`+q+`}`)
+	ev := events(t, w.Body.String())
+	n := len(ev)
+	if len(up.got()) != 1 || ev[n-2].Type != "notice" || !strings.Contains(ev[n-2].Text, "cap") || ev[n-1].Usage.Total != 1900 {
+		t.Fatalf("%d calls, events %+v", len(up.got()), ev)
+	}
+}
+
+func TestToolsRejectedFallsBackToPlainChat(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		if call == 1 {
+			http.Error(w, `{"error":{"message":"this model does not support tools"}}`, 400)
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"plain"},"finish_reason":"stop"}]}`)
+	})
+	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	if c := up.got(); len(c) != 2 || c[1].body["tools"] != nil || !strings.Contains(w.Body.String(), "plain") {
+		t.Fatalf("%+v", c)
+	}
+}
+
+// Every compat stage can be reached within one question.
+func TestEveryRetryStageIsReachable(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		switch call {
+		case 1:
+			http.Error(w, `{"error":{"message":"Unrecognized request argument supplied: stream_options"}}`, 400)
+		case 2:
+			http.Error(w, `{"error":{"message":"Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead."}}`, 400)
+		case 3:
+			http.Error(w, `{"error":{"message":"Unsupported parameter: 'max_completion_tokens'"}}`, 400)
+		case 4:
+			http.Error(w, `{"error":{"message":"tools are not supported"}}`, 400)
+		default:
+			sse(w, `{"choices":[{"delta":{"content":"plain"},"finish_reason":"stop"}]}`)
+		}
+	})
+	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{}), "k", `{"url":"`+up.URL+`/v1","model":"m","budget":1000,`+q+`}`)
+	c := up.got()
+	if len(c) != 5 || c[4].body["tools"] != nil || c[4].body["max_completion_tokens"] != nil || !strings.Contains(w.Body.String(), "plain") {
+		t.Fatalf("%d calls, %q", len(c), w.Body)
+	}
+}
+
+func TestPlainChatOffersNoTools(t *testing.T) {
+	up := newUpstream(t, answer("ok"))
+	chat(New(Config{AllowAnyURL: true}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	if c := up.got(); len(c) != 1 || c[0].body["tools"] != nil {
+		t.Fatalf("%+v", c)
+	}
+}
+
+func TestToolOutputIsMasked(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		if call == 1 {
+			sse(w, toolStart, toolEnd)
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	})
+	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: "starting\nREDIS_PASSWORD=hunter2hunter2\n"}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	sent, _ := json.Marshal(up.got()[1].body)
+	if strings.Contains(string(sent), "hunter2hunter2") {
+		t.Fatalf("a secret from tool output reached the model: %s", sent)
+	}
+	ev := events(t, w.Body.String())
+	if last := ev[len(ev)-1]; last.Masked != 1 {
+		t.Fatalf("%+v", last)
+	}
+}
+
+func TestToolOutputIsBudgeted(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		if call == 1 {
+			sse(w, toolStart, toolEnd)
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	})
+	chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: strings.Repeat("x", 100<<10)}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	msgs := up.got()[1].body["messages"].([]any)
+	content := msgs[len(msgs)-1].(map[string]any)["content"].(string)
+	if len(content) > maxToolBytes+200 || !strings.Contains(content, "truncated") {
+		t.Fatalf("tool output of %d bytes reached the model", len(content))
+	}
+}
+
+func TestEstimateCountsToolCalls(t *testing.T) {
+	m := Message{Role: "assistant", ToolCalls: []ToolCall{{}}}
+	m.ToolCalls[0].Function.Name, m.ToolCalls[0].Function.Arguments = "ab", "日本語"
+	if got, want := estimate([]Message{m}), (9+2+3)/charsPerToken+1; got != want {
+		t.Fatalf("estimate %d, want %d", got, want)
+	}
+}
+
+// Tool calls and tool results are added by the server only.
+func TestBrowserCannotSendToolCalls(t *testing.T) {
+	up := newUpstream(t, answer("ok"))
+	body := `{"url":"` + up.URL + `/v1","model":"m","messages":[{"role":"assistant","content":"","tool_calls":[{"id":"x","type":"function","function":{"name":"n","arguments":"{}"}}]},{"role":"user","content":"q"}]}`
+	if w := chat(New(Config{AllowAnyURL: true}), "k", body); w.Code != http.StatusBadRequest || len(up.got()) != 0 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestOversizedToolCallFailsTheRound(t *testing.T) {
+	for name, delta := range map[string]string{
+		"arguments": fmt.Sprintf(`{"index":0,"id":"c","function":{"name":"describe_pod","arguments":%q}}`, strings.Repeat("x", maxToolArgs+1)),
+		"name":      fmt.Sprintf(`{"index":0,"id":"c","function":{"name":%q,"arguments":"{}"}}`, strings.Repeat("n", maxToolName+1)),
+	} {
+		up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+			if call == 1 {
+				sse(w, toolStart, toolEnd, `{"choices":[],"usage":{"prompt_tokens":50,"completion_tokens":10,"total_tokens":60}}`)
+				return
+			}
+			sse(w, `{"choices":[{"delta":{"tool_calls":[`+delta+`]},"finish_reason":"tool_calls"}]}`)
+		})
+		box := &fakeBox{out: "{}"}
+		ev := events(t, chat(withBox(New(Config{AllowAnyURL: true}), box), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`).Body.String())
+		n := len(ev)
+		if len(box.calls) != 1 || ev[n-2].Type != "error" || !strings.Contains(ev[n-2].Text, "tool call") || ev[n-1].Type != "done" || ev[n-1].Usage.Total != 60 {
+			t.Errorf("%s: %d tool runs, %+v", name, len(box.calls), ev[n-2:])
+		}
+	}
+}
+
+func TestToolCallsAreLimitedPerQuestion(t *testing.T) {
+	var calls []string
+	for i := range 5 {
+		calls = append(calls, fmt.Sprintf(`{"index":%d,"id":"c%d","function":{"name":"describe_pod","arguments":"{}"}}`, i, i))
+	}
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
+		sse(w, `{"choices":[{"delta":{"tool_calls":[`+strings.Join(calls, ",")+`]},"finish_reason":"tool_calls"}]}`)
+	})
+	box := &fakeBox{out: "{}"}
+	ev := events(t, chat(withBox(New(Config{AllowAnyURL: true}), box), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`).Body.String())
+	n := len(ev)
+	if len(box.calls) != 15 || len(up.got()) != 4 || ev[n-2].Type != "notice" || !strings.Contains(ev[n-2].Text, "16 tool calls") || ev[n-1].Type != "done" {
+		t.Fatalf("%d tool runs, %d rounds, %+v", len(box.calls), len(up.got()), ev[n-2:])
+	}
+}
+
+type bigBox struct{ fakeBox }
+
+func (b *bigBox) Tools() []Tool {
+	return []Tool{{Name: "x", Description: strings.Repeat("d", 8000), Parameters: json.RawMessage(`{"type":"object"}`)}}
+}
+
+// The tools schema goes out with every request, so it counts toward the cap.
+func TestToolSchemaCountsTowardTheCap(t *testing.T) {
+	up := newUpstream(t, answer("ok"))
+	p := New(Config{AllowAnyURL: true})
+	p.Tools = func(string) Toolbox { return &bigBox{} }
+	if w := chat(p, "k", `{"url":"`+up.URL+`/v1","model":"m","budget":1000,`+q+`}`); w.Code != http.StatusUnprocessableEntity || len(up.got()) != 0 ||
+		!strings.Contains(w.Body.String(), "the cluster lookups themselves need about 20") {
+		t.Fatalf("%d %q, %d upstream calls", w.Code, w.Body, len(up.got()))
+	}
+	chat(p, "k", `{"url":"`+up.URL+`/v1","model":"m","budget":5000,`+q+`}`)
+	if got := up.got()[0].body["max_tokens"].(float64); got > 5000-8000/charsPerToken {
+		t.Fatalf("max_tokens %v ignores the tools schema", got)
+	}
+}
+
+func TestToolCallsWithoutNameOrIDAreTidied(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		if call == 1 {
+			sse(w, `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"nameless"},{"index":1,"function":{"name":"describe_pod","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`)
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	})
+	box := &fakeBox{out: "{}"}
+	chat(withBox(New(Config{AllowAnyURL: true}), box), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	msgs := up.got()[1].body["messages"].([]any)
+	asked, answered := msgs[len(msgs)-2].(map[string]any), msgs[len(msgs)-1].(map[string]any)
+	if len(box.calls) != 1 || len(asked["tool_calls"].([]any)) != 1 || answered["tool_call_id"] != "call_1" {
+		t.Fatalf("%q %+v", box.calls, msgs)
+	}
+}
+
+// Some endpoints reuse index 0 for every call; a new id there starts a new call.
+func TestNewIDAtTheSameIndexIsANewCall(t *testing.T) {
+	delta := func(id, name, args string) string {
+		return fmt.Sprintf("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":%q,\"function\":{\"name\":%q,\"arguments\":%q}}]}}]}\n\n", id, name, args)
+	}
+	body := delta("a", "describe_pod", `{"name":`) + delta("", "", `"p"}`) + delta("b", "describe_node", `{}`) + delta("b", "", "")
+	rd, err := readStream(strings.NewReader(body), func(string, bool) {})
+	if err != nil || len(rd.Calls) != 2 || rd.Calls[0].ID != "a" || rd.Calls[0].Function.Arguments != `{"name":"p"}` ||
+		rd.Calls[1].ID != "b" || rd.Calls[1].Function.Name != "describe_node" {
+		t.Fatalf("%v %+v", err, rd.Calls)
+	}
+	var many strings.Builder
+	for i := range maxToolCalls + 1 {
+		many.WriteString(delta(fmt.Sprint(i), "describe_pod", "{}"))
+	}
+	if _, err := readStream(strings.NewReader(many.String()), func(string, bool) {}); err == nil {
+		t.Fatalf("%d calls at one index were accepted", maxToolCalls+1)
+	}
+}
+
+func TestRejectedToolsAreExplained(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		switch call {
+		case 1:
+			sse(w, toolStart, toolEnd)
+		case 2:
+			http.Error(w, `{"error":{"message":"Invalid 'messages[2].tool_calls[0].function.name'"}}`, 400)
+		default:
+			sse(w, `{"choices":[{"delta":{"content":"guess"},"finish_reason":"stop"}]}`)
+		}
+	})
+	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: "{}"}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	if !strings.Contains(w.Body.String(), "rejected tools") {
+		t.Fatalf("%s", w.Body)
+	}
+}
+
+func TestToolRoundTextIsKept(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		if call == 1 {
+			sse(w, `{"choices":[{"delta":{"content":"Let me check."}}]}`, toolStart, toolEnd)
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"Done."},"finish_reason":"stop"}]}`)
+	})
+	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: "{}"}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	ev := events(t, w.Body.String())
+	if len(ev) != 5 || ev[0].Text != "Let me check." || ev[1].Text != "\n" || ev[2].Type != "tool" || ev[3].Text != "Done." {
+		t.Fatalf("%+v", ev)
+	}
+	msgs := up.got()[1].body["messages"].([]any)
+	if asked := msgs[len(msgs)-2].(map[string]any); asked["content"] != "Let me check." {
+		t.Fatalf("%+v", asked)
 	}
 }

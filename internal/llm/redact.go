@@ -55,6 +55,8 @@ func realUserinfo(v string) bool {
 var secretRules = []rule{
 	{regexp.MustCompile(`(?i)\b((?:authorization|(?:set-)?cookie)\\?["']?[ \t]*:[ \t]*\\?["'\[]*)([^\s"'\\][^\r\n"'\\]*)`), "${1}" + masked, isValue},
 	{regexp.MustCompile(`-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]*PRIVATE KEY-----|$)`), masked, nil},
+	// A log cut can drop the BEGIN line: base64 lines that run into an END line are the rest of a key.
+	{regexp.MustCompile(`(?m)^([ \t]*)(?:[A-Za-z0-9+/=]{16,}\r?\n[ \t]*)*[A-Za-z0-9+/=]+\r?\n[ \t]*-----END[A-Z ]*PRIVATE KEY-----`), "${1}" + masked, nil},
 	{regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`), masked, nil},
 	{regexp.MustCompile(`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`), masked, nil},
 	{regexp.MustCompile(`\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})`), masked, nil},
