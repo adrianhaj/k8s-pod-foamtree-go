@@ -36,4 +36,36 @@ function groupUsage(members) {
   return { cpu: t.cpuUsed / (t.cpuCap || 1), mem: t.memUsed / (t.memCap || 1) };
 }
 
-window.k8sTopology = { GROUP_BY, groupNodes, groupUsage };
+// Median MiB per millicore over pods that request both: the shape free
+// capacity is judged against. null when no pod requests both.
+function podShape(nodes) {
+  const r = nodes.flatMap(n => n.pods.filter(p => p.cpu > 0 && p.mem > 0).map(p => p.mem / p.cpu)).sort((a, b) => a - b);
+  if (r.length === 0) return null;
+  const m = r.length >> 1;
+  return r.length % 2 ? r[m] : (r[m - 1] + r[m]) / 2;
+}
+
+// Free capacity a pod of that shape cannot use: whatever is left on the axis
+// that runs out second. At most one axis is non-zero.
+function stranded(node, shape) {
+  if (shape == null) return { cpu: 0, mem: 0 };
+  const c = node.cpuFree, m = node.memFree;
+  return { cpu: c - Math.min(c, m / shape), mem: m - Math.min(m, c * shape) };
+}
+
+// Largest pod of that shape still fitting on a node with no warnings.
+// ponytail: capacity minus requests, like the empty foam; the backend sends no
+// allocatable, so this overstates by system reservations. Serve allocatable
+// on NodeGroup if users act on the number.
+function largestFit(nodes, shape) {
+  if (shape == null) return null;
+  let best = null;
+  for (const n of nodes) {
+    if (n.warnings.length > 0) continue;
+    const cpu = Math.min(n.cpuFree, n.memFree / shape);
+    if (!best || cpu > best.cpu) best = { node: n.name, cpu, mem: cpu * shape };
+  }
+  return best;
+}
+
+window.k8sTopology = { GROUP_BY, groupNodes, groupUsage, podShape, stranded, largestFit };
