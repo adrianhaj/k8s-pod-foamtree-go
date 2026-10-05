@@ -55,7 +55,7 @@ function readViewParams(search, allowed) {
   const out = { ...VIEW_DEFAULTS };
   for (const k of Object.keys(VIEW_DEFAULTS)) {
     const v = params.get(k);
-    if (v != null && v !== "" && (!allowed[k] || allowed[k].includes(v))) out[k] = v;
+    if (v && (!allowed[k] || allowed[k].includes(v))) out[k] = v;
   }
   return out;
 }
@@ -69,4 +69,4 @@ function viewSearch(state) {
   return s ? "?" + s : "";
 }
 
-window.k8sPrefs = { PANEL_KEY, PANEL_DEFAULT, validPanel, THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, watchTheme, VIEW_DEFAULTS, readViewParams, viewSearch };
+window.k8sPrefs = { PANEL_KEY, PANEL_DEFAULT, validPanel, THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, watchTheme, readViewParams, viewSearch };
