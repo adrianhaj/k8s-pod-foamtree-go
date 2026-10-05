@@ -121,9 +121,14 @@ func (p *Proxy) ServeChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	var box Toolbox
+	if p.Tools != nil {
+		box = p.Tools(req.Context)
+		t.tools = box.Tools()
+	}
 	var hidden int
 	req.Messages, hidden = redactMessages(req.Messages)
-	if in := estimate(req.Messages); t.budget > 0 && in+minAnswerTokens > t.budget {
+	if in := estimate(req.Messages) + toolTokens(t.tools); t.budget > 0 && in+minAnswerTokens > t.budget {
 		http.Error(w, fmt.Sprintf("this question needs about %d tokens before the answer, over the cap of %d: untick some context or raise the cap", in, t.budget), http.StatusUnprocessableEntity)
 		return
 	}
@@ -131,17 +136,13 @@ func (p *Proxy) ServeChat(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	rc := http.NewResponseController(w)
 	rc.SetWriteDeadline(time.Now().Add(turnTimeout + 10*time.Second))
-	p.converse(ctx, &stream{w: w, rc: rc}, t, req, hidden)
+	p.converse(ctx, &stream{w: w, rc: rc}, t, box, req.Messages, hidden)
 }
 
 // converse runs the tool loop: one upstream round per step, at most maxRounds,
 // with the cap checked before each later round and usage summed across them.
-func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatRequest, hidden int) {
-	var box Toolbox
-	if p.Tools != nil {
-		box = p.Tools(req.Context)
-		t.tools = box.Tools()
-	}
+// ServeChat's pre-check already refused a first round over the cap.
+func (p *Proxy) converse(ctx context.Context, s *stream, t target, box Toolbox, msgs []Message, hidden int) {
 	c := compat{noTools: len(t.tools) == 0}
 	var total Usage
 	// Every error leaves here. Once this question has spent tokens, done follows
@@ -154,18 +155,22 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatReque
 		s.send(event{Type: "error", Text: t.scrub(err.Error())})
 		s.send(event{Type: "done", Usage: &total, Masked: hidden})
 	}
-	msgs, toolBytes, ran := req.Messages, 0, 0
+	toolBytes, ran := 0, 0
 	for i := range maxRounds {
-		if i > 0 && t.budget > 0 && total.Total+estimate(msgs)+minAnswerTokens > t.budget {
+		if i > 0 && t.budget > 0 && total.Total+t.prompt(&c, msgs)+minAnswerTokens > t.budget {
 			s.send(event{Type: "notice", Text: fmt.Sprintf("Stopped: the next step would pass the cap of %d tokens.", t.budget)})
 			s.send(event{Type: "done", Usage: &total, Masked: hidden})
 			return
 		}
+		offered := !c.noTools
 		rd, err := t.call(ctx, &c, msgs, total.Total, s)
 		total = total.add(rd.Usage)
 		if err != nil {
 			stop(err)
 			return
+		}
+		if offered && c.noTools {
+			s.send(event{Type: "notice", Text: "This endpoint rejected tools; answering without cluster lookups."})
 		}
 		// Any finish but the cap's is a tool round when calls came: Ollama sends "stop".
 		if len(rd.Calls) == 0 || rd.Finish == "length" || c.noTools {
@@ -180,7 +185,10 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatReque
 			s.send(event{Type: "done", Usage: &total, Masked: hidden})
 			return
 		}
-		msgs = append(msgs, Message{Role: "assistant", ToolCalls: rd.Calls})
+		msgs = append(msgs, Message{Role: "assistant", Content: rd.Text, ToolCalls: rd.Calls})
+		if rd.Text != "" {
+			s.send(event{Type: "delta", Text: "\n"})
+		}
 		for _, call := range rd.Calls {
 			s.send(event{Type: "tool", Name: call.Function.Name, Args: call.Function.Arguments})
 			out, err := box.Call(ctx, call.Function.Name, json.RawMessage(call.Function.Arguments))
@@ -198,7 +206,7 @@ func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatReque
 			msgs = append(msgs, Message{Role: "tool", ToolCallID: call.ID, Content: out})
 		}
 	}
-	stop(fmt.Errorf("Stopped after %d tool rounds without an answer.", maxRounds))
+	stop(fmt.Errorf("stopped after %d tool rounds without an answer", maxRounds))
 }
 
 type target struct {
@@ -235,6 +243,23 @@ func (p *Proxy) target(req chatRequest, viewerKey string) (target, error) {
 		return target{}, errors.New("model is required")
 	}
 	return target{base, req.Model, viewerKey, budget, p.viewer, false, nil}, nil
+}
+
+// toolTokens estimates the tools schema, which goes out with every request that offers tools.
+func toolTokens(ts []Tool) int {
+	if len(ts) == 0 {
+		return 0
+	}
+	b, _ := json.Marshal(toolDefs(ts))
+	return utf8.RuneCount(b) / charsPerToken
+}
+
+// prompt estimates one request: the messages, plus the tools schema while it is sent.
+func (t target) prompt(c *compat, msgs []Message) int {
+	if c.noTools {
+		return estimate(msgs)
+	}
+	return estimate(msgs) + toolTokens(t.tools)
 }
 
 func estimate(msgs []Message) int {
@@ -287,6 +312,7 @@ type round struct {
 	Finish string
 	Usage  Usage
 	Calls  []ToolCall
+	Text   string // what was relayed, kept for a tool round's history message
 	chars  int
 	events int
 	done   bool
@@ -309,8 +335,8 @@ func (t target) scrub(s string) string {
 func (t target) call(parent context.Context, c *compat, msgs []Message, used int, s *stream) (round, error) {
 	ctx, stop := context.WithCancel(parent)
 	defer stop()
-	in := estimate(msgs)
 	for attempt := 0; ; attempt++ {
+		in := t.prompt(c, msgs)
 		body := map[string]any{"model": t.model, "messages": msgs, "stream": true}
 		if !c.noUsage {
 			body["stream_options"] = map[string]bool{"include_usage": true}
@@ -354,6 +380,7 @@ func (t target) call(parent context.Context, c *compat, msgs []Message, used int
 // here: past the remaining budget the upstream request is cancelled.
 func (t target) read(parent context.Context, stop context.CancelFunc, c *compat, body io.Reader, in, used int, s *stream) (round, error) {
 	limit, chars, cut := -1, 0, false
+	var said strings.Builder
 	if c.noLimit && t.budget > 0 {
 		limit = max(t.budget-used-in, 0) * charsPerToken
 	}
@@ -369,12 +396,14 @@ func (t target) read(parent context.Context, stop context.CancelFunc, c *compat,
 		}
 		chars += n
 		if relay && text != "" {
+			said.WriteString(text)
 			s.send(event{Type: "delta", Text: text})
 		}
 		if cut {
 			stop()
 		}
 	})
+	rd.Text = said.String()
 	if cut {
 		rd.Finish, rd.chars, err = "length", chars, nil
 	}
@@ -509,6 +538,18 @@ func readStream(r io.Reader, onText func(text string, relay bool)) (round, error
 		slog.Warn("llm upstream stream", "err", err)
 		return rd, errors.New("the connection to the assistant endpoint broke during the answer")
 	}
+	// A call with no name cannot run; one with no id still needs an id for its answer.
+	calls := rd.Calls[:0]
+	for i, c := range rd.Calls {
+		if c.Function.Name == "" {
+			continue
+		}
+		if c.ID == "" {
+			c.ID = fmt.Sprintf("call_%d", i)
+		}
+		calls = append(calls, c)
+	}
+	rd.Calls = calls
 	return rd, nil
 }
 
