@@ -318,3 +318,29 @@ func TestSlimPodKeepsOnlyTheUnschedulableCondition(t *testing.T) {
 		t.Fatalf("kept a scheduled pod's condition: %+v", out.(*corev1.Pod).Status.Conditions)
 	}
 }
+
+// Effective requests read allocated resources while a resize waits; an
+// Infeasible condition without them would count the pod as zero.
+func TestSlimPodKeepsResizeState(t *testing.T) {
+	alloc := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")}
+	in := &corev1.Pod{Status: corev1.PodStatus{
+		Conditions: []corev1.PodCondition{
+			{Type: corev1.PodReady, Status: corev1.ConditionTrue, Message: "noise"},
+			{Type: corev1.PodResizePending, Status: corev1.ConditionTrue, Reason: corev1.PodReasonInfeasible,
+				Message: "Node didn't have enough capacity: cpu, requested: 8000, capacity: 4000"},
+		},
+		AllocatedResources: alloc,
+		Resources:          &corev1.ResourceRequirements{Requests: alloc},
+		ContainerStatuses: []corev1.ContainerStatus{{Name: "app", AllocatedResources: alloc,
+			Resources: &corev1.ResourceRequirements{Requests: alloc}}},
+	}}
+	out, _ := slimPod(in)
+	s := out.(*corev1.Pod).Status
+	if len(s.Conditions) != 1 || s.Conditions[0].Reason != corev1.PodReasonInfeasible || s.Conditions[0].Message == "" {
+		t.Fatalf("conditions %+v", s.Conditions)
+	}
+	if s.AllocatedResources.Cpu().MilliValue() != 500 || s.Resources == nil ||
+		s.ContainerStatuses[0].AllocatedResources.Cpu().MilliValue() != 500 || s.ContainerStatuses[0].Resources == nil {
+		t.Fatalf("resources dropped: %+v", s)
+	}
+}

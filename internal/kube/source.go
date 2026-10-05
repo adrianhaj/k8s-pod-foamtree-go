@@ -298,10 +298,6 @@ func slimPod(obj any) (any, error) {
 		affinity = &corev1.Affinity{NodeAffinity: &corev1.NodeAffinity{
 			RequiredDuringSchedulingIgnoredDuringExecution: a.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution}}
 	}
-	var unscheduled []corev1.PodCondition
-	if c, ok := foam.Unscheduled(p); ok {
-		unscheduled = []corev1.PodCondition{{Type: c.Type, Status: c.Status, Reason: c.Reason, Message: c.Message}}
-	}
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: p.Name, Namespace: p.Namespace, UID: p.UID, ResourceVersion: p.ResourceVersion,
 			Labels: p.Labels, OwnerReferences: owners},
@@ -315,7 +311,10 @@ func slimPod(obj any) (any, error) {
 			Affinity:       affinity,
 			Tolerations:    p.Spec.Tolerations,
 		},
-		Status: corev1.PodStatus{QOSClass: p.Status.QOSClass, Phase: p.Status.Phase, Conditions: unscheduled,
+		Status: corev1.PodStatus{QOSClass: p.Status.QOSClass, Phase: p.Status.Phase,
+			Conditions:            slimConditions(p.Status.Conditions),
+			AllocatedResources:    p.Status.AllocatedResources,
+			Resources:             p.Status.Resources,
 			ContainerStatuses:     slimStatuses(p.Status.ContainerStatuses),
 			InitContainerStatuses: slimStatuses(p.Status.InitContainerStatuses)},
 	}, nil
@@ -325,6 +324,19 @@ func slimContainers(cs []corev1.Container) []corev1.Container {
 	out := make([]corev1.Container, 0, len(cs))
 	for _, c := range cs {
 		out = append(out, corev1.Container{Name: c.Name, Resources: c.Resources, RestartPolicy: c.RestartPolicy})
+	}
+	return out
+}
+
+// slimConditions keeps the two conditions the dashboard reads: why the
+// scheduler refused the pod, and a resize the kubelet has not applied (an
+// Infeasible one makes the scheduler count allocated, not spec, resources).
+func slimConditions(cs []corev1.PodCondition) []corev1.PodCondition {
+	var out []corev1.PodCondition
+	for _, c := range cs {
+		if (c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse) || c.Type == corev1.PodResizePending {
+			out = append(out, corev1.PodCondition{Type: c.Type, Status: c.Status, Reason: c.Reason, Message: c.Message})
+		}
 	}
 	return out
 }
@@ -342,7 +354,8 @@ func slimStatuses(cs []corev1.ContainerStatus) []corev1.ContainerStatus {
 	}
 	out := make([]corev1.ContainerStatus, 0, len(cs))
 	for _, c := range cs {
-		s := corev1.ContainerStatus{Name: c.Name, Ready: c.Ready, RestartCount: c.RestartCount}
+		s := corev1.ContainerStatus{Name: c.Name, Ready: c.Ready, RestartCount: c.RestartCount,
+			AllocatedResources: c.AllocatedResources, Resources: c.Resources}
 		if w := c.State.Waiting; w != nil {
 			s.State.Waiting = &corev1.ContainerStateWaiting{Reason: w.Reason}
 		}
