@@ -789,6 +789,10 @@ function TreemapGrid({
 /* ─────────── Focus overlay ─────────── */
 
 function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, strand }) {
+  // At most one axis is stranded; hide figures that would print as zero.
+  const strandNote = strand.cpu >= 5 ? `${(strand.cpu / 1000).toFixed(2)} cores free with no memory to pair`
+    : Number(fmtMem(strand.mem, memUnit)) > 0 ? `${fmtMem(strand.mem, memUnit)} ${memUnit} free with no CPU to pair`
+    : null;
   return (
     <div className="overlay" onClick={onClose}>
       <div className="overlay-card" onClick={e => e.stopPropagation()}>
@@ -859,14 +863,10 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, str
             )}
           </div>
         )}
-        {(strand.cpu >= 5 || Number(fmtMem(strand.mem, memUnit)) > 0) && (
+        {strandNote && (
           <div className="overlay-sched">
             <div className="ov-section-title">Stranded capacity</div>
-            <span className="ov-chips-note">
-              {strand.cpu >= 5
-                ? `${(strand.cpu / 1000).toFixed(2)} cores free with no memory to pair`
-                : `${fmtMem(strand.mem, memUnit)} ${memUnit} free with no CPU to pair`} at the median pod shape.
-            </span>
+            <span className="ov-chips-note">{strandNote} at the median pod shape.</span>
           </div>
         )}
         {fitReasons && <FitVerdict reasons={fitReasons} />}
