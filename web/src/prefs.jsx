@@ -45,6 +45,9 @@ const PANEL_TABS = ["problems", "changes", "drain"];
 const PANEL_DEFAULT = { open: true, tab: "problems", max: false };
 const validPanel = v => !!v && typeof v.open === "boolean" && typeof v.max === "boolean" && PANEL_TABS.includes(v.tab);
 
+// A shareable view: the toolbar state lives in the query string, which
+// survives the OIDC round trip (a hash would not). Defaults are left out, so
+// a plain visit keeps a clean URL.
 const VIEW_DEFAULTS = { context: "", view: "2d", size: "cpu", group: "none", color: "namespace", q: "" };
 
 function readViewParams(search, allowed) {

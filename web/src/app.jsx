@@ -346,7 +346,9 @@ function App() {
     if (contexts.length === 0) return;
     const search = viewSearch({ context: contexts.length > 1 ? context : "", view, size: metric, group: groupBy, color: colorBy, q: query });
     if (search !== window.location.search) {
-      window.history.replaceState(null, "", window.location.pathname + search + window.location.hash);
+      try {
+        window.history.replaceState(null, "", window.location.pathname + search + window.location.hash);
+      } catch {}
     }
   }, [contexts, context, view, metric, groupBy, colorBy, query]);
 
