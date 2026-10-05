@@ -19,7 +19,7 @@ const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY
 const { fmtMem, shortContext, clock } = window.k8sFormat;
 const { buildProblems, problemChips } = window.k8sProblems;
 const { pickShown } = window.k8sHighlight;
-const { BottomPanel, ProblemsTab, ChangesTab, DrainTab, MapChips, showTab } = window.k8sPanel;
+const { TAB_IDS, BottomPanel, ProblemsTab, PendingTab, ChangesTab, DrainTab, MapChips, showTab } = window.k8sPanel;
 const { TopBar, SummaryStrip, Toolbar, Rail, SettingsMenu, attentionBySev } = window.k8sChrome;
 const { useAssistant, AssistantTab } = window.k8sAssistant;
 const THEME_KEY = "k8sfoams.theme";
@@ -196,7 +196,7 @@ function App() {
     applyThemePref(themePref);
     writePref(safeStorage(), THEME_KEY, themePref);
   }, [themePref]);
-  const [panel, setPanel] = useState(() => readPref(safeStorage(), PANEL_KEY, window.innerHeight < 720 ? { ...PANEL_DEFAULT, open: false } : PANEL_DEFAULT, validPanel));
+  const [panel, setPanel] = useState(() => readPref(safeStorage(), PANEL_KEY, window.innerHeight < 720 ? { ...PANEL_DEFAULT, open: false } : PANEL_DEFAULT, v => validPanel(v, TAB_IDS)));
   const panelSaved = useRef(false);
   useEffect(() => {
     if (!panelSaved.current) { panelSaved.current = true; return; }
@@ -227,6 +227,7 @@ function App() {
   const [selectedWorkload, setSelectedWorkload] = useState(null);
   const [hoveredWorkload, setHoveredWorkload] = useState(null);
   const [nodes, setNodes] = useState([]);
+  const [pending, setPending] = useState([]);
   const [logsPod, setLogsPod] = useState(null);
   const [logsText, setLogsText] = useState(null);
   const allPods = useMemo(() => nodes.flatMap(n => n.pods), [nodes]);
@@ -317,7 +318,7 @@ function App() {
       const raw = `[${cpuText},${memText}]`;
       const [cpuRes, memRes] = JSON.parse(raw);
       // While scrubbing, refreshes keep recording but leave the screen alone.
-      if (atRef.current == null) setNodes(mergeResources(cpuRes, memRes));
+      if (atRef.current == null) { setNodes(mergeResources(cpuRes, memRes)); setPending(cpuRes.pending || []); }
       setError(null);
       setLastRefresh(Date.now());
       // An unchanged cluster answers byte for byte the same: nothing to record.
@@ -383,7 +384,7 @@ function App() {
     const entry = entries.find(e => e.t === at);
     if (!entry) { setAt(null); return; }
     let stale = false;
-    unpack(entry).then(([cpu, mem]) => { if (!stale) setNodes(mergeResources(cpu, mem)); });
+    unpack(entry).then(([cpu, mem]) => { if (!stale) { setNodes(mergeResources(cpu, mem)); setPending(cpu.pending || []); } });
     return () => { stale = true; };
   }, [at]);
 
@@ -617,11 +618,12 @@ function App() {
         )}
       </div>
 
-      <BottomPanel panel={panel} setPanel={setPanel} counts={{ problems: problems.length, changes: changes ? changes.added.length + changes.removed.length + changes.resized.length : 0 }}>
+      <BottomPanel panel={panel} setPanel={setPanel} counts={{ problems: problems.length, pending: pending.length, changes: changes ? changes.added.length + changes.removed.length + changes.resized.length : 0 }}>
         {panel.tab === "problems" && (
           <ProblemsTab rows={problems} chips={chips} query={query} setQuery={setQuery}
             onPickNode={name => setFocused(nodes.find(n => n.name === name) || null)} />
         )}
+        {panel.tab === "pending" && <PendingTab pods={pending} />}
         {panel.tab === "changes" && (
           <ChangesTab entries={entries} at={at} atLabel={at == null ? "Live" : clock(at)}
             onScrub={i => { setPlaying(false); setAt(i === entries.length - 1 ? null : entries[i].t); }}

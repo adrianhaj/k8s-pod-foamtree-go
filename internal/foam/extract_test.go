@@ -409,3 +409,16 @@ func TestFromPodStatuses(t *testing.T) {
 		t.Fatalf("phase %q statuses %+v", got.Phase, got.Statuses)
 	}
 }
+
+func TestFromPodSchedulingReason(t *testing.T) {
+	p := &corev1.Pod{Status: corev1.PodStatus{Conditions: []corev1.PodCondition{
+		{Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: "Unschedulable",
+			Message: "0/3 nodes are available: 3 Insufficient memory."},
+	}}}
+	if got := FromPod(p); got.SchedReason != "Unschedulable" || got.SchedMessage != "0/3 nodes are available: 3 Insufficient memory." {
+		t.Fatalf("got %q %q", got.SchedReason, got.SchedMessage)
+	}
+	if got := FromPod(&corev1.Pod{}); got.SchedReason != "" || got.SchedMessage != "" {
+		t.Fatalf("invented a reason: %+v", got)
+	}
+}

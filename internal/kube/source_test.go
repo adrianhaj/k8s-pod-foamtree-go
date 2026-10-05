@@ -299,3 +299,22 @@ func TestSlimPodKeepsContainerStatusWithoutMessages(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+// The Pending tab shows why the scheduler refused a pod; nothing else in
+// the conditions is read, and a scheduled pod's True condition is noise.
+func TestSlimPodKeepsOnlyTheUnschedulableCondition(t *testing.T) {
+	want := corev1.PodCondition{Type: corev1.PodScheduled, Status: corev1.ConditionFalse,
+		Reason: "Unschedulable", Message: "0/3 nodes are available: 3 Insufficient cpu."}
+	in := &corev1.Pod{Status: corev1.PodStatus{Conditions: []corev1.PodCondition{
+		{Type: corev1.PodReady, Status: corev1.ConditionFalse, Message: "noise"},
+		{Type: want.Type, Status: want.Status, Reason: want.Reason, Message: want.Message, LastTransitionTime: metav1.Now()},
+	}}}
+	out, _ := slimPod(in)
+	if got := out.(*corev1.Pod).Status.Conditions; !reflect.DeepEqual(got, []corev1.PodCondition{want}) {
+		t.Fatalf("got %+v", got)
+	}
+	in.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodScheduled, Status: corev1.ConditionTrue}}
+	if out, _ := slimPod(in); out.(*corev1.Pod).Status.Conditions != nil {
+		t.Fatalf("kept a scheduled pod's condition: %+v", out.(*corev1.Pod).Status.Conditions)
+	}
+}

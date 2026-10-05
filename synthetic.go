@@ -61,7 +61,7 @@ func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam
 	gen := int(s.now().UnixNano() / int64(syntheticChurn))
 	pools := []string{"general", "general", "memory", "spot"}
 	nodes := make([]foam.Node, 0, s.nodes)
-	pods := make([]foam.Pod, 0, s.nodes*s.podsPerNode)
+	pods := make([]foam.Pod, 0, s.nodes*s.podsPerNode+3)
 	for i := range s.nodes {
 		n := foam.Node{
 			Name: fmt.Sprintf("node-%04d", i), CPU: 16_000, Memory: 64_000_000_000,
@@ -162,6 +162,17 @@ func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam
 			p.Containers = []foam.Container{c}
 			pods = append(pods, p)
 		}
+	}
+	// Bigger than any node, so the Pending tab always has something to show.
+	for i := range 3 {
+		c := foam.Container{Name: "job", CPU: 64_000, Memory: 1_000_000_000}
+		pods = append(pods, foam.Pod{
+			Name: fmt.Sprintf("batch-%d", i), Namespace: "team-0", CPU: c.CPU, Memory: c.Memory,
+			Containers: []foam.Container{c}, QOS: "Burstable", Controller: "Job",
+			Phase:        "Pending",
+			SchedReason:  "Unschedulable",
+			SchedMessage: fmt.Sprintf("0/%d nodes are available: %d Insufficient cpu.", s.nodes, s.nodes),
+		})
 	}
 	return nodes, pods, nil
 }

@@ -43,7 +43,7 @@ var (
 var assistantTools = []llm.Tool{
 	{Name: "cluster_summary", Description: "Node and pod counts, and requested CPU and memory against capacity.", Parameters: noArgs},
 	{Name: "list_problems", Description: "Node warnings and pod findings, crashes and not-ready or cordoned nodes first, at most 100.", Parameters: noArgs},
-	{Name: "describe_pod", Description: "One pod: node, phase, QoS, requests, limits, container status and findings.", Parameters: podArgs},
+	{Name: "describe_pod", Description: "One pod: node, phase, the scheduler's reason when it has no node, QoS, requests, limits, container status and findings.", Parameters: podArgs},
 	{Name: "describe_node", Description: "One node: capacity, allocatable, requested totals, warnings and taints.", Parameters: nodeArgs},
 	{Name: "get_pod_logs", Description: "Last lines of one container's logs. previous=true reads the run before the last restart, where a crash shows.",
 		Parameters: json.RawMessage(`{"type":"object","properties":{"namespace":{"type":"string"},"name":{"type":"string"},"container":{"type":"string"},"tail":{"type":"integer","maximum":` + strconv.Itoa(maxToolTail) + `},"previous":{"type":"boolean"}},"required":["namespace","name"]}`)},
@@ -197,6 +197,7 @@ func nodeNamed(nodes []foam.Node, name string) (foam.Node, bool) {
 
 func describePod(p foam.Pod, n foam.Node) map[string]any {
 	return map[string]any{"namespace": p.Namespace, "name": p.Name, "node": p.NodeName, "phase": p.Phase,
+		"schedulingReason": p.SchedReason, "schedulingMessage": p.SchedMessage,
 		"qos": p.QOS, "controller": p.Controller, "labels": p.Labels,
 		"cpuRequestMillicores": p.CPU, "memoryRequestBytes": p.Memory,
 		"cpuLimitMillicores": p.CPULimit, "memoryLimitBytes": p.MemoryLimit,

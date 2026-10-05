@@ -202,3 +202,12 @@ func TestToolSchemasAreValidJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestDescribePodSaysWhyItIsPending(t *testing.T) {
+	src := &fakeSource{pods: []foam.Pod{{Name: "job", Namespace: "pay", Phase: "Pending",
+		SchedReason: "Unschedulable", SchedMessage: "0/3 nodes are available: 3 Insufficient cpu."}}}
+	out, err := (&clusterTools{src: src}).Call(context.Background(), "describe_pod", json.RawMessage(`{"namespace":"pay","name":"job"}`))
+	if err != nil || !strings.Contains(out, `"schedulingReason":"Unschedulable"`) || !strings.Contains(out, "3 Insufficient cpu.") {
+		t.Fatalf("%s %v", out, err)
+	}
+}

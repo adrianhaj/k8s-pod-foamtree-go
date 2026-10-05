@@ -50,8 +50,11 @@ type Pod struct {
 	Tolerations  []corev1.Toleration
 	// Kind of the controlling owner, "" for a bare pod: decides what a drain does with it.
 	Controller string
-	Phase      string
-	Statuses   []ContainerStatus
+	// The scheduler's PodScheduled=False reason and message; "" once
+	// scheduled, and before the scheduler has tried.
+	SchedReason, SchedMessage string
+	Phase                     string
+	Statuses                  []ContainerStatus
 }
 
 type Taint struct {
@@ -190,6 +193,16 @@ func containers(cs []corev1.Container) []Container {
 	return out
 }
 
+// Unscheduled is the scheduler's PodScheduled=False verdict, if it gave one.
+func Unscheduled(p *corev1.Pod) (corev1.PodCondition, bool) {
+	for _, c := range p.Status.Conditions {
+		if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse {
+			return c, true
+		}
+	}
+	return corev1.PodCondition{}, false
+}
+
 func FromPod(p *corev1.Pod) Pod {
 	// The scheduler's own formula: max(sum regular, max init), sidecars,
 	// pod overhead and pod-level resources included, and max(spec, allocated)
@@ -216,6 +229,9 @@ func FromPod(p *corev1.Pod) Pod {
 	}
 	if ref := metav1.GetControllerOf(p); ref != nil {
 		out.Controller = ref.Kind
+	}
+	if c, ok := Unscheduled(p); ok {
+		out.SchedReason, out.SchedMessage = c.Reason, c.Message
 	}
 	// Native sidecars run for the pod's whole life, so they count as regular.
 	for _, c := range p.Spec.InitContainers {

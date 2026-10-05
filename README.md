@@ -63,6 +63,7 @@ A node without the label goes to its own group, `no zone`, `no pool`, and so on.
 - **Refresh**: the Auto-refresh menu in the top bar (Off, 15 s … 10 min), plus a *Refresh now* button beside it.
 - **Filter**: the query bar in the top bar highlights matching pods and dims the rest — nothing is removed from the view. See [Filtering](#filtering) for the full grammar.
 - **Focus**: click a node to open an overlay listing its pods with per-pod CPU/memory and container breakdown, plus its instance type, zone and pool.
+- **Pending**: the Pending tab of the bottom panel lists pods no node has taken, with the scheduler's reason, e.g. `0/12 nodes are available: 12 Insufficient memory.`
 - **Share**: the address bar always links to the view on screen. Context, 2D or 3D, Size by, Group by, Color by and the query are kept in the URL (`/?view=3d&group=zone&q=ns%3Apayments`), so a pasted link opens the same picture, also after an OIDC sign-in. With more than one kubeconfig context the URL also names the context, so the link opens the same cluster. Theme, memory unit and panel state stay per browser.
 
 ## Themes
@@ -257,7 +258,7 @@ Focusing the input opens a popover with the same token list; it is replaced by t
 | --- | --- |
 | `GET /` | the dashboard |
 | `GET /healthcheck` | `{"status": "ok"}` |
-| `GET /resources/cpu`, `GET /resources/memory` | treemap JSON; optional `?context=<name>`. CPU in millicores, memory in decimal kB. Each node group also carries `unschedulable`, `taints`, `conditions` and a render-ready `warnings` list — see [Node health](#node-health). Each pod group carries a `findings` list — see [Audit & hygiene](#audit--hygiene) — plus `phase` and `statuses` (per container: `name`, `ready`, `restarts`, and when set `waiting`, `lastExitReason`, `lastExitCode`). Pod groups carry `limit` on that axis (`null` = no ceiling); node groups carry `zone`, `region`, `instanceType`, `pool` and `capacityType` (`"spot"` or `"on-demand"`) — `""` when no label says. Node, pod and container entries carry `extended`: every other non-zero resource (`nvidia.com/gpu`, `ephemeral-storage`, `hugepages-2Mi`, …) in its base unit, bytes or a device count, from node allocatable (CPU and memory stay on capacity) and the effective request; omitted when there is none. |
+| `GET /resources/cpu`, `GET /resources/memory` | treemap JSON; optional `?context=<name>`. CPU in millicores, memory in decimal kB. A top-level `pending` list holds every pod with no node yet, as `{namespace, name, reason, message}` from its `PodScheduled=False` condition (`""` before the scheduler has tried). Each node group also carries `unschedulable`, `taints`, `conditions` and a render-ready `warnings` list — see [Node health](#node-health). Each pod group carries a `findings` list — see [Audit & hygiene](#audit--hygiene) — plus `phase` and `statuses` (per container: `name`, `ready`, `restarts`, and when set `waiting`, `lastExitReason`, `lastExitCode`). Pod groups carry `limit` on that axis (`null` = no ceiling); node groups carry `zone`, `region`, `instanceType`, `pool` and `capacityType` (`"spot"` or `"on-demand"`) — `""` when no label says. Node, pod and container entries carry `extended`: every other non-zero resource (`nvidia.com/gpu`, `ephemeral-storage`, `hugepages-2Mi`, …) in its base unit, bytes or a device count, from node allocatable (CPU and memory stay on capacity) and the effective request; omitted when there is none. |
 | `GET /contexts` | `[{"context": "...", "active": true}]` |
 | `GET /api/logs` | one container's logs as plain text. `namespace` and `pod` are required; optional `container`, `tail` (1–5000, default 500), `previous=1` for the run before the last restart, and `context`. At most 1 MiB. 404 when the pod is gone, 400 when there is no previous run. |
 | `GET /api/llm/config` | `{"server", "url", "model", "maxTokens", "toolTokens"}`, where `toolTokens` estimates the lookup schema sent with every question; never the key |
@@ -383,7 +384,7 @@ Releases: an admin pushes a `v*` tag (`git tag v1.0.0 && git push origin v1.0.0`
 | `--llm-api-key-file` | | file holding the server's API key, e.g. a mounted Secret; re-read on every request. Used only with `--llm-url` |
 | `--llm-allowed-hosts` | | comma-separated globs of hosts viewers may send their own key to; empty means only the `--llm-url` host. Ignored on a loopback run without auth, where any URL is allowed |
 | `--llm-max-tokens-per-question` | `50000` | token cap for one question; `0` means none. Server connection only |
-| `--synthetic` | | serve a made-up cluster, e.g. `100x50` (nodes × pods per node), for UI work and scale tests; includes GPU, ephemeral-storage and hugepages nodes |
+| `--synthetic` | | serve a made-up cluster, e.g. `100x50` (nodes × pods per node), for UI work and scale tests; includes GPU, ephemeral-storage and hugepages nodes and three unschedulable pods |
 
 Secrets come from the environment only: `K8SFOAMS_OIDC_CLIENT_SECRET`, `K8SFOAMS_SESSION_KEY` (32 bytes, base64; unset means a random key, so sessions end on restart), and `K8SFOAMS_LLM_API_KEY`, or `--llm-api-key-file` for a mounted Secret.
 

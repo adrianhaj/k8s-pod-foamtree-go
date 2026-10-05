@@ -57,6 +57,15 @@ func (a Axis) weight(v int64) float64 {
 
 type Tree struct {
 	Groups []NodeGroup `json:"groups"`
+	// Pods no node has taken yet: nothing to draw, but the panel lists them.
+	Pending []PendingPod `json:"pending"`
+}
+
+type PendingPod struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	Reason    string `json:"reason"`
+	Message   string `json:"message"`
 }
 
 type NodeGroup struct {
@@ -141,6 +150,10 @@ func Treemap(nodes []Node, pods []Pod, axis Axis) Tree {
 			CapacityType:  n.CapacityType,
 			Extended:      n.Extended,
 		})
+	}
+	tree.Pending = make([]PendingPod, 0, len(byNode[""]))
+	for _, p := range sortPods(byNode[""]) {
+		tree.Pending = append(tree.Pending, PendingPod{Namespace: p.Namespace, Name: p.Name, Reason: p.SchedReason, Message: p.SchedMessage})
 	}
 	return tree
 }
