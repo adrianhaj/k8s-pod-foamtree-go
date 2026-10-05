@@ -9,11 +9,11 @@ const { findingInfo, PodAuditBadge } = window.k8sPodAudit;
 const { ExportMenu } = window.k8sExport;
 const { getJSON, fitMatch, FitForm, FitSummary, FitVerdict, DrainResults } = window.k8sSimulate;
 const { QOS_INFO, QOS_ORDER } = window.k8sQos;
-const { assignNamespaces, utilTone } = window.k8sPalette;
+const { assignNamespaces, utilTone, COLOR_MODES } = window.k8sPalette;
 const { Legend } = window.k8sLegend;
-const { groupNodes } = window.k8sTopology;
+const { groupNodes, GROUP_BY } = window.k8sTopology;
 const { pack, unpack, record, diff } = window.k8sHistory;
-const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY, PANEL_DEFAULT, validPanel } = window.k8sPrefs;
+const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY, PANEL_DEFAULT, validPanel, readViewParams, viewSearch } = window.k8sPrefs;
 const { fmtMem, shortContext, clock } = window.k8sFormat;
 const { buildProblems, problemChips } = window.k8sProblems;
 const { pickShown } = window.k8sHighlight;
@@ -197,17 +197,22 @@ function App() {
     writePref(safeStorage(), PANEL_KEY, panel);
   }, [panel]);
 
-  const [view, setView] = useState("2d");
+  const [linked] = useState(() => readViewParams(window.location.search, {
+    view: ["2d", "3d"],
+    group: GROUP_BY.map(g => g.id),
+    color: COLOR_MODES.map(c => c.id),
+  }));
+  const [view, setView] = useState(linked.view);
   const [zoom, setZoom] = useState(0.7);
-  const [groupBy, setGroupBy] = useState("none");
-  const [metric, setMetric] = useState("cpu");
-  const [colorBy, setColorBy] = useState("namespace");
+  const [groupBy, setGroupBy] = useState(linked.group);
+  const [metric, setMetric] = useState(linked.size);
+  const [colorBy, setColorBy] = useState(linked.color);
   const [memUnit, setMemUnit] = useState("GiB");
   const [refreshInterval, setRefreshInterval] = useState(60);
   const [hintOpen, setHintOpen] = useState(false);
   const [contexts, setContexts] = useState([]);
   const [contextIdx, setContextIdx] = useState(0);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(linked.q);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(Date.now());
   const [focused, setFocused] = useState(null);
@@ -260,8 +265,9 @@ function App() {
       .then(data => {
         if (data && data.length > 0) {
           setContexts(data);
+          const linkedIdx = data.findIndex(c => c.context === linked.context);
           const activeIdx = data.findIndex(c => c.active);
-          setContextIdx(activeIdx !== -1 ? activeIdx : 0);
+          setContextIdx(linkedIdx !== -1 ? linkedIdx : activeIdx !== -1 ? activeIdx : 0);
         } else {
           console.warn("No contexts config found");
           setContexts([]);
@@ -333,6 +339,16 @@ function App() {
     setPlaying(false);
     nsRef.current = new Map();
   }, [contextIdx]);
+
+  // The address bar is always a link to this view. replaceState, so Back
+  // still leaves the page. A single context (in-cluster) needs no name.
+  useEffect(() => {
+    if (contexts.length === 0) return;
+    const search = viewSearch({ context: contexts.length > 1 ? context : "", view, size: metric, group: groupBy, color: colorBy, q: query });
+    if (search !== window.location.search) {
+      window.history.replaceState(null, "", window.location.pathname + search + window.location.hash);
+    }
+  }, [contexts, context, view, metric, groupBy, colorBy, query]);
 
   const ctxName = contexts[contextIdx] ? contexts[contextIdx].context : "";
   const entries = useMemo(() => history.filter(e => e.context === ctxName), [history, ctxName]);
