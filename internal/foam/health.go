@@ -93,5 +93,8 @@ func Findings(p Pod, n Node) []string {
 	if pull {
 		f = append(f, "image-pull")
 	}
+	if p.Resize != nil {
+		f = append(f, "resize-"+p.Resize.State)
+	}
 	return f
 }

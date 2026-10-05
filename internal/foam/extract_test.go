@@ -422,3 +422,44 @@ func TestFromPodSchedulingReason(t *testing.T) {
 		t.Fatalf("invented a reason: %+v", got)
 	}
 }
+
+func resizing(reason string, spec, allocated string) *corev1.Pod {
+	p := pod([]corev1.Container{ctr("app", spec, "1G")})
+	p.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodResizePending, Status: corev1.ConditionTrue,
+		Reason: reason, Message: "Node didn't have enough capacity"}}
+	p.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "app",
+		AllocatedResources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(allocated), corev1.ResourceMemory: resource.MustParse("1G")}}}
+	return p
+}
+
+func TestFromPodResize(t *testing.T) {
+	cases := []struct {
+		name string
+		in   *corev1.Pod
+		cpu  int64
+		want *Resize
+	}{
+		{"infeasible counts allocated", resizing(corev1.PodReasonInfeasible, "8", "500m"), 500,
+			&Resize{State: "infeasible", Message: "Node didn't have enough capacity", Desired: Container{CPU: 8000, Memory: 1_000_000_000}}},
+		{"deferred counts the larger spec", resizing(corev1.PodReasonDeferred, "2", "500m"), 2000,
+			&Resize{State: "deferred", Message: "Node didn't have enough capacity", Desired: Container{CPU: 2000, Memory: 1_000_000_000}}},
+		{"unknown reason is ignored", resizing("SomethingNew", "2", "500m"), 2000, nil},
+		{"no condition", pod([]corev1.Container{ctr("app", "2", "1G")}), 2000, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := FromPod(tc.in)
+			if got.CPU != tc.cpu || !reflect.DeepEqual(got.Resize, tc.want) {
+				t.Fatalf("cpu %d resize %+v", got.CPU, got.Resize)
+			}
+		})
+	}
+}
+
+func TestFromPodResizePodLevel(t *testing.T) {
+	p := resizing(corev1.PodReasonDeferred, "", "500m")
+	p.Spec.Resources = &corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("3")}}
+	if got := FromPod(p).Resize; got == nil || got.Desired.CPU != 3000 {
+		t.Fatalf("pod-level desired: %+v", got)
+	}
+}

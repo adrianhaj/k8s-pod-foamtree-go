@@ -29,6 +29,14 @@ type Container struct {
 	Extended    map[string]int64
 }
 
+// Resize is an in-place resize the kubelet has not applied yet. Desired is
+// what spec asks for; the pod's CPU and Memory stay what the scheduler counts.
+type Resize struct {
+	State   string // "deferred" or "infeasible"
+	Message string
+	Desired Container
+}
+
 type Pod struct {
 	Name, NodeName, Namespace string
 	// Effective request — what the scheduler reserves for the pod.
@@ -50,6 +58,8 @@ type Pod struct {
 	Tolerations  []corev1.Toleration
 	// Kind of the controlling owner, "" for a bare pod: decides what a drain does with it.
 	Controller string
+	// nil unless a resize waits on the kubelet.
+	Resize *Resize
 	// The scheduler's PodScheduled=False reason and message; "" once
 	// scheduled, and before the scheduler has tried.
 	SchedReason, SchedMessage string
@@ -244,6 +254,7 @@ func FromPod(p *corev1.Pod) Pod {
 	if r := p.Spec.Resources; r != nil {
 		out.PodLevel = container(corev1.Container{Resources: *r})
 	}
+	out.Resize = resize(p)
 	lim := resourcehelper.PodLimits(p, resourcehelper.PodResourcesOptions{})
 	if bounded(p, corev1.ResourceCPU) {
 		v := lim.Cpu().MilliValue()
@@ -254,6 +265,26 @@ func FromPod(p *corev1.Pod) Pod {
 		out.MemoryLimit = &v
 	}
 	return out
+}
+
+func resize(p *corev1.Pod) *Resize {
+	state := ""
+	switch {
+	case resourcehelper.IsPodResizeInfeasible(p):
+		state = "infeasible"
+	case resourcehelper.IsPodResizeDeferred(p):
+		state = "deferred"
+	default:
+		return nil
+	}
+	msg := ""
+	for _, c := range p.Status.Conditions {
+		if c.Type == corev1.PodResizePending {
+			msg = c.Message
+		}
+	}
+	want := resourcehelper.PodRequests(p, resourcehelper.PodResourcesOptions{})
+	return &Resize{State: state, Message: msg, Desired: Container{CPU: want.Cpu().MilliValue(), Memory: want.Memory().Value()}}
 }
 
 // statuses lists init containers first, like the pod spec. A container that

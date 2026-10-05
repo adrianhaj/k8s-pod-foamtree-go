@@ -274,3 +274,16 @@ func TestTreemapListsPendingPods(t *testing.T) {
 		t.Fatalf("pending must be [], not null: %s", b)
 	}
 }
+
+func TestTreemapCarriesResize(t *testing.T) {
+	p := etcdPod()
+	p.Resize = &Resize{State: "infeasible", Message: "no room", Desired: Container{CPU: 8000, Memory: 2_000_000}}
+	pod := children(render(t, []Node{minikube}, []Pod{p}, Memory)[0])[0]
+	if fmt.Sprint(pod["resize"]) != "map[desired:2000 message:no room state:infeasible]" {
+		t.Fatalf("got %v", pod["resize"])
+	}
+	bare := children(render(t, []Node{minikube}, []Pod{etcdPod()}, CPU)[0])[0]
+	if _, ok := bare["resize"]; ok {
+		t.Fatalf("resize must be omitted when nothing is pending: %v", bare)
+	}
+}
