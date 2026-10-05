@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"io"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/kube"
 )
 
 func TestParseSynthetic(t *testing.T) {
@@ -170,5 +174,23 @@ func TestSyntheticSchedulingConstraints(t *testing.T) {
 	}
 	if kinds["DaemonSet"] != 30 || kinds[""] == 0 || kinds["ReplicaSet"] == 0 {
 		t.Fatalf("controllers: %v", kinds)
+	}
+}
+
+func TestSyntheticLogs(t *testing.T) {
+	s, _ := parseSynthetic("2x2")
+	rc, err := s.Logs(context.Background(), "", kube.LogRequest{Namespace: "team-1", Pod: "svc01-1-0", Tail: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(rc)
+	lines := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
+	if len(lines) != 20 || !strings.Contains(lines[0], "team-1/svc01-1-0") {
+		t.Fatalf("%d lines, first %q", len(lines), lines[0])
+	}
+	rc, _ = s.Logs(context.Background(), "", kube.LogRequest{Namespace: "ns", Pod: "p", Tail: 5, Previous: true})
+	b, _ = io.ReadAll(rc)
+	if !strings.Contains(string(b), "out of memory") {
+		t.Fatalf("previous run should end in an OOM: %q", b)
 	}
 }

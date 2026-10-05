@@ -41,7 +41,7 @@ function watchTheme(cb) {
 }
 
 const PANEL_KEY = "k8sfoams.panel";
-const PANEL_TABS = ["problems", "changes", "drain"];
+const PANEL_TABS = ["problems", "changes", "drain", "logs"];
 const PANEL_DEFAULT = { open: true, tab: "problems", max: false };
 const validPanel = v => !!v && typeof v.open === "boolean" && typeof v.max === "boolean" && PANEL_TABS.includes(v.tab);
 

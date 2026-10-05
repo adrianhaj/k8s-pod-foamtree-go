@@ -3,6 +3,8 @@ package kube
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -216,6 +218,58 @@ func TestSlimPodKeepsSchedulingConstraints(t *testing.T) {
 	}
 	if out, _ := slimPod(&corev1.Pod{}); out.(*corev1.Pod).Spec.Affinity != nil || out.(*corev1.Pod).OwnerReferences != nil {
 		t.Fatalf("a bare pod gained fields: %+v", out)
+	}
+}
+
+func TestLogsStreamsFromTheContextClient(t *testing.T) {
+	s := testSource(t, fake.NewClientset())
+	rc, err := s.Logs(context.Background(), "", LogRequest{Namespace: "ns", Pod: "p", Container: "app", Tail: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+	b, _ := io.ReadAll(rc)
+	if string(b) != "fake logs" {
+		t.Fatalf("got %q", b)
+	}
+	if _, err := s.Logs(context.Background(), "prod", LogRequest{Namespace: "ns", Pod: "p"}); !errors.Is(err, ErrUnknownContext) {
+		t.Fatalf("unknown context: %v", err)
+	}
+}
+
+func TestLastBytesKeepsTheNewestWholeLines(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		max  int
+		want string
+	}{
+		{"a\nb\n", 100, "a\nb\n"},
+		{strings.Repeat("old line\n", 5) + "newest line\n", 25, "old line\nnewest line\n"},
+		{"xxxx\nabc\n", 4, "abc\n"},
+		{"xxabc\n", 4, "abc\n"},
+	} {
+		got := string(lastBytes([]byte(tc.in), tc.max))
+		if got != tc.want || len(got) > tc.max && len(tc.in) > tc.max {
+			t.Errorf("lastBytes(%q, %d) = %q, want %q", tc.in, tc.max, got, tc.want)
+		}
+	}
+}
+
+func TestTailBoundsALargeStream(t *testing.T) {
+	var in strings.Builder
+	for i := 0; in.Len() < 3*MaxLogBytes; i++ {
+		fmt.Fprintf(&in, "line %d\n", i)
+	}
+	last := in.String()[strings.LastIndex(strings.TrimSuffix(in.String(), "\n"), "\n")+1:]
+	got, err := tail(strings.NewReader(in.String()), MaxLogBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) > MaxLogBytes || !strings.HasSuffix(string(got), last) || !strings.HasPrefix(string(got), "line ") {
+		t.Fatalf("len %d, starts %q, ends %q", len(got), got[:12], got[len(got)-12:])
+	}
+	if !strings.Contains(in.String(), "\n"+string(got)) {
+		t.Fatal("result is not a whole-line suffix of the input")
 	}
 }
 

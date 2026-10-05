@@ -3,10 +3,12 @@
 package kube
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -30,6 +32,18 @@ var ErrUnknownContext = errors.New("unknown context")
 
 // Terminated pods keep their requests in the API but reserve nothing.
 const activePods = "status.phase!=Succeeded,status.phase!=Failed"
+
+type LogRequest struct {
+	Namespace, Pod, Container string
+	Tail                      int64
+	Previous                  bool
+}
+
+// MaxLogBytes caps one fetch: a tail of long lines can still be megabytes.
+const MaxLogBytes = 1 << 20
+
+// ponytail: the API cuts limitBytes from the start, so the 1 MiB cap is applied here; 32 MiB bounds the read
+const fetchLimitBytes = 32 << 20
 
 type Context struct {
 	Context string `json:"context"`
@@ -125,7 +139,69 @@ func (s *Source) Snapshot(ctx context.Context, name string) ([]foam.Node, []foam
 	return nodes, pods, nil
 }
 
+// Logs returns the newest MaxLogBytes of one container's logs through the
+// context's cached client, starting its watches if this is the first request
+// for that context.
+func (s *Source) Logs(ctx context.Context, name string, req LogRequest) (io.ReadCloser, error) {
+	name, err := s.resolve(name)
+	if err != nil {
+		return nil, err
+	}
+	c, err := s.cache(name)
+	if err != nil {
+		return nil, err
+	}
+	limit := int64(fetchLimitBytes)
+	rc, err := c.client.CoreV1().Pods(req.Namespace).GetLogs(req.Pod, &corev1.PodLogOptions{
+		Container: req.Container, TailLines: &req.Tail, Previous: req.Previous, LimitBytes: &limit,
+	}).Stream(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	b, err := tail(rc, MaxLogBytes)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(b)), nil
+}
+
+// tail reads r to the end holding at most about 2*limit bytes, and returns the newest limit.
+func tail(r io.Reader, limit int) ([]byte, error) {
+	chunk := make([]byte, 32<<10)
+	buf := make([]byte, 0, 2*limit+len(chunk))
+	for {
+		n, err := r.Read(chunk)
+		buf = append(buf, chunk[:n]...)
+		if len(buf) > 2*limit {
+			buf = append(buf[:0], buf[len(buf)-limit-1:]...)
+		}
+		if err == io.EOF {
+			return lastBytes(buf, limit), nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+}
+
+// lastBytes keeps the newest limit bytes, starting at a line boundary.
+func lastBytes(b []byte, limit int) []byte {
+	if len(b) <= limit {
+		return b
+	}
+	cut := len(b) - limit
+	out := b[cut:]
+	if b[cut-1] != '\n' {
+		if i := bytes.IndexByte(out, '\n'); i >= 0 && i+1 < len(out) {
+			out = out[i+1:]
+		}
+	}
+	return out
+}
+
 type clusterCache struct {
+	client      kubernetes.Interface
 	nodes, pods cache.SharedIndexInformer
 	lastErr     atomic.Pointer[error]
 	cancel      context.CancelFunc
@@ -165,7 +241,8 @@ func (s *Source) cache(name string) (*clusterCache, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &clusterCache{
-		nodes: coreinformers.NewNodeInformer(cs, 0, cache.Indexers{}),
+		client: cs,
+		nodes:  coreinformers.NewNodeInformer(cs, 0, cache.Indexers{}),
 		pods: coreinformers.NewFilteredPodInformer(cs, metav1.NamespaceAll, 0, cache.Indexers{},
 			func(o *metav1.ListOptions) { o.FieldSelector = activePods }),
 		cancel: cancel,

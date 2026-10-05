@@ -238,6 +238,7 @@ function Rail({ view, setView, panel, openTab, findings, settings }) {
       {tabBtn("problems", "alert", "Problems", findings)}
       {tabBtn("changes", "clock", "Changes")}
       {tabBtn("drain", "flask", "Drain simulation")}
+      {tabBtn("logs", "terminal", "Logs")}
       <span className="rail-div" />
       {settings}
     </nav>

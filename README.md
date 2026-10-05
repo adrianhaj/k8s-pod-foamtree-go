@@ -256,6 +256,7 @@ Focusing the input opens a popover with the same token list; it is replaced by t
 | `GET /healthcheck` | `{"status": "ok"}` |
 | `GET /resources/cpu`, `GET /resources/memory` | treemap JSON; optional `?context=<name>`. CPU in millicores, memory in decimal kB. Each node group also carries `unschedulable`, `taints`, `conditions` and a render-ready `warnings` list — see [Node health](#node-health). Each pod group carries a `findings` list — see [Audit & hygiene](#audit--hygiene). Pod groups carry `limit` on that axis (`null` = no ceiling); node groups carry `zone`, `region`, `instanceType`, `pool` and `capacityType` (`"spot"` or `"on-demand"`) — `""` when no label says. Node, pod and container entries carry `extended`: every other non-zero resource (`nvidia.com/gpu`, `ephemeral-storage`, `hugepages-2Mi`, …) in its base unit, bytes or a device count, from node allocatable (CPU and memory stay on capacity) and the effective request; omitted when there is none. |
 | `GET /contexts` | `[{"context": "...", "active": true}]` |
+| `GET /api/logs` | one container's logs as plain text. `namespace` and `pod` are required; optional `container`, `tail` (1–5000, default 500), `previous=1` for the run before the last restart, and `context`. At most 1 MiB. 404 when the pod is gone, 400 when there is no previous run. |
 | `GET /api/me` | `{"auth": "none"}`, or `{"auth": "oidc", "email": "...", "name": "..."}` for the signed-in user |
 | `GET /auth/login`, `GET /auth/callback`, `POST /auth/logout` | OIDC sign-in and sign-out (only with `--auth=oidc`) |
 
@@ -315,6 +316,10 @@ Modelled: allocatable CPU, memory and pod count, cordons, `NoSchedule` /
 pod (anti-)affinity, topology spread, volume zones, host ports, extended
 resources and preemption. The drain also ignores PodDisruptionBudgets.
 
+## Logs
+
+The **Logs** tab shows one container's logs. Pick a pod by `namespace/name`, then the container, the **Current** or **Previous** run (the one before the last restart, where a crash shows up) and how many lines. **Highlight text** marks matching lines without hiding the others. Open it from the **Logs** action on a selected workload's chip, or on any pod row in a node's overlay; the map lights that pod. Logs load when you open or reload them, never in the background. They need `get` on `pods/log`, which the base RBAC grants.
+
 ## Run in a cluster
 
 ```bash
@@ -334,7 +339,7 @@ kubectl -n k8sfoams create secret generic k8sfoams-oidc \
 kubectl apply -k <your-overlay>
 ```
 
-Register `https://<host>/auth/callback` as the redirect URI in your IdP. The service account can only `get`/`list`/`watch` nodes and pods; every allowed user sees the whole cluster through it. On Microsoft Entra ID, prefer `--oidc-allowed-groups` or a single-tenant issuer: Entra omits `email_verified`, and an email glob would trust an unverified address.
+Register `https://<host>/auth/callback` as the redirect URI in your IdP. The service account can only `get`/`list`/`watch` nodes and pods, and `get` pod logs. Every allowed user sees the whole cluster through it, including every pod's logs, which often contain secrets. On Microsoft Entra ID, prefer `--oidc-allowed-groups` or a single-tenant issuer: Entra omits `email_verified`, and an email glob would trust an unverified address.
 
 Images: `make image` builds `ghcr.io/adrianhaj/k8sfoams:<git describe>` locally; `make image-push IMAGE=<registry>/k8sfoams` pushes amd64 and arm64. CI (`.github/workflows/go.yaml`) lints, tests and builds both on every PR and on `main`.
 
@@ -346,7 +351,7 @@ Releases: an admin pushes a `v*` tag (`git tag v1.0.0 && git push origin v1.0.0`
 | --- | --- | --- |
 | `--host`, `--port` | `127.0.0.1`, `8080` | listen address |
 | `--in-cluster` | off | use the pod's service account; offers one context, `in-cluster` |
-| `--auth` | `none` | `none` or `oidc` |
+| `--auth` | `none` | `none` or `oidc`; with `none` on a loopback address the server only answers requests addressed to `localhost` or a loopback IP, which blocks DNS-rebinding pages from reading cluster data |
 | `--allow-unauthenticated` | off | required for `--auth=none` on a non-loopback host |
 | `--oidc-issuer`, `--oidc-client-id`, `--oidc-redirect-url` | | required with `--auth=oidc` |
 | `--oidc-allowed-emails` | | comma-separated; globs like `*@example.com`. Only verified emails match (`email_verified`, or Entra's optional `xms_edov` claim); otherwise use groups |

@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -33,6 +35,26 @@ func parseSynthetic(spec string) (*syntheticSource, error) {
 
 func (s *syntheticSource) Contexts() ([]kube.Context, error) {
 	return []kube.Context{{Context: "synthetic", Active: true}}, nil
+}
+
+// Logs makes up steady request lines. A previous run ends in an OOM, so the
+// Logs tab and the assistant have a crash to look at.
+func (s *syntheticSource) Logs(_ context.Context, _ string, req kube.LogRequest) (io.ReadCloser, error) {
+	var b strings.Builder
+	start := s.now().Add(-time.Duration(req.Tail) * time.Second).UTC()
+	n := req.Tail
+	if req.Previous {
+		n -= 2
+	}
+	for i := range n {
+		fmt.Fprintf(&b, "%s INFO  %s/%s handled request %d in %dms\n",
+			start.Add(time.Duration(i)*time.Second).Format(time.RFC3339), req.Namespace, req.Pod, i, 3+i*7%90)
+	}
+	if req.Previous {
+		end := start.Add(time.Duration(n) * time.Second).Format(time.RFC3339)
+		fmt.Fprintf(&b, "%s ERROR runtime: out of memory: cannot allocate 33554432-byte block\n%s ERROR fatal error: out of memory\n", end, end)
+	}
+	return io.NopCloser(strings.NewReader(b.String())), nil
 }
 
 func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam.Pod, error) {
