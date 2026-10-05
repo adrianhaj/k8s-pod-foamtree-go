@@ -267,24 +267,26 @@ func FromPod(p *corev1.Pod) Pod {
 	return out
 }
 
+// resize reads the first PodResizePending condition, as resourcehelper's
+// IsPodResizeInfeasible and IsPodResizeDeferred do.
 func resize(p *corev1.Pod) *Resize {
-	state := ""
-	switch {
-	case resourcehelper.IsPodResizeInfeasible(p):
-		state = "infeasible"
-	case resourcehelper.IsPodResizeDeferred(p):
-		state = "deferred"
-	default:
-		return nil
-	}
-	msg := ""
 	for _, c := range p.Status.Conditions {
-		if c.Type == corev1.PodResizePending {
-			msg = c.Message
+		if c.Type != corev1.PodResizePending {
+			continue
 		}
+		var state string
+		switch c.Reason {
+		case corev1.PodReasonInfeasible:
+			state = "infeasible"
+		case corev1.PodReasonDeferred:
+			state = "deferred"
+		default:
+			return nil
+		}
+		want := resourcehelper.PodRequests(p, resourcehelper.PodResourcesOptions{})
+		return &Resize{State: state, Message: c.Message, Desired: Container{CPU: want.Cpu().MilliValue(), Memory: want.Memory().Value()}}
 	}
-	want := resourcehelper.PodRequests(p, resourcehelper.PodResourcesOptions{})
-	return &Resize{State: state, Message: msg, Desired: Container{CPU: want.Cpu().MilliValue(), Memory: want.Memory().Value()}}
+	return nil
 }
 
 // statuses lists init containers first, like the pod spec. A container that
