@@ -46,9 +46,9 @@ function watchTheme(cb) {
 }
 
 const PANEL_KEY = "k8sfoams.panel";
-const PANEL_TABS = ["problems", "pending", "changes", "drain", "logs", "assistant"];
 const PANEL_DEFAULT = { open: true, tab: "problems", max: false };
-const validPanel = v => !!v && typeof v.open === "boolean" && typeof v.max === "boolean" && PANEL_TABS.includes(v.tab);
+// tabIds come from the panel's TABS, the one list of tabs.
+const validPanel = (v, tabIds) => !!v && typeof v.open === "boolean" && typeof v.max === "boolean" && tabIds.includes(v.tab);
 
 // A shareable view: the toolbar state lives in the query string, which
 // survives the OIDC round trip (a hash would not). Defaults are left out, so

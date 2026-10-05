@@ -19,7 +19,7 @@ const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY
 const { fmtMem, shortContext, clock } = window.k8sFormat;
 const { buildProblems, problemChips } = window.k8sProblems;
 const { pickShown } = window.k8sHighlight;
-const { BottomPanel, ProblemsTab, PendingTab, ChangesTab, DrainTab, MapChips, showTab } = window.k8sPanel;
+const { TAB_IDS, BottomPanel, ProblemsTab, PendingTab, ChangesTab, DrainTab, MapChips, showTab } = window.k8sPanel;
 const { TopBar, SummaryStrip, Toolbar, Rail, SettingsMenu, attentionBySev } = window.k8sChrome;
 const { useAssistant, AssistantTab } = window.k8sAssistant;
 const THEME_KEY = "k8sfoams.theme";
@@ -196,7 +196,7 @@ function App() {
     applyThemePref(themePref);
     writePref(safeStorage(), THEME_KEY, themePref);
   }, [themePref]);
-  const [panel, setPanel] = useState(() => readPref(safeStorage(), PANEL_KEY, window.innerHeight < 720 ? { ...PANEL_DEFAULT, open: false } : PANEL_DEFAULT, validPanel));
+  const [panel, setPanel] = useState(() => readPref(safeStorage(), PANEL_KEY, window.innerHeight < 720 ? { ...PANEL_DEFAULT, open: false } : PANEL_DEFAULT, v => validPanel(v, TAB_IDS)));
   const panelSaved = useRef(false);
   useEffect(() => {
     if (!panelSaved.current) { panelSaved.current = true; return; }

@@ -196,4 +196,4 @@ function MapChips({ lit, ring, litPod, workload, onClearWorkload, onLogs, at, on
   );
 }
 
-window.k8sPanel = { BottomPanel, ProblemsTab, PendingTab, ChangesTab, DrainTab, MapChips, showTab };
+window.k8sPanel = { TAB_IDS: TABS.map(t => t.id), BottomPanel, ProblemsTab, PendingTab, ChangesTab, DrainTab, MapChips, showTab };
