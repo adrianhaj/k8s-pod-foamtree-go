@@ -23,13 +23,18 @@ const (
 	charsPerToken   = 4
 	minAnswerTokens = 256
 	maxRelayed      = 300
+	maxRounds       = 8
+	maxToolBytes    = 64 << 10
+	maxToolCalls    = 16
 )
 
 var errTimeout = errors.New("the answer took longer than 2 minutes")
 
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
 
 type chatRequest struct {
@@ -63,6 +68,8 @@ type event struct {
 type Proxy struct {
 	cfg             Config
 	trusted, viewer *http.Client
+	// Tools builds the read-only tools for one cluster; nil means plain chat.
+	Tools func(cluster string) Toolbox
 }
 
 func New(cfg Config) *Proxy {
@@ -102,6 +109,10 @@ func (p *Proxy) ServeChat(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "message role must be system, user or assistant", http.StatusBadRequest)
 			return
 		}
+		if len(m.ToolCalls) > 0 || m.ToolCallID != "" {
+			http.Error(w, "tool calls are added by the server only", http.StatusBadRequest)
+			return
+		}
 	}
 	t, err := p.target(req, r.Header.Get("X-LLM-Key"))
 	if err != nil {
@@ -121,17 +132,55 @@ func (p *Proxy) ServeChat(w http.ResponseWriter, r *http.Request) {
 	p.converse(ctx, &stream{w: w, rc: rc}, t, req, hidden)
 }
 
+// converse runs the tool loop: one upstream round per step, at most maxRounds,
+// with the cap checked before each later round and usage summed across them.
 func (p *Proxy) converse(ctx context.Context, s *stream, t target, req chatRequest, hidden int) {
-	var c compat
-	rd, err := t.call(ctx, &c, req.Messages, 0, s)
-	if err != nil {
-		s.fail(errors.New(t.scrub(err.Error())))
-		return
+	var box Toolbox
+	if p.Tools != nil {
+		box = p.Tools(req.Context)
+		t.tools = box.Tools()
 	}
-	if rd.Finish == "length" {
-		s.send(event{Type: "notice", Text: "The answer stopped at the token cap."})
+	c := compat{noTools: len(t.tools) == 0}
+	var total Usage
+	msgs, toolBytes := req.Messages, 0
+	for i := range maxRounds {
+		if i > 0 && t.budget > 0 && total.Total+estimate(msgs)+minAnswerTokens > t.budget {
+			s.send(event{Type: "notice", Text: fmt.Sprintf("Stopped: the next step would pass the cap of %d tokens.", t.budget)})
+			s.send(event{Type: "done", Usage: &total, Masked: hidden})
+			return
+		}
+		rd, err := t.call(ctx, &c, msgs, total.Total, s)
+		total = total.add(rd.Usage)
+		if err != nil {
+			s.fail(errors.New(t.scrub(err.Error())))
+			return
+		}
+		if rd.Finish != "tool_calls" || len(rd.Calls) == 0 || c.noTools {
+			if rd.Finish == "length" {
+				s.send(event{Type: "notice", Text: "The answer stopped at the token cap."})
+			}
+			s.send(event{Type: "done", Usage: &total, Masked: hidden})
+			return
+		}
+		msgs = append(msgs, Message{Role: "assistant", ToolCalls: rd.Calls})
+		for _, call := range rd.Calls {
+			s.send(event{Type: "tool", Name: call.Function.Name, Args: call.Function.Arguments})
+			out, err := box.Call(ctx, call.Function.Name, json.RawMessage(call.Function.Arguments))
+			if err != nil {
+				out = "error: " + err.Error()
+			}
+			// Tool output is cluster data too: it gets the same masking as the browser's context.
+			out, n := redact(out)
+			hidden += n
+			// One budget for all tool output in this question keeps the prompt bounded.
+			if left := max(maxToolBytes-toolBytes, 0); len(out) > left {
+				out = strings.ToValidUTF8(out[:left], "") + "\n[truncated: the tool output budget for this question is used up]"
+			}
+			toolBytes += len(out)
+			msgs = append(msgs, Message{Role: "tool", ToolCallID: call.ID, Content: out})
+		}
 	}
-	s.send(event{Type: "done", Usage: &rd.Usage, Masked: hidden})
+	s.fail(fmt.Errorf("Stopped after %d tool rounds without an answer.", maxRounds))
 }
 
 type target struct {
@@ -139,6 +188,7 @@ type target struct {
 	budget           int
 	client           *http.Client
 	server           bool
+	tools            []Tool
 }
 
 // target picks the connection. A body without url is the server connection;
@@ -157,7 +207,7 @@ func (p *Proxy) target(req chatRequest, viewerKey string) (target, error) {
 		if m := p.cfg.MaxTokens; m > 0 && (budget <= 0 || budget > m) {
 			budget = m
 		}
-		return target{p.cfg.URL, p.cfg.Model, key, budget, p.trusted, true}, nil
+		return target{p.cfg.URL, p.cfg.Model, key, budget, p.trusted, true, nil}, nil
 	}
 	base, err := p.cfg.checkURL(req.URL)
 	if err != nil {
@@ -166,20 +216,24 @@ func (p *Proxy) target(req chatRequest, viewerKey string) (target, error) {
 	if req.Model == "" {
 		return target{}, errors.New("model is required")
 	}
-	return target{base, req.Model, viewerKey, budget, p.viewer, false}, nil
+	return target{base, req.Model, viewerKey, budget, p.viewer, false, nil}, nil
 }
 
 func estimate(msgs []Message) int {
 	n := 0
 	for _, m := range msgs {
 		n += utf8.RuneCountInString(m.Role) + utf8.RuneCountInString(m.Content)
+		for _, c := range m.ToolCalls {
+			n += utf8.RuneCountInString(c.Function.Name) + utf8.RuneCountInString(c.Function.Arguments)
+		}
 	}
 	return n/charsPerToken + 1
 }
 
 // compat remembers what an endpoint rejected, so a retry leaves it out.
 // noLimit leaves the limit field out and the proxy counts the answer itself.
-type compat struct{ noUsage, completionTokens, noLimit bool }
+// noTools also starts true when there are no tools to offer.
+type compat struct{ noUsage, completionTokens, noLimit, noTools bool }
 
 // limitTooLarge matches OpenAI and vLLM wording conservatively: a bare mention
 // of the field means "rename it", a number or a size complaint means "drop it".
@@ -192,6 +246,7 @@ func limitTooLarge(msg string) bool {
 }
 
 func (c *compat) relax(msg string) bool {
+	lower := strings.ToLower(msg)
 	switch {
 	case !c.noUsage && strings.Contains(msg, "stream_options"):
 		c.noUsage = true
@@ -201,6 +256,9 @@ func (c *compat) relax(msg string) bool {
 		c.completionTokens = true
 	case !c.noLimit && c.completionTokens && (strings.Contains(msg, "max_tokens") || strings.Contains(msg, "max_completion_tokens")):
 		c.noLimit = true
+	// Last, so a limit complaint that names a function is still read as one.
+	case !c.noTools && (strings.Contains(lower, "tool") || strings.Contains(lower, "function")):
+		c.noTools = true
 	default:
 		return false
 	}
@@ -210,6 +268,7 @@ func (c *compat) relax(msg string) bool {
 type round struct {
 	Finish string
 	Usage  Usage
+	Calls  []ToolCall
 	chars  int
 	events int
 	done   bool
@@ -245,6 +304,9 @@ func (t target) call(parent context.Context, c *compat, msgs []Message, used int
 			}
 			body[k] = t.budget - used - in
 		}
+		if !c.noTools {
+			body["tools"] = toolDefs(t.tools)
+		}
 		resp, err := t.post(ctx, body)
 		if err != nil {
 			slog.Warn("llm upstream unreachable", "err", err)
@@ -259,7 +321,7 @@ func (t target) call(parent context.Context, c *compat, msgs []Message, used int
 		}
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		resp.Body.Close()
-		if attempt < 3 && resp.StatusCode == http.StatusBadRequest && c.relax(string(msg)) {
+		if attempt < 4 && resp.StatusCode == http.StatusBadRequest && c.relax(string(msg)) {
 			continue
 		}
 		if t.server && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
@@ -341,6 +403,14 @@ type chunk struct {
 			Content          string `json:"content"`
 			ReasoningContent string `json:"reasoning_content"`
 			Reasoning        string `json:"reasoning"`
+			ToolCalls        []struct {
+				Index    int    `json:"index"`
+				ID       string `json:"id"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -389,6 +459,25 @@ func readStream(r io.Reader, onText func(text string, relay bool)) (round, error
 			if ch.Delta.Content != "" {
 				rd.chars += utf8.RuneCountInString(ch.Delta.Content)
 				onText(ch.Delta.Content, true)
+			}
+			// Tool call arguments count toward the cap like reasoning, and are not relayed.
+			for _, d := range ch.Delta.ToolCalls {
+				if d.Index < 0 || d.Index >= maxToolCalls {
+					return rd, fmt.Errorf("assistant endpoint sent tool call index %d", d.Index)
+				}
+				for len(rd.Calls) <= d.Index {
+					rd.Calls = append(rd.Calls, ToolCall{Type: "function"})
+				}
+				tc := &rd.Calls[d.Index]
+				if d.ID != "" {
+					tc.ID = d.ID
+				}
+				tc.Function.Name += d.Function.Name
+				tc.Function.Arguments += d.Function.Arguments
+				if text := d.Function.Name + d.Function.Arguments; text != "" {
+					rd.chars += utf8.RuneCountInString(text)
+					onText(text, false)
+				}
 			}
 			if ch.FinishReason != "" {
 				rd.Finish = ch.FinishReason

@@ -460,3 +460,185 @@ func TestUnknownRoleIsRejected(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 }
+
+type fakeBox struct {
+	mu      sync.Mutex
+	cluster string
+	calls   []string
+	out     string
+}
+
+func (b *fakeBox) Tools() []Tool {
+	return []Tool{{Name: "describe_pod", Description: "One pod.", Parameters: json.RawMessage(`{"type":"object","properties":{}}`)}}
+}
+
+func (b *fakeBox) Call(_ context.Context, name string, args json.RawMessage) (string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.calls = append(b.calls, name+" "+string(args))
+	return b.out, nil
+}
+
+func withBox(p *Proxy, b *fakeBox) *Proxy {
+	p.Tools = func(cluster string) Toolbox { b.cluster = cluster; return b }
+	return p
+}
+
+// The arguments arrive split over two chunks, as real endpoints send them.
+const (
+	toolStart = `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"describe_pod","arguments":"{\"namespace\":"}}]}}]}`
+	toolEnd   = `{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"ns\",\"name\":\"p\"}"}}]},"finish_reason":"tool_calls"}]}`
+)
+
+func TestToolLoopRunsToolsThenAnswers(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		if call == 1 {
+			sse(w, toolStart, toolEnd, `{"choices":[],"usage":{"prompt_tokens":50,"completion_tokens":10,"total_tokens":60}}`)
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"It is running."},"finish_reason":"stop"}]}`,
+			`{"choices":[],"usage":{"prompt_tokens":80,"completion_tokens":5,"total_tokens":85}}`)
+	})
+	box := &fakeBox{out: `{"phase":"Running"}`}
+	w := chat(withBox(New(Config{AllowAnyURL: true}), box), "k", `{"url":"`+up.URL+`/v1","model":"m","context":"kind",`+q+`}`)
+
+	want := []event{
+		{Type: "tool", Name: "describe_pod", Args: `{"namespace":"ns","name":"p"}`},
+		{Type: "delta", Text: "It is running."},
+		{Type: "done", Usage: &Usage{Prompt: 130, Completion: 15, Total: 145}},
+	}
+	if got := events(t, w.Body.String()); !reflect.DeepEqual(got, want) {
+		t.Fatalf("%+v", got)
+	}
+	if box.cluster != "kind" || len(box.calls) != 1 || box.calls[0] != `describe_pod {"namespace":"ns","name":"p"}` {
+		t.Fatalf("tool calls %q on %q", box.calls, box.cluster)
+	}
+	c := up.got()
+	if c[0].body["tools"] == nil {
+		t.Fatal("tools were not offered")
+	}
+	msgs := c[1].body["messages"].([]any)
+	asked, answered := msgs[len(msgs)-2].(map[string]any), msgs[len(msgs)-1].(map[string]any)
+	if asked["role"] != "assistant" || asked["tool_calls"] == nil ||
+		answered["role"] != "tool" || answered["tool_call_id"] != "call_1" || answered["content"] != `{"phase":"Running"}` {
+		t.Fatalf("second request messages: %+v", msgs)
+	}
+}
+
+func TestToolLoopStopsAfterMaxRounds(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) { sse(w, toolStart, toolEnd) })
+	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: "{}"}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	ev := events(t, w.Body.String())
+	if len(up.got()) != maxRounds || ev[len(ev)-1].Type != "error" || !strings.Contains(ev[len(ev)-1].Text, "8 tool rounds") {
+		t.Fatalf("%d calls, last %+v", len(up.got()), ev[len(ev)-1])
+	}
+}
+
+func TestToolLoopStopsAtTheCap(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
+		sse(w, toolStart, toolEnd, `{"choices":[],"usage":{"prompt_tokens":1800,"completion_tokens":100,"total_tokens":1900}}`)
+	})
+	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: "{}"}), "k", `{"url":"`+up.URL+`/v1","model":"m","budget":2000,`+q+`}`)
+	ev := events(t, w.Body.String())
+	n := len(ev)
+	if len(up.got()) != 1 || ev[n-2].Type != "notice" || !strings.Contains(ev[n-2].Text, "cap") || ev[n-1].Usage.Total != 1900 {
+		t.Fatalf("%d calls, events %+v", len(up.got()), ev)
+	}
+}
+
+func TestToolsRejectedFallsBackToPlainChat(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		if call == 1 {
+			http.Error(w, `{"error":{"message":"this model does not support tools"}}`, 400)
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"plain"},"finish_reason":"stop"}]}`)
+	})
+	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	if c := up.got(); len(c) != 2 || c[1].body["tools"] != nil || !strings.Contains(w.Body.String(), "plain") {
+		t.Fatalf("%+v", c)
+	}
+}
+
+// Every compat stage can be reached within one question.
+func TestEveryRetryStageIsReachable(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		switch call {
+		case 1:
+			http.Error(w, `{"error":{"message":"Unrecognized request argument supplied: stream_options"}}`, 400)
+		case 2:
+			http.Error(w, `{"error":{"message":"Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead."}}`, 400)
+		case 3:
+			http.Error(w, `{"error":{"message":"Unsupported parameter: 'max_completion_tokens'"}}`, 400)
+		case 4:
+			http.Error(w, `{"error":{"message":"tools are not supported"}}`, 400)
+		default:
+			sse(w, `{"choices":[{"delta":{"content":"plain"},"finish_reason":"stop"}]}`)
+		}
+	})
+	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{}), "k", `{"url":"`+up.URL+`/v1","model":"m","budget":1000,`+q+`}`)
+	c := up.got()
+	if len(c) != 5 || c[4].body["tools"] != nil || c[4].body["max_completion_tokens"] != nil || !strings.Contains(w.Body.String(), "plain") {
+		t.Fatalf("%d calls, %q", len(c), w.Body)
+	}
+}
+
+func TestPlainChatOffersNoTools(t *testing.T) {
+	up := newUpstream(t, answer("ok"))
+	chat(New(Config{AllowAnyURL: true}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	if c := up.got(); len(c) != 1 || c[0].body["tools"] != nil {
+		t.Fatalf("%+v", c)
+	}
+}
+
+func TestToolOutputIsMasked(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		if call == 1 {
+			sse(w, toolStart, toolEnd)
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	})
+	w := chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: "starting\nREDIS_PASSWORD=hunter2hunter2\n"}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	sent, _ := json.Marshal(up.got()[1].body)
+	if strings.Contains(string(sent), "hunter2hunter2") {
+		t.Fatalf("a secret from tool output reached the model: %s", sent)
+	}
+	ev := events(t, w.Body.String())
+	if last := ev[len(ev)-1]; last.Masked != 1 {
+		t.Fatalf("%+v", last)
+	}
+}
+
+func TestToolOutputIsBudgeted(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
+		if call == 1 {
+			sse(w, toolStart, toolEnd)
+			return
+		}
+		sse(w, `{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`)
+	})
+	chat(withBox(New(Config{AllowAnyURL: true}), &fakeBox{out: strings.Repeat("x", 100<<10)}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	msgs := up.got()[1].body["messages"].([]any)
+	content := msgs[len(msgs)-1].(map[string]any)["content"].(string)
+	if len(content) > maxToolBytes+200 || !strings.Contains(content, "truncated") {
+		t.Fatalf("tool output of %d bytes reached the model", len(content))
+	}
+}
+
+func TestEstimateCountsToolCalls(t *testing.T) {
+	m := Message{Role: "assistant", ToolCalls: []ToolCall{{}}}
+	m.ToolCalls[0].Function.Name, m.ToolCalls[0].Function.Arguments = "ab", "日本語"
+	if got, want := estimate([]Message{m}), (9+2+3)/charsPerToken+1; got != want {
+		t.Fatalf("estimate %d, want %d", got, want)
+	}
+}
+
+// Tool calls and tool results are added by the server only.
+func TestBrowserCannotSendToolCalls(t *testing.T) {
+	up := newUpstream(t, answer("ok"))
+	body := `{"url":"` + up.URL + `/v1","model":"m","messages":[{"role":"assistant","content":"","tool_calls":[{"id":"x","type":"function","function":{"name":"n","arguments":"{}"}}]},{"role":"user","content":"q"}]}`
+	if w := chat(New(Config{AllowAnyURL: true}), "k", body); w.Code != http.StatusBadRequest || len(up.got()) != 0 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+}
