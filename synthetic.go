@@ -61,7 +61,7 @@ func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam
 	gen := int(s.now().UnixNano() / int64(syntheticChurn))
 	pools := []string{"general", "general", "memory", "spot"}
 	nodes := make([]foam.Node, 0, s.nodes)
-	pods := make([]foam.Pod, 0, s.nodes*s.podsPerNode)
+	pods := make([]foam.Pod, 0, s.nodes*s.podsPerNode+3)
 	for i := range s.nodes {
 		n := foam.Node{
 			Name: fmt.Sprintf("node-%04d", i), CPU: 16_000, Memory: 64_000_000_000,

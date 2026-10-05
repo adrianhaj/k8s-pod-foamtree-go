@@ -384,7 +384,7 @@ Releases: an admin pushes a `v*` tag (`git tag v1.0.0 && git push origin v1.0.0`
 | `--llm-api-key-file` | | file holding the server's API key, e.g. a mounted Secret; re-read on every request. Used only with `--llm-url` |
 | `--llm-allowed-hosts` | | comma-separated globs of hosts viewers may send their own key to; empty means only the `--llm-url` host. Ignored on a loopback run without auth, where any URL is allowed |
 | `--llm-max-tokens-per-question` | `50000` | token cap for one question; `0` means none. Server connection only |
-| `--synthetic` | | serve a made-up cluster, e.g. `100x50` (nodes × pods per node), for UI work and scale tests; includes GPU, ephemeral-storage and hugepages nodes |
+| `--synthetic` | | serve a made-up cluster, e.g. `100x50` (nodes × pods per node), for UI work and scale tests; includes GPU, ephemeral-storage and hugepages nodes and three unschedulable pods |
 
 Secrets come from the environment only: `K8SFOAMS_OIDC_CLIENT_SECRET`, `K8SFOAMS_SESSION_KEY` (32 bytes, base64; unset means a random key, so sessions end on restart), and `K8SFOAMS_LLM_API_KEY`, or `--llm-api-key-file` for a mounted Secret.
 

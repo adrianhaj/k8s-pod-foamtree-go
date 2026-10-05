@@ -95,7 +95,7 @@ function PendingTab({ pods }) {
       <div className="ptr th" role="row"><span>Pod</span><span>Reason</span><span>Scheduler message</span></div>
       {pods.slice(0, ROW_CAP).map(p => (
         <div key={`${p.namespace}/${p.name}`} className="ptr" role="row" title={p.message}>
-          <span>{p.namespace}/{p.name}</span><span>{p.reason || "Waiting"}</span><span className="mut">{p.message}</span>
+          <span title={`${p.namespace}/${p.name}`}>{p.namespace}/{p.name}</span><span>{p.reason || "Waiting"}</span><span className="mut">{p.message}</span>
         </div>
       ))}
       {pods.length > ROW_CAP && <div className="ptr more">+{pods.length - ROW_CAP} more</div>}

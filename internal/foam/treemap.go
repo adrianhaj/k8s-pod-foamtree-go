@@ -151,7 +151,7 @@ func Treemap(nodes []Node, pods []Pod, axis Axis) Tree {
 			Extended:      n.Extended,
 		})
 	}
-	tree.Pending = []PendingPod{}
+	tree.Pending = make([]PendingPod, 0, len(byNode[""]))
 	for _, p := range sortPods(byNode[""]) {
 		tree.Pending = append(tree.Pending, PendingPod{Namespace: p.Namespace, Name: p.Name, Reason: p.SchedReason, Message: p.SchedMessage})
 	}
