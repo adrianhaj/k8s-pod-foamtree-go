@@ -197,6 +197,7 @@ func nodeNamed(nodes []foam.Node, name string) (foam.Node, bool) {
 
 func describePod(p foam.Pod, n foam.Node) map[string]any {
 	return map[string]any{"namespace": p.Namespace, "name": p.Name, "node": p.NodeName, "phase": p.Phase,
+		"schedulingReason": p.SchedReason, "schedulingMessage": p.SchedMessage,
 		"qos": p.QOS, "controller": p.Controller, "labels": p.Labels,
 		"cpuRequestMillicores": p.CPU, "memoryRequestBytes": p.Memory,
 		"cpuLimitMillicores": p.CPULimit, "memoryLimitBytes": p.MemoryLimit,
