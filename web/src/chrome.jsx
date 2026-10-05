@@ -127,11 +127,12 @@ function Metric({ label, u, value, of }) {
   );
 }
 
-function SummaryStrip({ totals, memUnit, qosBreakdown, attention, extCell, query, setQuery }) {
+function SummaryStrip({ totals, memUnit, qosBreakdown, attention, extCell, query, setQuery, largest }) {
   const q = query.trim();
   const toggle = token => setQuery(q === token ? "" : token);
   const be = qosBreakdown.find(x => x.qos === "BestEffort");
   const needy = attention.reduce((s, a) => s + a.count, 0);
+  const fits = largest && largest.cpu >= 50; // under 50m prints "0.0 c"
   return (
     <section className="summary" aria-label="Cluster totals">
       <Metric label="CPU requested" u={totals.cpuUsed / (totals.cpuCap || 1)}
@@ -150,7 +151,11 @@ function SummaryStrip({ totals, memUnit, qosBreakdown, attention, extCell, query
         </div>
       </div>
       <div className="metric">
-        <div className="metric-l">Nodes</div>
+        <div className="metric-l">Nodes{largest && (
+          <b title={fits ? `Largest pod at the median pod shape that fits on a node with no warnings (${largest.node})` : "No node with no warnings has room for a pod of the median shape"}>
+            {fits ? `fits ${(largest.cpu / 1000).toFixed(1)} c · ${fmtMem(largest.mem, memUnit)} ${memUnit}` : "full"}
+          </b>
+        )}</div>
         <div className="metric-v">{totals.nodes} <small>· {needy ? `${needy} need attention` : "all schedulable"}</small></div>
         <div className="metric-glyphs">
           {attention.map(a => (

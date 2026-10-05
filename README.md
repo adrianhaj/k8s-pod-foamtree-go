@@ -89,6 +89,16 @@ The **Problems** tab of the bottom panel counts nodes per warning. Click a chip 
 
 Click a node to open the focus overlay: a **Scheduling** section spells out every reason and lists each taint as `key=value` with its effect. Worst reason wins the overlay's status pill — a cordoned node under memory pressure reads as `SCHEDULING-DISABLED`, because that is what actually keeps pods off it.
 
+## Stranded capacity
+
+Free CPU with no free memory beside it, or the reverse, cannot hold a real pod. k8sfoams judges free capacity against the cluster's **median pod shape**: the median memory-to-CPU ratio of every pod that requests both.
+
+- **Group labels** (2D, with **Group by** set) add `… stranded` when a group's nodes hold CPU or memory that no pod of that shape can use.
+- **Node overlay**: a **Stranded capacity** section says how much and on which axis.
+- **Summary strip**: the Nodes cell reads `fits X c · Y GiB`, the largest pod of the median shape that still fits on a node with no warnings, or `full`.
+
+On a node with `c` free millicores, `m` free MiB and shape `r` (MiB per millicore), stranded CPU is `c − min(c, m / r)` and stranded memory is `m − min(m, c · r)`. Only one is ever non-zero. Like the empty foam, it is measured against capacity, not allocatable, so it overstates by the node's system reservations. Without any pod that requests both CPU and memory, there is no shape and nothing is shown.
+
 ## Audit & hygiene
 
 Every pod is checked against four best-practice rules. A pod that breaks one gets a **small warning glyph in the top-right corner** of its box (hover it for the reasons). The **Problems** tab of the bottom panel counts the affected pods per rule. Click a chip to highlight those pods in 2D and 3D. This sets the query to `audit:<rule>`; click the chip again to clear it. A clean cluster reads `No problems found`.
