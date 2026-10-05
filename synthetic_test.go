@@ -27,8 +27,17 @@ func TestSyntheticSnapshot(t *testing.T) {
 	clock := time.Unix(1_000_000, 0)
 	s.now = func() time.Time { return clock }
 	nodes, pods, err := s.Snapshot(context.Background(), "")
-	if err != nil || len(nodes) != 30 || len(pods) != 600 {
+	if err != nil || len(nodes) != 30 || len(pods) != 603 {
 		t.Fatalf("nodes=%d pods=%d err=%v", len(nodes), len(pods), err)
+	}
+	pending := 0
+	for _, p := range pods {
+		if p.NodeName == "" && p.SchedReason == "Unschedulable" {
+			pending++
+		}
+	}
+	if pending != 3 {
+		t.Fatalf("pending pods: %d", pending)
 	}
 	zones, pools, capacity := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	requested := map[string]int64{}
