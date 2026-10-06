@@ -11,7 +11,7 @@ html.dark {
   --line: #2a2e36; --panel: #1a1d22; --panel-2: #1f2328;
   --danger: #e0605d; --warn: #e9a91c; --info: #7497d6;
   --primary-hue: 218deg; --primary-saturation: 84%; --primary-lightness: 74%;
-  --color-dark: var(--panel);
+  --hx-color-dark: var(--panel);
 }
 
 body { font-family: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif; background: var(--panel); color: var(--text); }
