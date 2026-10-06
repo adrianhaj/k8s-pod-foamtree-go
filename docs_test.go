@@ -33,7 +33,10 @@ func read(t *testing.T, path string) string {
 func TestDocsThemeMatchesConsole(t *testing.T) {
 	console := read(t, "web/static/styles.css")
 	docs := read(t, "docs/assets/css/custom.css")
-	consoleLight, consoleDark, _ := strings.Cut(console, "@media (prefers-color-scheme: dark)")
+	consoleLight, consoleDark, found := strings.Cut(console, "@media (prefers-color-scheme: dark)")
+	if !found {
+		t.Fatal("console styles.css has no dark media block")
+	}
 	docsLight, docsDark, ok := strings.Cut(docs, "html.dark")
 	if !ok {
 		t.Fatal("custom.css has no html.dark block")
@@ -41,6 +44,10 @@ func TestDocsThemeMatchesConsole(t *testing.T) {
 	for name, pair := range map[string][2]string{"light": {consoleLight, docsLight}, "dark": {consoleDark, docsDark}} {
 		want, got := tokenValues(t, pair[0]), tokenValues(t, pair[1])
 		for _, tok := range themeTokens {
+			if want[tok] == "" {
+				t.Errorf("console has no %s in %s", tok, name)
+				continue
+			}
 			if got[tok] != want[tok] {
 				t.Errorf("%s %s: docs %q, console %q", name, tok, got[tok], want[tok])
 			}
