@@ -1,0 +1,4 @@
+DirectoryPath: ../build/site
+CheckExternal: false
+IgnoreDirectoryMissingTrailingSlash: true
+OutputDir: ../build/htmltest

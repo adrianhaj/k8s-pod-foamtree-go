@@ -11,7 +11,7 @@ JSX := $(addprefix web/src/,prefs.jsx format.jsx icons.jsx nodestatus.jsx podaud
 APP_JS := web/static/app.js
 THREE_JS := web/static/three.js
 
-.PHONY: web build run test lint image image-push kind-up kind-down kind-load deploy-dev port-forward clean
+.PHONY: web build run test lint image image-push kind-up kind-down kind-load deploy-dev port-forward docs docs-serve docs-check clean
 
 web: $(APP_JS) $(THREE_JS)
 
@@ -64,5 +64,19 @@ deploy-dev: kind-load
 port-forward:
 	$(KIND_KUBECTL) -n k8sfoams port-forward svc/k8sfoams 8080:80
 
+HUGO ?= cd docs && go tool hugo
+# The site is built under its Pages base path, so htmltest resolves
+# /k8s-pod-foamtree-go/... links and flags any that skip the prefix.
+SITE := build/site/k8s-pod-foamtree-go
+
+docs:
+	$(HUGO) --gc --minify --panicOnWarning --cleanDestinationDir --destination ../$(SITE)
+
+docs-serve:
+	$(HUGO) server --panicOnWarning
+
+docs-check: docs
+	cd docs && go tool htmltest -c .htmltest.yml
+
 clean:
-	rm -rf bin build $(APP_JS) $(THREE_JS)
+	rm -rf bin build $(APP_JS) $(THREE_JS) docs/resources

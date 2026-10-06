@@ -1,0 +1,49 @@
+/* Tokens copied from web/static/styles.css; keep them equal when the console theme changes. */
+:root {
+  --accent: #1f5fd6; --text: #1a1e25; --text-dim: #4b5362; --text-soft: #7c8494;
+  --line: #dde0e6; --panel: #ffffff; --panel-2: #f7f8fa;
+  --danger: #d03b3b; --warn: #e7a50e; --info: #4f6fae;
+  /* Hextra's primary colour, as HSL of --accent. */
+  --primary-hue: 219deg; --primary-saturation: 75%; --primary-lightness: 48%;
+}
+html.dark {
+  --accent: #86aef5; --text: #e6e8ec; --text-dim: #a9b0bc; --text-soft: #7a818d;
+  --line: #2a2e36; --panel: #1a1d22; --panel-2: #1f2328;
+  --danger: #e0605d; --warn: #e9a91c; --info: #7497d6;
+  --primary-hue: 218deg; --primary-saturation: 84%; --primary-lightness: 74%;
+  --hx-color-dark: var(--panel);
+}
+
+body { font-family: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif; background: var(--panel); color: var(--text); }
+code, pre, kbd { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", monospace; }
+
+/* Style B, editorial: one sheet, a readable column, calm headings. */
+.content { max-width: 72ch; line-height: 1.6; }
+.content h1 { font-size: 2rem; letter-spacing: -0.015em; line-height: 1.15; }
+.content pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; }
+.content table th { color: var(--text-soft); font-weight: 500; }
+.content table td, .content table th { border-color: var(--line); }
+
+/* Audit-rule pills, same severity colours as the console. */
+.pill { display: inline-block; font-size: .75em; font-weight: 600; padding: .1em .6em; border-radius: 999px; color: #fff; }
+.pill.danger { background: var(--danger); }
+.pill.warn { background: var(--warn); color: #2b1d00; }
+.pill.info { background: var(--info); }
+
+/* One sheet: Hextra's footer and dark chrome use the console panel colour. */
+.hextra-footer, html.dark .hextra-footer { background: var(--panel); border-top: 1px solid var(--line); }
+
+.split-hero { display: grid; grid-template-columns: 1fr 1.2fr; gap: 3rem; align-items: center; max-width: 72rem; margin: 3rem auto 2rem; padding: 0 1.5rem; }
+.split-hero > * { min-width: 0; }
+.split-hero h1 { font-size: 2.6rem; letter-spacing: -0.02em; line-height: 1.1; margin: 0 0 1rem; }
+.split-hero .lead { color: var(--text-dim); font-size: 1.15rem; margin: 0 0 1.5rem; }
+.split-hero pre { margin-top: 1.25rem; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: .6rem .9rem; overflow-x: auto; }
+.split-hero-shot { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(20, 22, 28, .12); }
+.btn { display: inline-block; padding: .55rem 1.1rem; border-radius: 6px; font-weight: 600; margin-right: .5rem; text-decoration: none; }
+.btn-primary { background: var(--accent); color: #fff; }
+html.dark .btn-primary { color: #0c1422; }
+.btn-secondary { border: 1px solid var(--line); color: var(--text); }
+@media (max-width: 768px) {
+  .split-hero { grid-template-columns: 1fr; gap: 1.5rem; margin-top: 1.5rem; }
+  .split-hero h1 { font-size: 2rem; }
+}
