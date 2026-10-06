@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -61,7 +62,7 @@ func TestRoutes(t *testing.T) {
 		nodes: []foam.Node{{Name: "minikube", CPU: 2000, Memory: 1_000_000_000}},
 		pods:  []foam.Pod{{Name: "etcd", NodeName: "minikube", CPU: 150, Containers: []foam.Container{{Name: "etcd", CPU: 150}}}},
 	}
-	h := newHandler(src, static, nil, nil)
+	h := newHandler(src, static, nil, nil, foam.DefaultAudit)
 	cases := []struct {
 		target string
 		code   int
@@ -88,7 +89,7 @@ func TestRoutes(t *testing.T) {
 
 func TestResourcesPassesContextAndMapsErrors(t *testing.T) {
 	src := &fakeSource{}
-	h := newHandler(src, static, nil, nil)
+	h := newHandler(src, static, nil, nil, foam.DefaultAudit)
 	if get(h, "/resources/cpu?context=kind-a"); src.asked != "kind-a" {
 		t.Fatalf("context not forwarded: %q", src.asked)
 	}
@@ -110,7 +111,7 @@ func TestReportRoutes(t *testing.T) {
 			{Name: "pending", Namespace: "dev", CPU: 100},
 		},
 	}
-	h := newHandler(src, static, nil, nil)
+	h := newHandler(src, static, nil, nil, foam.DefaultAudit)
 	w := get(h, "/report.csv?context=kind")
 	want := "node,zone,pool,instance_type,node_cpu_m,node_memory_bytes,node_warnings,namespace,pod,qos," +
 		"cpu_request_m,cpu_limit_m,memory_request_bytes,memory_limit_bytes,findings\n" +
@@ -143,6 +144,22 @@ func TestFlags(t *testing.T) {
 		{[]string{"--host", "::1"}, true},
 		{[]string{"--port", "x"}, false},
 		{[]string{"--auth", "basic"}, false},
+		{[]string{"--audit-monolith", "100"}, true},
+		{[]string{"--audit-monolith", "0"}, false},
+		{[]string{"--audit-monolith", "-5"}, false},
+		{[]string{"--audit-monolith", "100.5"}, false},
+		{[]string{"--audit-monolith", "NaN"}, false},
+		{[]string{"--audit-monolith", "x"}, false},
+		{[]string{"--audit-ratio", "1.5"}, true},
+		{[]string{"--audit-ratio", "1"}, false},
+		{[]string{"--audit-ratio", "Inf"}, false},
+		{[]string{"--audit-ratio", "NaN"}, false},
+		{[]string{"--audit-ratio-min-share", "0"}, true},
+		{[]string{"--audit-ratio-min-share", "-1"}, false},
+		{[]string{"--audit-ratio-min-share", "101"}, false},
+		{[]string{"--audit-disable", ""}, true},
+		{[]string{"--audit-disable", "monolith, missing-limits,"}, true},
+		{[]string{"--audit-disable", "sidecars"}, false},
 	}
 	for _, tc := range cases {
 		if _, err := parseFlags(tc.args); (err == nil) != tc.ok {
@@ -150,7 +167,7 @@ func TestFlags(t *testing.T) {
 		}
 	}
 	// --version skips validation: it must print even with flags that would be refused.
-	for _, args := range [][]string{{"--version"}, {"-v", "--host", "0.0.0.0"}} {
+	for _, args := range [][]string{{"--version"}, {"-v", "--host", "0.0.0.0"}, {"-v", "--audit-monolith", "0"}} {
 		if o, err := parseFlags(args); err != nil || !o.version {
 			t.Errorf("%v: version=%v err=%v", args, o.version, err)
 		}
@@ -158,6 +175,19 @@ func TestFlags(t *testing.T) {
 	o, _ := parseFlags([]string{"--auth", "oidc", "--oidc-allowed-emails", "a@x.com, *@y.com,"})
 	if fmt.Sprint(o.oidc.AllowedEmails, o.oidc.Scopes) != "[a@x.com *@y.com] [openid email profile]" {
 		t.Fatalf("lists: %v %v", o.oidc.AllowedEmails, o.oidc.Scopes)
+	}
+	d := foam.DefaultAudit
+	d.Disabled = map[string]bool{}
+	if o, err := parseFlags(nil); err != nil || !reflect.DeepEqual(o.audit, d) {
+		t.Fatalf("default audit: %+v err=%v", o.audit, err)
+	}
+	o, err := parseFlags([]string{"--audit-monolith", "70", "--audit-ratio", "2", "--audit-ratio-min-share", "5", "--audit-disable", "monolith,"})
+	want := foam.Audit{MonolithShare: 0.7, RatioFactor: 2, RatioMinShare: 0.05, Disabled: map[string]bool{"monolith": true}}
+	if err != nil || !reflect.DeepEqual(o.audit, want) {
+		t.Fatalf("custom audit: %+v err=%v", o.audit, err)
+	}
+	if _, err := parseFlags([]string{"--audit-disable", "sidecars"}); err == nil || !strings.Contains(err.Error(), "ratio-asymmetry") {
+		t.Fatalf("unknown rule should list the valid ones: %v", err)
 	}
 }
 
@@ -175,7 +205,7 @@ func TestFitRoute(t *testing.T) {
 		{Name: "big", AllocCPU: 8000, AllocMemory: 32_000_000_000, AllocPods: 110},
 		{Name: "small", AllocCPU: 1000, AllocMemory: 32_000_000_000, AllocPods: 110},
 	}}
-	h := newHandler(src, static, nil, nil)
+	h := newHandler(src, static, nil, nil, foam.DefaultAudit)
 	w := get(h, "/api/fit?context=kind-a&cpu=2&memory=1Gi")
 	want := `[{"node":"big","reasons":[]},{"node":"small","reasons":["insufficient cpu: requires 2000m, available 1000m"]}]` + "\n"
 	if w.Code != 200 || w.Body.String() != want || src.asked != "kind-a" {
@@ -191,7 +221,7 @@ func TestFitRoute(t *testing.T) {
 }
 
 func TestFitRouteRejectsOversizedFreeText(t *testing.T) {
-	h := newHandler(&fakeSource{}, static, nil, nil)
+	h := newHandler(&fakeSource{}, static, nil, nil, foam.DefaultAudit)
 	big := strings.Repeat("a", 4097)
 	if w := get(h, "/api/fit?tolerations="+big); w.Code != 400 {
 		t.Fatalf("oversized tolerations: %d", w.Code)
@@ -209,7 +239,7 @@ func TestDrainRoute(t *testing.T) {
 		},
 		pods: []foam.Pod{{Name: "web", Namespace: "ns", NodeName: "a", Controller: "ReplicaSet", CPU: 100}},
 	}
-	h := newHandler(src, static, nil, nil)
+	h := newHandler(src, static, nil, nil, foam.DefaultAudit)
 	w := get(h, "/api/drain?context=kind-a&node=a")
 	want := `{"moved":[{"pod":"ns/web","node":"b"}],"pending":[],"ignored":[],"unmanaged":[]}` + "\n"
 	if w.Code != 200 || w.Body.String() != want || src.asked != "kind-a" {
@@ -221,7 +251,7 @@ func TestDrainRoute(t *testing.T) {
 }
 
 func TestDrainRouteRejectsOversizedNode(t *testing.T) {
-	h := newHandler(&fakeSource{}, static, nil, nil)
+	h := newHandler(&fakeSource{}, static, nil, nil, foam.DefaultAudit)
 	big := strings.Repeat("a", 4097)
 	if w := get(h, "/api/drain?node="+big); w.Code != 400 {
 		t.Fatalf("oversized node: %d", w.Code)
@@ -230,7 +260,7 @@ func TestDrainRouteRejectsOversizedNode(t *testing.T) {
 
 func TestLogsRoute(t *testing.T) {
 	src := &fakeSource{logs: "line 1\nline 2\n"}
-	h := newHandler(src, static, nil, nil)
+	h := newHandler(src, static, nil, nil, foam.DefaultAudit)
 	w := get(h, "/api/logs?context=kind&namespace=payments&pod=api-7f9c4-x2kqp&container=api&tail=200&previous=1")
 	if w.Code != 200 || w.Body.String() != "line 1\nline 2\n" || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/plain") {
 		t.Fatalf("%d %q %q", w.Code, w.Body, w.Header())
@@ -246,7 +276,7 @@ func TestLogsRoute(t *testing.T) {
 }
 
 func TestLogsRouteRejectsBadInput(t *testing.T) {
-	h := newHandler(&fakeSource{}, static, nil, nil)
+	h := newHandler(&fakeSource{}, static, nil, nil, foam.DefaultAudit)
 	for _, target := range []string{
 		"/api/logs?pod=p",
 		"/api/logs?namespace=ns",
@@ -277,7 +307,7 @@ func TestLogsRouteMapsErrors(t *testing.T) {
 		{apierrors.NewForbidden(schema.GroupResource{Resource: "pods/log"}, "p", errors.New("rbac")), 403, "forbidden"},
 		{errors.New("dial tcp: i/o timeout"), 503, "i/o timeout"},
 	} {
-		w := get(newHandler(&fakeSource{logErr: tc.err}, static, nil, nil), "/api/logs?namespace=ns&pod=p")
+		w := get(newHandler(&fakeSource{logErr: tc.err}, static, nil, nil, foam.DefaultAudit), "/api/logs?namespace=ns&pod=p")
 		if w.Code != tc.code || !strings.Contains(w.Body.String(), tc.body) {
 			t.Errorf("%v: %d %q", tc.err, w.Code, w.Body)
 		}
@@ -285,7 +315,7 @@ func TestLogsRouteMapsErrors(t *testing.T) {
 }
 
 func TestLoopbackHostOnly(t *testing.T) {
-	h := loopbackHostOnly(newHandler(&fakeSource{}, static, nil, nil))
+	h := loopbackHostOnly(newHandler(&fakeSource{}, static, nil, nil, foam.DefaultAudit))
 	for host, want := range map[string]int{
 		"localhost:8080": 200, "127.0.0.1:8080": 200, "[::1]:8080": 200, "localhost": 200,
 		"evil.example:8080": 421, "127.0.0.1.nip.io:8080": 421,
@@ -301,7 +331,7 @@ func TestLoopbackHostOnly(t *testing.T) {
 }
 
 func TestAssistantRoutes(t *testing.T) {
-	h := newHandler(&fakeSource{}, static, nil, llm.New(llm.Config{}))
+	h := newHandler(&fakeSource{}, static, nil, llm.New(llm.Config{}), foam.DefaultAudit)
 	if w := get(h, "/api/llm/config"); w.Code != 200 || !strings.Contains(w.Body.String(), `"server":false`) {
 		t.Fatalf("config: %d %q", w.Code, w.Body)
 	}
@@ -409,6 +439,24 @@ func TestRBACCannotReadSecrets(t *testing.T) {
 	} {
 		if len(rbacProblems(bad)) == 0 {
 			t.Errorf("%s-style cluster-admin binding passed", name)
+		}
+	}
+}
+
+func TestAuditConfigReachesRoutes(t *testing.T) {
+	src := &fakeSource{
+		nodes: []foam.Node{{Name: "n", CPU: 1000, Memory: 1_000_000_000}},
+		pods: []foam.Pod{{Name: "p", NodeName: "n", CPU: 100, Memory: 100_000_000,
+			Containers: []foam.Container{{Name: "c", CPU: 100, Memory: 100_000_000}}}},
+	}
+	off := foam.DefaultAudit
+	off.Disabled = map[string]bool{"missing-limits": true}
+	for _, target := range []string{"/resources/cpu", "/report.json", "/report.csv"} {
+		if b := get(newHandler(src, static, nil, nil, foam.DefaultAudit), target).Body.String(); !strings.Contains(b, "missing-limits") {
+			t.Errorf("%s default: missing-limits not reported: %s", target, b)
+		}
+		if b := get(newHandler(src, static, nil, nil, off), target).Body.String(); strings.Contains(b, "missing-limits") {
+			t.Errorf("%s disabled: missing-limits still reported: %s", target, b)
 		}
 	}
 }

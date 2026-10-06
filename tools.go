@@ -25,6 +25,7 @@ type clusterTools struct {
 	nodes   []foam.Node
 	pods    []foam.Pod
 	taken   bool
+	audit   foam.Audit
 }
 
 const (
@@ -87,14 +88,14 @@ func (t *clusterTools) Call(ctx context.Context, name string, raw json.RawMessag
 	case "cluster_summary":
 		v = summarize(nodes, pods)
 	case "list_problems":
-		v = problems(nodes, pods)
+		v = problems(nodes, pods, t.audit)
 	case "describe_pod":
 		i := slices.IndexFunc(pods, func(p foam.Pod) bool { return p.Namespace == a.Namespace && p.Name == a.Name })
 		if i < 0 {
 			return "", fmt.Errorf("no pod %s/%s in this cluster", a.Namespace, a.Name)
 		}
 		n, _ := nodeNamed(nodes, pods[i].NodeName)
-		v = describePod(pods[i], n)
+		v = describePod(pods[i], n, t.audit)
 	case "describe_node":
 		n, ok := nodeNamed(nodes, a.Name)
 		if !ok {
@@ -163,7 +164,7 @@ type problem struct {
 var urgency = map[string]int{"crashloop": 0, "oom-killed": 0, "not-ready": 0, "cordoned": 0,
 	"image-pull": 1, "resize-infeasible": 1, "memory-pressure": 1, "disk-pressure": 1, "pid-pressure": 1}
 
-func problems(nodes []foam.Node, pods []foam.Pod) []problem {
+func problems(nodes []foam.Node, pods []foam.Pod, a foam.Audit) []problem {
 	out := []problem{}
 	byName := map[string]foam.Node{}
 	for _, n := range nodes {
@@ -173,7 +174,7 @@ func problems(nodes []foam.Node, pods []foam.Pod) []problem {
 		}
 	}
 	for _, p := range pods {
-		for _, f := range foam.Findings(p, byName[p.NodeName], foam.DefaultAudit) {
+		for _, f := range foam.Findings(p, byName[p.NodeName], a) {
 			out = append(out, problem{p.Namespace + "/" + p.Name, p.NodeName, f})
 		}
 	}
@@ -195,13 +196,13 @@ func nodeNamed(nodes []foam.Node, name string) (foam.Node, bool) {
 	return nodes[i], true
 }
 
-func describePod(p foam.Pod, n foam.Node) map[string]any {
+func describePod(p foam.Pod, n foam.Node, a foam.Audit) map[string]any {
 	return map[string]any{"namespace": p.Namespace, "name": p.Name, "node": p.NodeName, "phase": p.Phase,
 		"schedulingReason": p.SchedReason, "schedulingMessage": p.SchedMessage,
 		"qos": p.QOS, "controller": p.Controller, "labels": p.Labels,
 		"cpuRequestMillicores": p.CPU, "memoryRequestBytes": p.Memory,
 		"cpuLimitMillicores": p.CPULimit, "memoryLimitBytes": p.MemoryLimit,
-		"containers": containers(p.Containers), "statuses": p.Statuses, "findings": foam.Findings(p, n, foam.DefaultAudit)}
+		"containers": containers(p.Containers), "statuses": p.Statuses, "findings": foam.Findings(p, n, a)}
 }
 
 // container is foam.Container with its units in the keys, so the model does not guess them.

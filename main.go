@@ -10,17 +10,20 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/auth"
+	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/foam"
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/kube"
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/llm"
 	"github.com/adrianhaj/k8s-pod-foamtree-go/web"
@@ -43,6 +46,7 @@ type options struct {
 	synthetic            *syntheticSource
 	llm                  llm.Config
 	llmHosts             string
+	audit                foam.Audit
 }
 
 func parseFlags(args []string) (options, error) {
@@ -66,6 +70,12 @@ func parseFlags(args []string) (options, error) {
 	fs.StringVar(&o.llm.KeyFile, "llm-api-key-file", "", "file holding the server's API key, e.g. a mounted Secret; re-read on every request")
 	fs.StringVar(&o.llmHosts, "llm-allowed-hosts", "", "comma-separated host globs viewers may send their own key to, e.g. api.openai.com,*.openai.azure.com")
 	fs.IntVar(&o.llm.MaxTokens, "llm-max-tokens-per-question", 50000, "token cap for one question on the server connection; 0 means none")
+	var monolith, ratio, minShare float64
+	var disable string
+	fs.Float64Var(&monolith, "audit-monolith", 80, "flag pods reserving more than this percent of their node's CPU or memory")
+	fs.Float64Var(&ratio, "audit-ratio", 4, "flag pods whose CPU and memory shares of their node differ by this factor or more")
+	fs.Float64Var(&minShare, "audit-ratio-min-share", 10, "skip ratio-asymmetry when the pod's larger share is under this percent")
+	fs.StringVar(&disable, "audit-disable", "", "comma-separated audit rules to turn off")
 	fs.BoolVar(&o.version, "version", false, "print the version and exit")
 	fs.BoolVar(&o.version, "v", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil || o.version {
@@ -90,6 +100,11 @@ func parseFlags(args []string) (options, error) {
 		}
 	}
 	o.oidc.Scopes, o.oidc.AllowedEmails, o.oidc.AllowedGroups = list(o.scopes), list(o.emails), list(o.groups)
+	a, err := auditConfig(monolith, ratio, minShare, list(disable))
+	if err != nil {
+		return o, err
+	}
+	o.audit = a
 	if o.syntheticSpec != "" {
 		s, err := parseSynthetic(o.syntheticSpec)
 		if err != nil {
@@ -121,6 +136,26 @@ func list(s string) []string {
 		}
 	}
 	return out
+}
+
+// Range checks are written as !(ok) so NaN, which fails every comparison, is refused.
+func auditConfig(monolith, ratio, minShare float64, disabled []string) (foam.Audit, error) {
+	switch {
+	case !(monolith > 0 && monolith <= 100):
+		return foam.Audit{}, fmt.Errorf("--audit-monolith must be a percent in (0, 100], got %v", monolith)
+	case !(ratio > 1 && ratio < math.Inf(1)):
+		return foam.Audit{}, fmt.Errorf("--audit-ratio must be a finite factor above 1, got %v", ratio)
+	case !(minShare >= 0 && minShare <= 100):
+		return foam.Audit{}, fmt.Errorf("--audit-ratio-min-share must be a percent in [0, 100], got %v", minShare)
+	}
+	a := foam.Audit{MonolithShare: monolith / 100, RatioFactor: ratio, RatioMinShare: minShare / 100, Disabled: map[string]bool{}}
+	for _, r := range disabled {
+		if !slices.Contains(foam.AuditRules, r) {
+			return foam.Audit{}, fmt.Errorf("--audit-disable: unknown rule %q, use %s", r, strings.Join(foam.AuditRules, ", "))
+		}
+		a.Disabled[r] = true
+	}
+	return a, nil
 }
 
 func isLoopback(host string) bool {
@@ -172,8 +207,8 @@ func run(ctx context.Context, o options) error {
 		src = o.synthetic
 	}
 	assistant := llm.New(o.llm)
-	assistant.Tools = func(cluster string) llm.Toolbox { return &clusterTools{src: src, cluster: cluster} }
-	h := newHandler(src, web.Static, a, assistant)
+	assistant.Tools = func(cluster string) llm.Toolbox { return &clusterTools{src: src, cluster: cluster, audit: o.audit} }
+	h := newHandler(src, web.Static, a, assistant, o.audit)
 	if a == nil && isLoopback(o.host) {
 		h = loopbackHostOnly(h)
 	}
