@@ -69,7 +69,7 @@ func TestDocsReferenceCoversFlags(t *testing.T) {
 		if m[1] == "v" {
 			flag = "-v"
 		}
-		if !strings.Contains(page, "`"+flag+"`") {
+		if !strings.Contains(page, "| `"+flag+"` |") {
 			t.Errorf("flags.md has no row for %s", flag)
 		}
 	}

@@ -67,7 +67,7 @@ port-forward:
 HUGO ?= cd docs && go tool hugo
 
 docs:
-	$(HUGO) --gc --minify --panicOnWarning
+	$(HUGO) --gc --minify --panicOnWarning --cleanDestinationDir
 
 docs-serve:
 	$(HUGO) server --panicOnWarning
@@ -76,9 +76,9 @@ docs-serve:
 # the grep then lists every root-relative href/src in the real build (quotes
 # optional, minify strips them) and fails if any lacks the /k8s-pod-foamtree-go/ prefix.
 docs-check: docs
-	$(HUGO) --gc --panicOnWarning --baseURL / --destination ../build/docs-check
+	$(HUGO) --gc --panicOnWarning --baseURL / --cleanDestinationDir --destination ../build/docs-check
 	cd docs && go tool htmltest -c .htmltest.yml
 	! grep -rIhoE --include='*.html' '(href|src)="?/[^/"> ][^"> ]*' docs/public | grep -vE '^(href|src)="?/k8s-pod-foamtree-go/'
 
 clean:
-	rm -rf bin build $(APP_JS) $(THREE_JS) docs/public docs/resources build/docs-check
+	rm -rf bin build $(APP_JS) $(THREE_JS) docs/public docs/resources

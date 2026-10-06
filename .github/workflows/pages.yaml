@@ -17,8 +17,6 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      HUGO_ENVIRONMENT: production
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7

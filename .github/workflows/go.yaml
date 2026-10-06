@@ -24,8 +24,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    env:
-      HUGO_ENVIRONMENT: production
     steps:
       - uses: actions/checkout@v7
 

@@ -3,4 +3,4 @@ title: Reference
 weight: 3
 ---
 
-Lookup tables: every flag, audit rule, query token, HTTP route and error.
+Lookup tables: every flag and audit rule.
