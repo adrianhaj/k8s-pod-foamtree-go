@@ -3,7 +3,7 @@ title: Audit rules
 weight: 2
 ---
 
-Every pod is checked against nine rules: four best-practice rules, three crash signals and two resize signals. A pod that breaks one gets a **small warning glyph in the top-right corner** of its box (hover it for the reasons). The **Problems** tab of the bottom panel counts the affected pods per rule. Click a chip to highlight those pods in 2D and 3D. This sets the query to `audit:<rule>`; click the chip again to clear it. A clean cluster reads `No problems found`.
+Nine rules: four best-practice rules, three crash signals and two resize signals. For the glyph, the Problems chips and `audit:` queries, see [Finding problems](../../guides/finding-problems/#audit-and-hygiene).
 
 | Severity | Rule | Flagged when |
 | --- | --- | --- |

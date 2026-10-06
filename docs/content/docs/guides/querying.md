@@ -87,10 +87,13 @@ Match a pod name that *looks* like a filter token. Leading quotes make the whole
 
 **What you'll see:** pods whose name contains `web:1`. Without the quotes, `web:1` is read as an unknown filter prefix and reported as an error.
 
-{{< callout type="warning" title="Sharp edges" >}}
+{{< callout type="warning" >}}
+**Sharp edges**
+
 - **`!=` wins over `=`.** `env!=prod` is one inequality, never `env!` equals `prod`.
 - **A filter prefix must be a bare word before `:`.** `app=ns:x` is a label selector for key `app`, value `ns:x`, not a namespace filter.
 - **Only `node:` and `health:` can dim a node.** Node plates and boxes stay in the layout either way; pod-level terms dim pods, never their node.
 - **A missing label matches `!=`.** `env!=prod` highlights pods with `env: staging` *and* pods with no `env` label at all, the Kubernetes selector semantics.
-- **Every problem is reported at once.** The parser never stops on the first bad token, so a three-error query lists three errors.
+- **Every problem is reported at once.** The parser never stops on the first bad token, so a three-error query lists three errors. The messages are listed in [Errors](../../reference/errors/).
+- **The popover and the clear button.** Focusing the input opens a popover with the same token list; it is replaced by the error list while a token is malformed. The `×` on the right clears the query.
 {{< /callout >}}

@@ -97,6 +97,11 @@ func TestReadmeLinksTheDocs(t *testing.T) {
 			t.Errorf("README is missing %q", want)
 		}
 	}
+	for _, page := range []string{"flags", "http-api"} {
+		if _, err := os.Stat("docs/content/docs/reference/" + page + ".md"); err != nil {
+			t.Errorf("README links the %s page: %v", page, err)
+		}
+	}
 	if n := strings.Count(readme, "\n"); n > 60 {
 		t.Errorf("README is %d lines; the details belong on the docs site", n)
 	}

@@ -3,6 +3,8 @@ title: Errors
 weight: 5
 ---
 
+Errors the query bar reports while parsing a query.
+
 | Query | Message |
 | --- | --- |
 | `ns:` | `ns: needs a value` |
@@ -13,6 +15,3 @@ weight: 5
 | `app=` | `label selector needs a value` |
 | `""` | `empty quoted value` |
 | `app="my app` | `unterminated quoted value` |
-
-
-Focusing the input opens a popover with the same token list; it is replaced by the error list while a token is malformed. The `×` on the right clears the query.

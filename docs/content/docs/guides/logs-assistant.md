@@ -19,7 +19,7 @@ The **Assistant** tab chats with any OpenAI-compatible API: OpenAI, Azure OpenAI
 - **My own key.** URL, model and key typed in the browser. The key lasts until the tab closes unless you tick **Remember key in this browser**; then it stays in this browser's storage. The server relays it and never logs or stores it. On a shared deployment the URL's host must match `--llm-allowed-hosts`, and private addresses are refused.
 
 ```bash
-k8sfoams --llm-url https://api.openai.com/v1 --llm-model gpt-4o-mini --llm-allowed-hosts api.openai.com
+K8SFOAMS_LLM_API_KEY=sk-... k8sfoams --llm-url https://api.openai.com/v1 --llm-model gpt-4.1-mini
 ```
 
 **What you'll see:** the Assistant tab, with **Settings → Assistant → Connection…** offering the server connection.
@@ -30,6 +30,8 @@ The assistant can also look things up itself, read-only: a cluster summary, the 
 
 Every question has a token cap, 20,000 by default, set in Connection; on the server connection `--llm-max-tokens-per-question` (default 50000) is the ceiling. The composer shows an estimate of the next message against the cap, and Send is disabled when it is over. After each answer the tab shows the tokens actually used, as reported by the endpoint, or an estimate marked as such when it reports none.
 
-{{< callout type="warning" title="Sharp edges" >}}
+{{< callout type="warning" >}}
+**Sharp edges**
+
 **Secrets.** The assistant reaches only what k8sfoams reads: nodes, pods and pod logs, never Secrets or ConfigMaps, and pod details without env values or annotations. Before anything is sent to the model endpoint, the server masks values that look like secrets: private keys, JWTs such as service account tokens, bearer and basic credentials, credentials in URLs, common API key formats, and the value after names like `password`, `secret`, `token` or `api_key`. Each answer says how many values were masked. Masking matches patterns, so an unusual secret can still pass; keep secrets out of logs. The Logs tab itself shows raw logs, since the viewer can already read them.
 {{< /callout >}}

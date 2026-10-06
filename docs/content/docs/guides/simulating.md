@@ -43,6 +43,8 @@ curl 'http://127.0.0.1:8080/api/drain?node=worker-3'
 
 **What you'll see:** JSON listing the pods that would stay pending, the unmanaged pods and where the rest would land.
 
-{{< callout type="warning" title="Sharp edges" >}}
+{{< callout type="warning" >}}
+**Sharp edges**
+
 Modelled: allocatable CPU, memory and pod count, cordons, `NoSchedule` / `NoExecute` taints, node selectors and required node affinity. Not modelled: pod (anti-)affinity, topology spread, volume zones, host ports, extended resources and preemption. The drain also ignores PodDisruptionBudgets.
 {{< /callout >}}

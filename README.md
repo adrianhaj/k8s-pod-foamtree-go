@@ -9,6 +9,7 @@
 **k8sfoams** is a read-only dashboard that answers one question: *where is my cluster's requested CPU and memory actually going, and how much room is left on each node?*
 
 It visualizes **resource requests** — what the scheduler reserves — not live usage. That makes it a tool for spotting over-requesting pods and idle headroom, not a performance monitor. It is one static Go binary with the UI embedded. Run it on your laptop against *~/.kube/config* (or `$KUBECONFIG`), or inside the cluster behind built-in OIDC sign-in. It needs no metrics-server.
+
 ![k8sfoams 2D treemap view](k8s-foam-tree.png)
 
 ## Quick start

@@ -7,6 +7,8 @@ Run k8sfoams as a Deployment, with sign-in through your OpenID Connect provider.
 
 ## Try it on kind
 
+From a checkout of the repository:
+
 ```bash
 make kind-up deploy-dev port-forward   # local kind cluster, auth off, http://localhost:8080
 make kind-down
@@ -20,13 +22,13 @@ make kind-down
 
 For a real cluster, write an overlay on `deploy/base` that sets your image (pin a release, e.g. `newTag: v1.0.0`), OIDC issuer, client id, redirect URL, allowed groups/emails and Ingress host, then create the secret and apply. The steps below use a checkout of the repository.
 
-**1. Apply the base.**
+**1. Create the namespace.**
 
 ```bash
-kubectl apply -k deploy/base
+kubectl create namespace k8sfoams
 ```
 
-**What you'll see:** the `k8sfoams` namespace, service account, read-only ClusterRole and binding, Deployment, Service and Ingress created. The pod does not start until the Secret in step 2 exists.
+**What you'll see:** `namespace/k8sfoams created`.
 
 **2. Create the Secret.** The Deployment reads `K8SFOAMS_OIDC_CLIENT_SECRET` and `K8SFOAMS_SESSION_KEY` from it.
 
@@ -82,7 +84,7 @@ patches:
 kubectl apply -k my-overlay
 ```
 
-**What you'll see:** the Deployment and Ingress configured. Opening `https://k8sfoams.mycompany.com` sends you to your identity provider, then back to the dashboard.
+**What you'll see:** the service account, read-only ClusterRole and binding, Deployment, Service and Ingress created with your arguments and host. Opening `https://k8sfoams.mycompany.com` sends you to your identity provider, then back to the dashboard.
 
 Register `https://<host>/auth/callback` as the redirect URI in your IdP.
 
@@ -96,6 +98,4 @@ On Microsoft Entra ID, prefer `--oidc-allowed-groups` or a single-tenant issuer:
 
 ## Images and releases
 
-`make image` builds `ghcr.io/adrianhaj/k8sfoams:<git describe>` locally; `make image-push IMAGE=<registry>/k8sfoams` pushes amd64 and arm64. CI (`.github/workflows/go.yaml`) lints, tests and builds both on every PR and on `main`.
-
-Releases: an admin pushes a `v*` tag (`git tag v1.0.0 && git push origin v1.0.0`). `.github/workflows/release.yaml` then runs GoReleaser, which attaches the archives and their checksums to a GitHub Release, pushes the Homebrew cask, and pushes the image as `:<tag>` and `:latest`. Pre-release tags such as `v1.1.0-rc.1` skip the cask and `:latest`.
+Every release publishes the image as `ghcr.io/adrianhaj/k8sfoams:<tag>` and `:latest`. Pre-release tags such as `v1.1.0-rc.1` skip `:latest`. Pin a tag in production.

@@ -7,7 +7,7 @@ Run k8sfoams on your laptop against the clusters in your kubeconfig, or against 
 
 ## Kubeconfig and contexts
 
-k8sfoams reads *~/.kube/config*, or `$KUBECONFIG` when set. It keeps a watch cache of nodes and all non-terminated pods per kubeconfig context, started on the first request for that context. A refresh reads memory and never lists the API server. Pods in `Succeeded` or `Failed` are excluded, since they no longer reserve anything.
+k8sfoams reads *~/.kube/config*, or `$KUBECONFIG` when set. It keeps a watch cache of nodes (`status.capacity`) and all non-terminated pods per kubeconfig context, started on the first request for that context. A refresh reads memory and never lists the API server. Pods in `Succeeded` or `Failed` are excluded, since they still report requests via the API but no longer reserve anything.
 
 ```bash
 k8sfoams

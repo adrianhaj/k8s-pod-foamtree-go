@@ -3,7 +3,7 @@ title: Reading the map
 weight: 1
 ---
 
-Understand what the 2D map and the 3D view show, and how to group and recolour them.
+Understand what the 2D map and the 3D view show, and how to group and recolor them.
 
 ## How the map is built
 
@@ -41,7 +41,9 @@ Switch views with the Map and 3D buttons on the rail at the map's left edge. Fra
 
 **What you'll see:** a plate per node with a cube per pod; hovering a cube shows its requests and limits.
 
-{{< callout type="warning" title="Sharp edges" >}}
+{{< callout type="warning" >}}
+**Sharp edges**
+
 Without WebGL, a notice points to the 2D map.
 {{< /callout >}}
 
@@ -69,7 +71,7 @@ The dashboard follows the OS light or dark setting by default. **Settings → Th
 
 - **Memory unit**: MiB, GiB (default), or TiB, under Settings on the rail.
 - **Size by**: CPU or Memory, in the toolbar (in 3D, a **Zoom** slider takes its place).
-- **Color by**: in the toolbar. *Namespace* (default) colors each pod by its namespace; *QoS* by its QoS class (see [QoS & eviction risk](../finding-problems/)); *Problems* by the severity of its audit findings. A legend sits beside it.
+- **Color by**: in the toolbar. *Namespace* (default) colors each pod by its namespace; *QoS* by its QoS class (see [QoS & eviction risk](../finding-problems/#qos-and-eviction-risk)); *Problems* by the severity of its audit findings. A legend sits beside it.
 - **Context**: the context picker in the top bar lists every context from your kubeconfig, in kubeconfig order, the active one checked, tagged by provider. **Switching only changes the context inside the k8sfoams web server — your ~/.kube/config file is never modified.**
 - **Refresh**: the Auto-refresh menu in the top bar (Off, 15 s … 10 min), plus a *Refresh now* button beside it.
 - **Filter**: the query bar in the top bar highlights matching pods and dims the rest — nothing is removed from the view. See [Filtering](../querying/) for the full grammar.

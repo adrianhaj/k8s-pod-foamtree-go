@@ -15,7 +15,7 @@ The rules and their markers are in the [audit rules reference](../../reference/a
    k8sfoams --synthetic 20x10
    ```
 
-   **What you'll see:** the Problems tab lists `monolith` and `ratio asymmetry` findings.
+   **What you'll see:** no `monolith` or `ratio asymmetry` findings. Synthetic pods are small, at most about 3% of their node's CPU or memory, well under the 80% monolith threshold and below the 10% minimum share for the ratio rule.
 
 2. **Lower the monolith threshold to 1%.**
 
@@ -23,7 +23,7 @@ The rules and their markers are in the [audit rules reference](../../reference/a
    k8sfoams --synthetic 20x10 --audit-monolith 1
    ```
 
-   **What you'll see:** almost every pod is a `monolith`, which shows the threshold moved.
+   **What you'll see:** pods above 1% of their node's CPU or memory now appear as `monolith` findings, which shows the threshold moved.
 
 3. **Use a realistic prod setting.**
 
@@ -36,6 +36,8 @@ The rules and their markers are in the [audit rules reference](../../reference/a
    - When you type `audit:missing-limits` in the query bar, it reports `audit: rule missing-limits is turned off on this server (--audit-disable)` instead of matching nothing.
    - When the cluster is clean, the Problems tab reads `No problems found. Every node is schedulable and every pod passes the audit (1 rule turned off).`
 
-{{< callout type="warning" title="Sharp edges" >}}
-A rule turned off with `--audit-disable` is not reported anywhere: the Problems tab, `audit:` queries, both reports and the assistant's tools. A clean Problems tab with rules turned off only means the remaining rules passed.
+{{< callout type="warning" >}}
+**Sharp edges**
+
+A clean Problems tab with rules turned off only means the remaining rules passed. See [`--audit-disable`](../../reference/audit-rules/).
 {{< /callout >}}

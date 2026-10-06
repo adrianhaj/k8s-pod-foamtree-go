@@ -5,7 +5,7 @@ weight: 2
 
 Spot nodes that refuse pods, capacity that no pod can use, pods that break best practice, and pods first in line for eviction.
 
-Everything on this page is counted in the **Problems** tab of the bottom panel. Clicking a chip there sets the query, see [Querying](../querying/).
+Node health and audit findings are counted in the **Problems** tab of the bottom panel. Clicking a chip there sets the query, see [Querying](../querying/). Stranded capacity and QoS are not counted there; QoS is in the summary strip's Pods cell.
 
 ## Node health
 
@@ -28,7 +28,9 @@ health:cordoned
 
 **What you'll see:** the cordoned nodes and their pods highlighted, every other node dimmed.
 
-{{< callout type="warning" title="Sharp edges" >}}
+{{< callout type="warning" >}}
+**Sharp edges**
+
 - **`PreferNoSchedule` never marks a node.** It is a soft hint the scheduler is free to ignore, so it is listed in the focus overlay but does not stripe.
 - **The cordon taint is folded into `cordoned`.** Kubernetes adds `node.kubernetes.io/unschedulable:NoSchedule` itself when you cordon; reporting it as a taint too would mark the same node twice for one fact, so it is dropped from the taint list.
 {{< /callout >}}
@@ -45,28 +47,23 @@ On a node with `c` free millicores, `m` free MiB and shape `r` (MiB per millicor
 
 **What you'll see:** a `… stranded` suffix on group labels, and a **Stranded capacity** section in a node's overlay.
 
-{{< callout type="warning" title="Sharp edges" >}}
+{{< callout type="warning" >}}
+**Sharp edges**
+
 Like the empty foam, stranded capacity is measured against capacity, not allocatable, so it overstates by the node's system reservations. Without any pod that requests both CPU and memory, there is no shape and nothing is shown.
 {{< /callout >}}
 
 ## Audit and hygiene
 
-Every pod is checked against nine rules: four best-practice rules, three crash signals and two resize signals. A pod that breaks one gets a **small warning glyph in the top-right corner** of its box (hover it for the reasons). The **Problems** tab counts the affected pods per rule. Click a chip to highlight those pods in 2D and 3D. This sets the query to `audit:<rule>`; click the chip again to clear it. A clean cluster reads `No problems found`.
+Every pod is checked against the audit rules. A pod that breaks one gets a **small warning glyph in the top-right corner** of its box (hover it for the reasons). The **Problems** tab counts the affected pods per rule. Click a chip to highlight those pods in 2D and 3D. This sets the query to `audit:<rule>`; click the chip again to clear it. A clean cluster reads `No problems found`.
 
-The rules, their markers and their thresholds are listed in the [audit rules reference](../../reference/audit-rules/). The thresholds are set at startup, see the [flags reference](../../reference/flags/). A rule turned off with `--audit-disable` is not reported anywhere: the Problems tab, `audit:` queries, both reports and the assistant's tools. The UI knows which rules are off: an `audit:` query for one says so instead of matching nothing.
+The rules, their thresholds and the details worth knowing are in the [audit rules reference](../../reference/audit-rules/); to move a threshold or switch a rule off, see [Tuning the audit](../tuning-the-audit/).
 
 ```
 audit:crashloop
 ```
 
 **What you'll see:** pods with a container waiting in `CrashLoopBackOff` highlighted, everything else dimmed.
-
-{{< callout type="warning" title="Sharp edges" >}}
-- **Init containers are not audited against the best-practice rules.** They finish before the app runs, so their requests and limits say nothing about how the pod behaves once it is running. The crash signals do cover them.
-- **CPU limits are not required.** Only a missing *memory* limit is flagged. A memory leak without a limit can take the whole node down; a CPU spike without a limit only gets throttled.
-- **Ratio asymmetry ignores small pods.** A sidecar asking for 5% of the CPU and almost no memory has an extreme ratio, but it leaves no meaningful capacity stranded.
-- **A pending resize shows what the pod wants.** The node overlay's pod row reads `wants <cores> · <memory>`; hover it for the kubelet's message.
-{{< /callout >}}
 
 ## QoS and eviction risk
 
@@ -86,7 +83,9 @@ qos:BestEffort
 
 **What you'll see:** the `BestEffort` pods highlighted, the pods the kubelet evicts first.
 
-{{< callout type="warning" title="Sharp edges" >}}
+{{< callout type="warning" >}}
+**Sharp edges**
+
 A `BestEffort` pod requests nothing, so in 2D it takes no room until it is highlighted, then it shows as a thin sliver. The class is read from the pod's `status.qosClass`, which the API server sets when the pod is created. It is not recomputed from requests and limits. A pod with no reported class renders neutral and is not counted.
 {{< /callout >}}
 
@@ -106,7 +105,7 @@ A node looks full but its pods look small. Here `worker-3` stands in for your ow
 
    **What you'll see:** the pods on that node glow and everything else dims, with a counter in the input reading `N / M pods`.
 
-3. **Read the stranded-capacity score.** Click the node to open its overlay and read the **Stranded capacity** section.
+3. **Read the stranded capacity.** Click the node to open its overlay and read the **Stranded capacity** section.
 
    **What you'll see:** how much capacity is stranded and on which axis, CPU or memory. Free CPU with no memory beside it, or the reverse, cannot hold a pod of the cluster's median shape.
 
