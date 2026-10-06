@@ -5,7 +5,7 @@ weight: 3
 
 Narrow the map to the pods and nodes you care about with the query bar.
 
-[Try it in the demo →](../../../demo/?q=ns%3Ateam-0): `ns:team-0` highlights the 26 pods of that namespace and dims the rest.
+[Try it in the demo →](../../../demo/?q=ns%3Ateam-0): `ns:team-0` highlights that namespace's pods and dims the rest.
 
 ## Filtering
 

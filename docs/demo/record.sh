@@ -37,4 +37,5 @@ awk -v banner="$banner" '
   { print }
   /<body[^>]*>/ { print banner }
 ' "$root/web/static/index.html" > "$out/index.html"
+grep -q demo-shim.js "$out/index.html" || { echo "demo shim not injected into index.html" >&2; exit 1; }
 cp "$root/docs/demo/demo-shim.js" "$out/demo-shim.js"

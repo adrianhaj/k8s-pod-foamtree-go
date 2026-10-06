@@ -77,7 +77,7 @@ demo: build
 docs: demo
 	$(HUGO) --gc --minify --panicOnWarning --cleanDestinationDir --destination ../$(SITE)
 
-docs-serve:
+docs-serve: demo
 	$(HUGO) server --panicOnWarning
 
 docs-check: docs
