@@ -11,7 +11,7 @@ JSX := $(addprefix web/src/,prefs.jsx format.jsx icons.jsx nodestatus.jsx podaud
 APP_JS := web/static/app.js
 THREE_JS := web/static/three.js
 
-.PHONY: web build run test lint image image-push kind-up kind-down kind-load deploy-dev port-forward docs docs-serve docs-check clean
+.PHONY: web build run test lint image image-push kind-up kind-down kind-load deploy-dev port-forward demo docs docs-serve docs-check clean
 
 web: $(APP_JS) $(THREE_JS)
 
@@ -71,7 +71,10 @@ HUGO ?= cd docs && go tool -modfile=tools.mod hugo
 # /k8s-pod-foamtree-go/... links and flags any that skip the prefix.
 SITE := build/site/k8s-pod-foamtree-go
 
-docs:
+demo: build
+	bash docs/demo/record.sh
+
+docs: demo
 	$(HUGO) --gc --minify --panicOnWarning --cleanDestinationDir --destination ../$(SITE)
 
 docs-serve:
