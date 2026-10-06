@@ -72,9 +72,10 @@ func parseFlags(args []string) (options, error) {
 	fs.IntVar(&o.llm.MaxTokens, "llm-max-tokens-per-question", 50000, "token cap for one question on the server connection; 0 means none")
 	var monolith, ratio, minShare float64
 	var disable string
-	fs.Float64Var(&monolith, "audit-monolith", 80, "flag pods reserving more than this percent of their node's CPU or memory")
-	fs.Float64Var(&ratio, "audit-ratio", 4, "flag pods whose CPU and memory shares of their node differ by this factor or more")
-	fs.Float64Var(&minShare, "audit-ratio-min-share", 10, "skip ratio-asymmetry when the pod's larger share is under this percent")
+	d := foam.DefaultAudit()
+	fs.Float64Var(&monolith, "audit-monolith", d.MonolithShare*100, "flag pods reserving more than this percent of their node's CPU or memory")
+	fs.Float64Var(&ratio, "audit-ratio", d.RatioFactor, "flag pods whose CPU and memory shares of their node differ by this factor or more")
+	fs.Float64Var(&minShare, "audit-ratio-min-share", d.RatioMinShare*100, "skip ratio-asymmetry when the pod's larger share is under this percent")
 	fs.StringVar(&disable, "audit-disable", "", "comma-separated audit rules to turn off")
 	fs.BoolVar(&o.version, "version", false, "print the version and exit")
 	fs.BoolVar(&o.version, "v", false, "print the version and exit")

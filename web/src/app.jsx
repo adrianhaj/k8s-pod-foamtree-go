@@ -320,6 +320,7 @@ function App() {
 
       const raw = `[${cpuText},${memText}]`;
       const [cpuRes, memRes] = JSON.parse(raw);
+      window.k8sPodAudit.configureAudit(cpuRes.audit);
       // While scrubbing, refreshes keep recording but leave the screen alone.
       if (atRef.current == null) { setNodes(mergeResources(cpuRes, memRes)); setPending(cpuRes.pending || []); }
       setError(null);
@@ -424,7 +425,8 @@ function App() {
   // A context without the chosen resource shows CPU; switching back restores it.
   const activeMetric = metrics.some(m => m.id === metric) ? metric : "cpu";
 
-  const parsedQuery = useMemo(() => window.k8sQuery.parseQuery(query), [query]);
+  // Re-parsed on refresh too: whether an audit: rule is turned off arrives with the data.
+  const parsedQuery = useMemo(() => window.k8sQuery.parseQuery(query), [query, nodes]);
 
   // Matched pods are highlighted and unmatched ones dimmed — nodes are never
   // removed. A malformed query stays inert (and reports itself in the header)

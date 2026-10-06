@@ -35,6 +35,7 @@ func Warnings(n Node) []string {
 
 // Audit is what the monolith and ratio-asymmetry rules measure against, and
 // which rules are switched off. Shares are fractions of the node, 0.8 = 80%.
+// The zero value flags every placed pod: start from DefaultAudit.
 type Audit struct {
 	// A pod reserving more than this share of a node cannot be rescheduled
 	// anywhere else, and a drain takes the whole workload down with it.
@@ -46,7 +47,11 @@ type Audit struct {
 	Disabled      map[string]bool
 }
 
-var DefaultAudit = Audit{MonolithShare: 0.8, RatioFactor: 4, RatioMinShare: 0.10}
+// DefaultAudit returns a fresh copy, so a caller disabling a rule never
+// changes anyone else's defaults.
+func DefaultAudit() Audit {
+	return Audit{MonolithShare: 0.8, RatioFactor: 4, RatioMinShare: 0.10, Disabled: map[string]bool{}}
+}
 
 // AuditRules lists every slug Findings emits.
 var AuditRules = []string{"missing-requests", "missing-limits", "monolith", "ratio-asymmetry",

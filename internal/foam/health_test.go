@@ -89,13 +89,13 @@ func TestFindings(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := Findings(tc.pod, tc.node, DefaultAudit); !reflect.DeepEqual(got, tc.want) {
+			if got := Findings(tc.pod, tc.node, DefaultAudit()); !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("got %v, want %v", got, tc.want)
 			}
 		})
 	}
 	for _, p := range []Pod{auditPod(3600, 14_400_000_000, true), auditPod(3600, 13_000_000_000, true)} {
-		if f := Findings(p, worker, DefaultAudit); !reflect.DeepEqual(f[:1], []string{"monolith"}) {
+		if f := Findings(p, worker, DefaultAudit()); !reflect.DeepEqual(f[:1], []string{"monolith"}) {
 			t.Errorf("monolith expected in %v", f)
 		}
 	}
@@ -120,7 +120,7 @@ func TestCrashFindings(t *testing.T) {
 	}
 	for _, tc := range cases {
 		p := Pod{CPU: 100, Memory: 100, Containers: []Container{ok}, Statuses: tc.statuses}
-		if got := Findings(p, n, DefaultAudit); !reflect.DeepEqual(got, tc.want) {
+		if got := Findings(p, n, DefaultAudit()); !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("%s: %v", tc.name, got)
 		}
 	}
@@ -130,7 +130,7 @@ func TestResizeFindings(t *testing.T) {
 	p := auditPod(400, 1_600_000_000, true)
 	for state, want := range map[string]string{"deferred": "resize-deferred", "infeasible": "resize-infeasible"} {
 		p.Resize = &Resize{State: state}
-		if got := Findings(p, worker, DefaultAudit); !reflect.DeepEqual(got, []string{want}) {
+		if got := Findings(p, worker, DefaultAudit()); !reflect.DeepEqual(got, []string{want}) {
 			t.Fatalf("%s: got %v", state, got)
 		}
 	}
@@ -144,7 +144,7 @@ func TestAuditRulesCoverFindings(t *testing.T) {
 
 	var emitted []string
 	for _, p := range []Pod{auditPod(3600, 0, false), auditPod(2000, 800_000_000, true), crash, deferred, infeasible} {
-		emitted = append(emitted, Findings(p, worker, DefaultAudit)...)
+		emitted = append(emitted, Findings(p, worker, DefaultAudit())...)
 	}
 	slices.Sort(emitted)
 	want := slices.Sorted(slices.Values(AuditRules))
@@ -154,8 +154,7 @@ func TestAuditRulesCoverFindings(t *testing.T) {
 }
 
 func without(rules ...string) Audit {
-	a := DefaultAudit
-	a.Disabled = map[string]bool{}
+	a := DefaultAudit()
 	for _, r := range rules {
 		a.Disabled[r] = true
 	}
@@ -176,7 +175,7 @@ func TestAuditThresholds(t *testing.T) {
 		{"under 2x is fine", custom, auditPod(780, 1_600_000_000, true), []string{}},
 		{"exactly at min share", custom, auditPod(200, 16_000_000, true), []string{"ratio-asymmetry"}},
 		{"under min share", custom, auditPod(160, 16_000_000, true), []string{}},
-		{"defaults unchanged", DefaultAudit, auditPod(2801, 11_200_000_000, true), []string{}},
+		{"defaults unchanged", DefaultAudit(), auditPod(2801, 11_200_000_000, true), []string{}},
 		{"disabled rule dropped", without("missing-limits"), auditPod(3600, 1_600_000_000, false), []string{"monolith", "ratio-asymmetry"}},
 		{"every rule disabled", without(AuditRules...), auditPod(3600, 0, false), []string{}},
 	}

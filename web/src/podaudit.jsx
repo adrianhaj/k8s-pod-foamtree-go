@@ -4,11 +4,15 @@
 
 const { SEV_RANK } = window.k8sNodeStatus;
 
+function monolithWhy(share) {
+  return `reserves over ${+(share * 100).toFixed(1)}% of its node — nowhere else to reschedule it`;
+}
+
 // Ordered the way the backend emits findings.
 const POD_FINDINGS = {
   "missing-requests": { label: "missing requests", sev: "warn", why: "no CPU or memory request — the scheduler packs it blind" },
   "missing-limits":   { label: "no memory limit",  sev: "info", why: "no memory limit — a leak can take the node down" },
-  "monolith":         { label: "monolith",         sev: "warn", why: "reserves most of its node (over 80% by default) — nowhere else to reschedule it" },
+  "monolith":         { label: "monolith",         sev: "warn", why: monolithWhy(0.8) },
   "ratio-asymmetry":  { label: "ratio asymmetry",  sev: "info", why: "CPU:memory ratio far from the node's — strands the other resource" },
   "crashloop":  { label: "crash loop", sev: "danger", why: "a container keeps crashing and Kubernetes is backing off restarts", status: true },
   "oom-killed": { label: "OOM killed", sev: "danger", why: "a container's last run was killed for running out of memory", status: true },
@@ -18,6 +22,25 @@ const POD_FINDINGS = {
 };
 
 const FINDING_ORDER = Object.keys(POD_FINDINGS);
+
+// Rules the server was started with --audit-disable for. They never appear in
+// findings, so the query and the Problems tab say so instead of looking clean.
+let disabledRules = [];
+
+// The server's audit flags arrive with every tree; the copy follows them.
+function configureAudit(audit) {
+  if (!audit) return;
+  POD_FINDINGS.monolith.why = monolithWhy(audit.monolithShare);
+  disabledRules = audit.disabled || [];
+}
+
+function isRuleDisabled(slug) {
+  return disabledRules.indexOf(slug) !== -1;
+}
+
+function disabledRuleCount() {
+  return disabledRules.length;
+}
 
 function findingInfo(slug) {
   // An unknown slug from a newer backend still renders, just without a nicer
@@ -61,4 +84,4 @@ function FindingPill({ f }) {
   );
 }
 
-window.k8sPodAudit = { POD_FINDINGS, FINDING_ORDER, findingInfo, findingsTitle, worstFindingSeverity, PodAuditBadge, FindingPill };
+window.k8sPodAudit = { POD_FINDINGS, FINDING_ORDER, configureAudit, isRuleDisabled, disabledRuleCount, findingInfo, findingsTitle, worstFindingSeverity, PodAuditBadge, FindingPill };

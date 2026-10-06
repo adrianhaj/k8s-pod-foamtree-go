@@ -59,6 +59,14 @@ type Tree struct {
 	Groups []NodeGroup `json:"groups"`
 	// Pods no node has taken yet: nothing to draw, but the panel lists them.
 	Pending []PendingPod `json:"pending"`
+	// Audit tells the UI what the rules measured against, so its copy and
+	// its audit: queries match the server's flags.
+	Audit TreeAudit `json:"audit"`
+}
+
+type TreeAudit struct {
+	MonolithShare float64  `json:"monolithShare"`
+	Disabled      []string `json:"disabled"`
 }
 
 type PendingPod struct {
@@ -129,7 +137,8 @@ func Treemap(nodes []Node, pods []Pod, axis Axis, a Audit) Tree {
 	}
 	nodes = slices.SortedFunc(slices.Values(nodes), func(a, b Node) int { return cmp.Compare(a.Name, b.Name) })
 
-	tree := Tree{Groups: make([]NodeGroup, 0, len(nodes))}
+	tree := Tree{Groups: make([]NodeGroup, 0, len(nodes)), Audit: TreeAudit{MonolithShare: a.MonolithShare,
+		Disabled: slices.DeleteFunc(slices.Clone(AuditRules), func(r string) bool { return !a.Disabled[r] })}}
 	for _, n := range nodes {
 		onNode := byNode[n.Name]
 		slices.SortFunc(onNode, func(a, b Pod) int {
