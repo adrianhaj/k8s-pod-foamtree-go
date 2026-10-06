@@ -21,7 +21,7 @@ func TestReport(t *testing.T) {
 			Containers: []Container{{Name: "job", CPU: 100}}},
 		{Name: "orphan", Namespace: "dev", NodeName: "gone"},
 	}
-	rows := Report(nodes, pods)
+	rows := Report(nodes, pods, DefaultAudit)
 	got := ""
 	for _, r := range rows {
 		got += fmt.Sprintf("%s %s/%s cpu=%d/%s mem=%d/%s %v %v\n", r.Node, r.Namespace, r.Pod,

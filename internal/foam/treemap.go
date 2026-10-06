@@ -122,7 +122,7 @@ const (
 // Treemap nests node → pod → container on one axis and adds an "empty" leaf
 // per node for free capacity. Output is sorted by name: the informer cache
 // has no stable order, and a reshuffled layout on every refresh is unusable.
-func Treemap(nodes []Node, pods []Pod, axis Axis) Tree {
+func Treemap(nodes []Node, pods []Pod, axis Axis, a Audit) Tree {
 	byNode := map[string][]Pod{}
 	for _, p := range pods {
 		byNode[p.NodeName] = append(byNode[p.NodeName], p)
@@ -138,7 +138,7 @@ func Treemap(nodes []Node, pods []Pod, axis Axis) Tree {
 		groups := make([]any, 0, len(onNode)+1)
 		var used int64
 		for _, p := range onNode {
-			groups = append(groups, podGroup(p, n, axis))
+			groups = append(groups, podGroup(p, n, axis, a))
 			used += axis.pod(p)
 		}
 		groups = append(groups, Leaf{Label: "empty", Weight: axis.weight(axis.node(n) - used), Color: emptyColor})
@@ -165,7 +165,7 @@ func Treemap(nodes []Node, pods []Pod, axis Axis) Tree {
 	return tree
 }
 
-func podGroup(p Pod, n Node, axis Axis) PodGroup {
+func podGroup(p Pod, n Node, axis Axis, a Audit) PodGroup {
 	leaves := make([]Leaf, 0, len(p.Containers)+len(p.InitContainers)+1)
 	rest := axis.container(p.PodLevel)
 	for _, c := range p.Containers {
@@ -193,7 +193,7 @@ func podGroup(p Pod, n Node, axis Axis) PodGroup {
 		Labels:            orEmptyMap(p.Labels),
 		QOS:               p.QOS,
 		HasInitContainers: len(p.InitContainers) > 0,
-		Findings:          Findings(p, n),
+		Findings:          Findings(p, n, a),
 		Phase:             p.Phase,
 		Statuses:          orEmpty(p.Statuses),
 		Limit:             axis.limit(p),

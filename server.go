@@ -91,21 +91,21 @@ func newHandler(src source, static fs.FS, a *auth.Auth, assistant *llm.Proxy) ht
 			return
 		}
 		if nodes, pods, ok := snapshot(w, r, src); ok {
-			writeJSON(w, foam.Treemap(nodes, pods, axis))
+			writeJSON(w, foam.Treemap(nodes, pods, axis, foam.DefaultAudit))
 		}
 	})
 	// Plain "attachment": a filename here would override the UI's download name.
 	app.HandleFunc("GET /report.json", func(w http.ResponseWriter, r *http.Request) {
 		if nodes, pods, ok := snapshot(w, r, src); ok {
 			w.Header().Set("Content-Disposition", "attachment")
-			writeJSON(w, foam.Report(nodes, pods))
+			writeJSON(w, foam.Report(nodes, pods, foam.DefaultAudit))
 		}
 	})
 	app.HandleFunc("GET /report.csv", func(w http.ResponseWriter, r *http.Request) {
 		if nodes, pods, ok := snapshot(w, r, src); ok {
 			w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 			w.Header().Set("Content-Disposition", "attachment")
-			writeCSV(w, foam.Report(nodes, pods))
+			writeCSV(w, foam.Report(nodes, pods, foam.DefaultAudit))
 		}
 	})
 	// Read-only dry run, so a GET: nothing to forge, and the link can be shared.

@@ -1,5 +1,7 @@
 package foam
 
+import "slices"
+
 var pressureSlugs = map[string]string{
 	"MemoryPressure": "memory-pressure",
 	"DiskPressure":   "disk-pressure",
@@ -31,15 +33,24 @@ func Warnings(n Node) []string {
 	return w
 }
 
-const (
+// Audit is what the monolith and ratio-asymmetry rules measure against, and
+// which rules are switched off. Shares are fractions of the node, 0.8 = 80%.
+type Audit struct {
 	// A pod reserving more than this share of a node cannot be rescheduled
 	// anywhere else, and a drain takes the whole workload down with it.
-	monolithShare = 0.8
+	MonolithShare float64
 	// CPU and memory shares this far apart strand the other axis's capacity.
-	ratioAsymmetryFactor = 4
+	RatioFactor float64
 	// Below this dominant share a pod is too small to strand anything.
-	ratioMinShare = 0.10
-)
+	RatioMinShare float64
+	Disabled      map[string]bool
+}
+
+var DefaultAudit = Audit{MonolithShare: 0.8, RatioFactor: 4, RatioMinShare: 0.10}
+
+// AuditRules lists every slug Findings emits, in its order.
+var AuditRules = []string{"missing-requests", "missing-limits", "monolith", "ratio-asymmetry",
+	"crashloop", "oom-killed", "image-pull", "resize-deferred", "resize-infeasible"}
 
 func share(requested, capacity float64) float64 {
 	if capacity == 0 {
@@ -51,7 +62,7 @@ func share(requested, capacity float64) float64 {
 // Findings lists a pod's best-practice violations on its node, in fixed order.
 // Init containers are skipped: they finish before the pod runs. Pod-level
 // resources cover every container that sets none of its own.
-func Findings(p Pod, n Node) []string {
+func Findings(p Pod, n Node, a Audit) []string {
 	f := []string{}
 	missingRequests, missingLimits := false, false
 	for _, c := range p.Containers {
@@ -67,13 +78,13 @@ func Findings(p Pod, n Node) []string {
 
 	cpu := share(float64(p.CPU), float64(n.CPU))
 	mem := share(float64(p.Memory), float64(n.Memory))
-	if cpu > monolithShare || mem > monolithShare {
+	if cpu > a.MonolithShare || mem > a.MonolithShare {
 		f = append(f, "monolith")
 	}
 	// A zero on either axis is already missing-requests and has no ratio.
 	if cpu > 0 && mem > 0 {
 		high, low := max(cpu, mem), min(cpu, mem)
-		if high >= ratioMinShare && high/low >= ratioAsymmetryFactor {
+		if high >= a.RatioMinShare && high/low >= a.RatioFactor {
 			f = append(f, "ratio-asymmetry")
 		}
 	}
@@ -96,5 +107,5 @@ func Findings(p Pod, n Node) []string {
 	if p.Resize != nil {
 		f = append(f, "resize-"+p.Resize.State)
 	}
-	return f
+	return slices.DeleteFunc(f, func(rule string) bool { return a.Disabled[rule] })
 }

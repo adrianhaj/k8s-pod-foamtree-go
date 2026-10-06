@@ -210,7 +210,7 @@ func TestSyntheticCrashes(t *testing.T) {
 	_, pods, _ := s.Snapshot(context.Background(), "")
 	seen := map[string]int{}
 	for _, p := range pods {
-		for _, f := range foam.Findings(p, foam.Node{CPU: 16_000, Memory: 64_000_000_000}) {
+		for _, f := range foam.Findings(p, foam.Node{CPU: 16_000, Memory: 64_000_000_000}, foam.DefaultAudit) {
 			seen[f]++
 		}
 	}

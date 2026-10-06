@@ -173,7 +173,7 @@ func problems(nodes []foam.Node, pods []foam.Pod) []problem {
 		}
 	}
 	for _, p := range pods {
-		for _, f := range foam.Findings(p, byName[p.NodeName]) {
+		for _, f := range foam.Findings(p, byName[p.NodeName], foam.DefaultAudit) {
 			out = append(out, problem{p.Namespace + "/" + p.Name, p.NodeName, f})
 		}
 	}
@@ -201,7 +201,7 @@ func describePod(p foam.Pod, n foam.Node) map[string]any {
 		"qos": p.QOS, "controller": p.Controller, "labels": p.Labels,
 		"cpuRequestMillicores": p.CPU, "memoryRequestBytes": p.Memory,
 		"cpuLimitMillicores": p.CPULimit, "memoryLimitBytes": p.MemoryLimit,
-		"containers": containers(p.Containers), "statuses": p.Statuses, "findings": foam.Findings(p, n)}
+		"containers": containers(p.Containers), "statuses": p.Statuses, "findings": foam.Findings(p, n, foam.DefaultAudit)}
 }
 
 // container is foam.Container with its units in the keys, so the model does not guess them.

@@ -25,7 +25,7 @@ func etcdPod() Pod {
 // frontend reads, not Go struct internals.
 func render(t *testing.T, nodes []Node, pods []Pod, axis Axis) []map[string]any {
 	t.Helper()
-	b, err := json.Marshal(Treemap(nodes, pods, axis))
+	b, err := json.Marshal(Treemap(nodes, pods, axis, DefaultAudit))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func BenchmarkTreemap(b *testing.B) {
 		}
 	}
 	for b.Loop() {
-		if _, err := json.Marshal(Treemap(nodes, pods, CPU)); err != nil {
+		if _, err := json.Marshal(Treemap(nodes, pods, CPU, DefaultAudit)); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -248,7 +248,7 @@ func TestTreemapCarriesPodStatus(t *testing.T) {
 	crashing := Pod{Name: "a", NodeName: "n", Phase: "Running", Containers: []Container{{Name: "app", CPU: 1, Memory: 1}},
 		Statuses: []ContainerStatus{{Name: "app", Restarts: 2, Waiting: "CrashLoopBackOff"}}}
 	quiet := Pod{Name: "b", NodeName: "n", Containers: []Container{{Name: "app", CPU: 1, Memory: 1}}}
-	b, _ := json.Marshal(Treemap([]Node{n}, []Pod{crashing, quiet}, CPU))
+	b, _ := json.Marshal(Treemap([]Node{n}, []Pod{crashing, quiet}, CPU, DefaultAudit))
 	for _, want := range []string{`"phase":"Running"`, `"statuses":[{"name":"app","ready":false,"restarts":2,"waiting":"CrashLoopBackOff"}]`, `"statuses":[]`, `"crashloop"`} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("missing %s in %s", want, b)
@@ -266,10 +266,10 @@ func TestTreemapListsPendingPods(t *testing.T) {
 		{Name: "orphan", Namespace: "dev", NodeName: "gone"},
 	}
 	want := []PendingPod{{Namespace: "dev", Name: "a"}, {Namespace: "dev", Name: "b", Reason: "Unschedulable", Message: msg}}
-	if got := Treemap([]Node{minikube}, pods, CPU).Pending; !reflect.DeepEqual(got, want) {
+	if got := Treemap([]Node{minikube}, pods, CPU, DefaultAudit).Pending; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v", got)
 	}
-	b, _ := json.Marshal(Treemap([]Node{minikube}, []Pod{etcdPod()}, Memory))
+	b, _ := json.Marshal(Treemap([]Node{minikube}, []Pod{etcdPod()}, Memory, DefaultAudit))
 	if !strings.Contains(string(b), `"pending":[]`) {
 		t.Fatalf("pending must be [], not null: %s", b)
 	}
