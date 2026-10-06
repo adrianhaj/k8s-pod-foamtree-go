@@ -18,7 +18,7 @@ func TestClusterTools(t *testing.T) {
 			Statuses:   []foam.ContainerStatus{{Name: "api", Restarts: 3, Waiting: "CrashLoopBackOff"}}}},
 		logs: "boom\n",
 	}
-	tools := clusterTools{src: src, cluster: "kind"}
+	tools := clusterTools{src: src, cluster: "kind", audit: foam.DefaultAudit()}
 	call := func(name, args string) string {
 		t.Helper()
 		out, err := tools.Call(context.Background(), name, json.RawMessage(args))
@@ -139,7 +139,7 @@ func TestDescribePodNamesContainerUnits(t *testing.T) {
 	limit := int64(2 << 30)
 	src := &fakeSource{pods: []foam.Pod{{Name: "api", Namespace: "pay",
 		Containers: []foam.Container{{Name: "api", CPU: 500, Memory: 1 << 30, MemoryLimit: &limit}}}}}
-	out, err := (&clusterTools{src: src}).Call(context.Background(), "describe_pod", json.RawMessage(`{"namespace":"pay","name":"api"}`))
+	out, err := (&clusterTools{src: src, audit: foam.DefaultAudit()}).Call(context.Background(), "describe_pod", json.RawMessage(`{"namespace":"pay","name":"api"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func (c *countingSource) Snapshot(ctx context.Context, name string) ([]foam.Node
 // One question reads one snapshot, and only once a lookup needs it.
 func TestOneSnapshotPerQuestion(t *testing.T) {
 	src := &countingSource{fakeSource: &fakeSource{nodes: []foam.Node{{Name: "n1"}}, logs: "x\n"}}
-	tools := &clusterTools{src: src, cluster: "kind"}
+	tools := &clusterTools{src: src, cluster: "kind", audit: foam.DefaultAudit()}
 	for _, name := range []string{"nope", "get_pod_logs"} {
 		tools.Call(context.Background(), name, json.RawMessage(`{"namespace":"pay","name":"api"}`))
 	}
@@ -206,8 +206,22 @@ func TestToolSchemasAreValidJSON(t *testing.T) {
 func TestDescribePodSaysWhyItIsPending(t *testing.T) {
 	src := &fakeSource{pods: []foam.Pod{{Name: "job", Namespace: "pay", Phase: "Pending",
 		SchedReason: "Unschedulable", SchedMessage: "0/3 nodes are available: 3 Insufficient cpu."}}}
-	out, err := (&clusterTools{src: src}).Call(context.Background(), "describe_pod", json.RawMessage(`{"namespace":"pay","name":"job"}`))
+	out, err := (&clusterTools{src: src, audit: foam.DefaultAudit()}).Call(context.Background(), "describe_pod", json.RawMessage(`{"namespace":"pay","name":"job"}`))
 	if err != nil || !strings.Contains(out, `"schedulingReason":"Unschedulable"`) || !strings.Contains(out, "3 Insufficient cpu.") {
 		t.Fatalf("%s %v", out, err)
+	}
+}
+
+func TestToolsHonourDisabledRules(t *testing.T) {
+	src, off := limitlessPod()
+	for name, args := range map[string]string{"list_problems": `{}`, "describe_pod": `{"namespace":"d","name":"p"}`} {
+		on, err := (&clusterTools{src: src, audit: foam.DefaultAudit()}).Call(context.Background(), name, json.RawMessage(args))
+		if err != nil || !strings.Contains(on, "missing-limits") {
+			t.Errorf("%s control: missing-limits not reported: %s %v", name, on, err)
+		}
+		out, err := (&clusterTools{src: src, audit: off}).Call(context.Background(), name, json.RawMessage(args))
+		if err != nil || strings.Contains(out, "missing-limits") {
+			t.Errorf("%s: %s %v", name, out, err)
+		}
 	}
 }

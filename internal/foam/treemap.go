@@ -59,6 +59,14 @@ type Tree struct {
 	Groups []NodeGroup `json:"groups"`
 	// Pods no node has taken yet: nothing to draw, but the panel lists them.
 	Pending []PendingPod `json:"pending"`
+	// Audit tells the UI what the rules measured against, so its copy and
+	// its audit: queries match the server's flags.
+	Audit TreeAudit `json:"audit"`
+}
+
+type TreeAudit struct {
+	MonolithShare float64  `json:"monolithShare"`
+	Disabled      []string `json:"disabled"`
 }
 
 type PendingPod struct {
@@ -122,14 +130,15 @@ const (
 // Treemap nests node → pod → container on one axis and adds an "empty" leaf
 // per node for free capacity. Output is sorted by name: the informer cache
 // has no stable order, and a reshuffled layout on every refresh is unusable.
-func Treemap(nodes []Node, pods []Pod, axis Axis) Tree {
+func Treemap(nodes []Node, pods []Pod, axis Axis, a Audit) Tree {
 	byNode := map[string][]Pod{}
 	for _, p := range pods {
 		byNode[p.NodeName] = append(byNode[p.NodeName], p)
 	}
 	nodes = slices.SortedFunc(slices.Values(nodes), func(a, b Node) int { return cmp.Compare(a.Name, b.Name) })
 
-	tree := Tree{Groups: make([]NodeGroup, 0, len(nodes))}
+	tree := Tree{Groups: make([]NodeGroup, 0, len(nodes)), Audit: TreeAudit{MonolithShare: a.MonolithShare,
+		Disabled: slices.DeleteFunc(slices.Clone(AuditRules), func(r string) bool { return !a.Disabled[r] })}}
 	for _, n := range nodes {
 		onNode := byNode[n.Name]
 		slices.SortFunc(onNode, func(a, b Pod) int {
@@ -138,7 +147,7 @@ func Treemap(nodes []Node, pods []Pod, axis Axis) Tree {
 		groups := make([]any, 0, len(onNode)+1)
 		var used int64
 		for _, p := range onNode {
-			groups = append(groups, podGroup(p, n, axis))
+			groups = append(groups, podGroup(p, n, axis, a))
 			used += axis.pod(p)
 		}
 		groups = append(groups, Leaf{Label: "empty", Weight: axis.weight(axis.node(n) - used), Color: emptyColor})
@@ -165,7 +174,7 @@ func Treemap(nodes []Node, pods []Pod, axis Axis) Tree {
 	return tree
 }
 
-func podGroup(p Pod, n Node, axis Axis) PodGroup {
+func podGroup(p Pod, n Node, axis Axis, a Audit) PodGroup {
 	leaves := make([]Leaf, 0, len(p.Containers)+len(p.InitContainers)+1)
 	rest := axis.container(p.PodLevel)
 	for _, c := range p.Containers {
@@ -193,7 +202,7 @@ func podGroup(p Pod, n Node, axis Axis) PodGroup {
 		Labels:            orEmptyMap(p.Labels),
 		QOS:               p.QOS,
 		HasInitContainers: len(p.InitContainers) > 0,
-		Findings:          Findings(p, n),
+		Findings:          Findings(p, n, a),
 		Phase:             p.Phase,
 		Statuses:          orEmpty(p.Statuses),
 		Limit:             axis.limit(p),

@@ -31,7 +31,7 @@ type ReportRow struct {
 // node is gone. Those keep their nodeName (empty while pending) and have no
 // node columns or warnings, only the findings that need no node (requests,
 // limits and the crash signals).
-func Report(nodes []Node, pods []Pod) []ReportRow {
+func Report(nodes []Node, pods []Pod, a Audit) []ReportRow {
 	byNode := map[string][]Pod{}
 	for _, p := range pods {
 		byNode[p.NodeName] = append(byNode[p.NodeName], p)
@@ -46,7 +46,7 @@ func Report(nodes []Node, pods []Pod) []ReportRow {
 		if len(byNode[n.Name]) == 0 {
 			rows = append(rows, base)
 		}
-		rows = appendPods(rows, base, n, byNode[n.Name])
+		rows = appendPods(rows, base, n, byNode[n.Name], a)
 		delete(byNode, n.Name)
 	}
 	var unplaced []Pod
@@ -54,7 +54,7 @@ func Report(nodes []Node, pods []Pod) []ReportRow {
 		unplaced = append(unplaced, ps...)
 	}
 	for _, p := range sortPods(unplaced) {
-		rows = appendPods(rows, ReportRow{Node: p.NodeName, NodeWarnings: []string{}}, Node{}, []Pod{p})
+		rows = appendPods(rows, ReportRow{Node: p.NodeName, NodeWarnings: []string{}}, Node{}, []Pod{p}, a)
 	}
 	return rows
 }
@@ -68,12 +68,12 @@ func sortPods(ps []Pod) []Pod {
 
 // n is the zero Node for a pod on no known node: Findings then reports only
 // what needs no node (missing requests / limits and the crash signals).
-func appendPods(rows []ReportRow, base ReportRow, n Node, pods []Pod) []ReportRow {
+func appendPods(rows []ReportRow, base ReportRow, n Node, pods []Pod, a Audit) []ReportRow {
 	for _, p := range sortPods(pods) {
 		r := base
 		r.Namespace, r.Pod, r.QOS = p.Namespace, p.Name, p.QOS
 		r.CPU, r.CPULimit, r.MemoryBytes, r.MemoryLimitBytes = p.CPU, p.CPULimit, p.Memory, p.MemoryLimit
-		r.Findings = Findings(p, n)
+		r.Findings = Findings(p, n, a)
 		rows = append(rows, r)
 	}
 	return rows

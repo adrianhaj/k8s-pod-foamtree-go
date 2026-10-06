@@ -108,13 +108,15 @@ Every pod is checked against nine rules: four best-practice rules, three crash s
 | --- | --- | --- |
 | amber | `missing requests` | a regular container requests 0 CPU or 0 memory |
 | blue | `no memory limit` | a regular container sets no `limits.memory` |
-| amber | `monolith` | the pod reserves more than 80% of its node's CPU or memory |
-| blue | `ratio asymmetry` | the pod's share of node CPU and its share of node memory differ by 4× or more, and the larger share is at least 10% |
+| amber | `monolith` | the pod reserves more than 80% (`--audit-monolith`) of its node's CPU or memory |
+| blue | `ratio asymmetry` | the pod's share of node CPU and its share of node memory differ by 4× (`--audit-ratio`) or more, and the larger share is at least 10% (`--audit-ratio-min-share`) |
 | red | `crash loop` | a container is waiting in `CrashLoopBackOff` |
 | red | `OOM killed` | a container's last run ended `OOMKilled`, even if it has recovered since |
 | amber | `image pull` | a container is waiting in `ImagePullBackOff` or `ErrImagePull` |
 | blue | `resize deferred` | an in-place resize is waiting for room (`PodResizePending`, reason `Deferred`); the map still counts the larger of old and new requests, as the scheduler does |
 | amber | `resize infeasible` | an in-place resize can never fit the node (`PodResizePending`, reason `Infeasible`); the map counts the old, allocated requests |
+
+The thresholds are set at startup, see [Flags](#flags). A rule turned off with `--audit-disable` is not reported anywhere: the Problems tab, `audit:` queries, both reports and the assistant's tools. The UI knows which rules are off: an `audit:` query for one says so instead of matching nothing.
 
 Four details are worth knowing:
 
@@ -261,7 +263,7 @@ Focusing the input opens a popover with the same token list; it is replaced by t
 | --- | --- |
 | `GET /` | the dashboard |
 | `GET /healthcheck` | `{"status": "ok"}` |
-| `GET /resources/cpu`, `GET /resources/memory` | treemap JSON; optional `?context=<name>`. CPU in millicores, memory in decimal kB. A top-level `pending` list holds every pod with no node yet, as `{namespace, name, reason, message}` from its `PodScheduled=False` condition (`""` before the scheduler has tried). Each node group also carries `unschedulable`, `taints`, `conditions` and a render-ready `warnings` list — see [Node health](#node-health). Each pod group carries a `findings` list — see [Audit & hygiene](#audit--hygiene) — plus `phase` and `statuses` (per container: `name`, `ready`, `restarts`, and when set `waiting`, `lastExitReason`, `lastExitCode`). Pod groups carry `limit` on that axis (`null` = no ceiling); node groups carry `zone`, `region`, `instanceType`, `pool` and `capacityType` (`"spot"` or `"on-demand"`) — `""` when no label says. Node, pod and container entries carry `extended`: every other non-zero resource (`nvidia.com/gpu`, `ephemeral-storage`, `hugepages-2Mi`, …) in its base unit, bytes or a device count, from node allocatable (CPU and memory stay on capacity) and the effective request; omitted when there is none. |
+| `GET /resources/cpu`, `GET /resources/memory` | treemap JSON; optional `?context=<name>`. CPU in millicores, memory in decimal kB. A top-level `pending` list holds every pod with no node yet, as `{namespace, name, reason, message}` from its `PodScheduled=False` condition (`""` before the scheduler has tried). A top-level `audit` holds the server's `monolithShare` (a fraction) and the `disabled` rules, so the UI's copy and `audit:` queries follow the [audit flags](#flags). Each node group also carries `unschedulable`, `taints`, `conditions` and a render-ready `warnings` list — see [Node health](#node-health). Each pod group carries a `findings` list — see [Audit & hygiene](#audit--hygiene) — plus `phase` and `statuses` (per container: `name`, `ready`, `restarts`, and when set `waiting`, `lastExitReason`, `lastExitCode`). Pod groups carry `limit` on that axis (`null` = no ceiling); node groups carry `zone`, `region`, `instanceType`, `pool` and `capacityType` (`"spot"` or `"on-demand"`) — `""` when no label says. Node, pod and container entries carry `extended`: every other non-zero resource (`nvidia.com/gpu`, `ephemeral-storage`, `hugepages-2Mi`, …) in its base unit, bytes or a device count, from node allocatable (CPU and memory stay on capacity) and the effective request; omitted when there is none. |
 | `GET /contexts` | `[{"context": "...", "active": true}]` |
 | `GET /api/logs` | one container's logs as plain text. `namespace` and `pod` are required; optional `container`, `tail` (1–5000, default 500), `previous=1` for the run before the last restart, and `context`. At most 1 MiB. 404 when the pod is gone, 400 when there is no previous run. |
 | `GET /api/llm/config` | `{"server", "url", "model", "maxTokens", "toolTokens"}`, where `toolTokens` estimates the lookup schema sent with every question; never the key |
@@ -388,6 +390,9 @@ Releases: an admin pushes a `v*` tag (`git tag v1.0.0 && git push origin v1.0.0`
 | `--llm-allowed-hosts` | | comma-separated globs of hosts viewers may send their own key to; empty means only the `--llm-url` host. Ignored on a loopback run without auth, where any URL is allowed |
 | `--llm-max-tokens-per-question` | `50000` | token cap for one question; `0` means none. Server connection only |
 | `--synthetic` | | serve a made-up cluster, e.g. `100x50` (nodes × pods per node), for UI work and scale tests; includes GPU, ephemeral-storage and hugepages nodes and three unschedulable pods |
+| `--audit-monolith` | `80` | percent of a node's CPU or memory above which a pod is a `monolith`; (0, 100] |
+| `--audit-ratio`, `--audit-ratio-min-share` | `4`, `10` | `ratio asymmetry` factor (finite, above 1); the larger share in percent, [0, 100], under which a pod is skipped |
+| `--audit-disable` | | comma-separated rules to turn off: `missing-requests`, `missing-limits`, `monolith`, `ratio-asymmetry`, `crashloop`, `oom-killed`, `image-pull`, `resize-deferred`, `resize-infeasible` |
 
 Secrets come from the environment only: `K8SFOAMS_OIDC_CLIENT_SECRET`, `K8SFOAMS_SESSION_KEY` (32 bytes, base64; unset means a random key, so sessions end on restart), and `K8SFOAMS_LLM_API_KEY`, or `--llm-api-key-file` for a mounted Secret.
 

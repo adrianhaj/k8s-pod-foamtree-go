@@ -90,6 +90,9 @@ function parseFilter(prefix, value, raw) {
     if (AUDIT_FIELDS.indexOf(finding) === -1) {
       return { error: { token: raw, message: `unknown audit: rule — use ${AUDIT_FIELDS.join(", ")}` } };
     }
+    if (window.k8sPodAudit.isRuleDisabled(finding)) {
+      return { error: { token: raw, message: `audit: rule ${finding} is turned off on this server (--audit-disable)` } };
+    }
     return { term: { kind: "audit", value: finding } };
   }
   if (prefix === "health") {

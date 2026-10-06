@@ -57,7 +57,8 @@ function BottomPanel({ panel, setPanel, counts, children }) {
 // query bar show the same thing.
 function ProblemsTab({ rows, chips, query, setQuery, onPickNode }) {
   if (rows.length === 0) {
-    return <div className="panel-empty">No problems found. Every node is schedulable and every pod passes the audit.</div>;
+    const off = window.k8sPodAudit.disabledRuleCount();
+    return <div className="panel-empty">No problems found. Every node is schedulable and every pod passes the audit{off > 0 && ` (${off} rule${off === 1 ? "" : "s"} turned off)`}.</div>;
   }
   const q = query.trim();
   const active = chips.some(c => c.query === q) ? q : null;
