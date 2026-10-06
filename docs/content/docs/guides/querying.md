@@ -19,7 +19,7 @@ ns:kube-system qos:Burstable app=frontend
 
 An empty query matches everything. A query that contains a malformed token is **inert**: nothing dims, and the offending tokens are listed under the bar with the reason. Half-typing `ns:` can never blank the view.
 
-The tokens are listed in the token reference.
+The tokens are listed in the [token reference](../../reference/query-tokens/).
 
 ## Examples
 
