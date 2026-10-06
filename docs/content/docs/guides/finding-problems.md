@@ -5,11 +5,11 @@ weight: 2
 
 Spot nodes that refuse pods, capacity that no pod can use, pods that break best practice, and pods first in line for eviction.
 
-Node health and audit findings are counted in the **Problems** tab of the bottom panel. Clicking a chip there sets the query, see [Querying](../querying/). Stranded capacity and QoS are not counted there; QoS is in the summary strip's Pods cell.
+Node health and audit findings are counted in the **Problems** tab of the bottom panel. Click a chip there to highlight those nodes or pods in 2D and 3D and dim the rest; this sets the query (see [Querying](../querying/)), and clicking the chip again clears it. Stranded capacity and QoS are not counted there; QoS is in the summary strip's Pods cell.
 
 ## Node health
 
-Free capacity on a node that refuses pods is not really free. A node that is cordoned, under pressure, or carrying a `NoSchedule` taint has its **idle foam hatched with diagonal warning stripes** (the plate surface in 3D), gets a warning badge next to the utilization percentage, and is counted in the **Problems** tab, which lists how many nodes are affected by each reason. A healthy cluster looks exactly as it did before, nothing is added.
+Free capacity on a node that refuses pods is not really free. A node that is cordoned, under pressure, or carrying a `NoSchedule` taint has its **idle foam hatched with diagonal warning stripes** (the plate surface in 3D), gets a warning badge next to the utilization percentage. A healthy cluster looks exactly as it did before, nothing is added.
 
 | Marker | Reason | Meaning |
 | --- | --- | --- |
@@ -18,7 +18,7 @@ Free capacity on a node that refuses pods is not really free. A node that is cor
 | amber | `mem pressure`, `disk pressure`, `pid pressure` | the matching kubelet condition is `True` |
 | blue | `tainted` | at least one taint has effect `NoSchedule` or `NoExecute` |
 
-The **Problems** tab counts nodes per warning. Click a chip to highlight those nodes and their pods in 2D and 3D; every other node dims. This sets the query to `health:<warning>`; click the chip again to clear it. The glyphs in the Nodes cell of the summary strip toggle the same query.
+A warning's chip sets the query `health:<warning>`. The glyphs in the Nodes cell of the summary strip toggle the same query.
 
 Click a node to open the focus overlay: a **Scheduling** section spells out every reason and lists each taint as `key=value` with its effect. Worst reason wins the overlay's status pill: a cordoned node under memory pressure reads as `SCHEDULING-DISABLED`, because that is what actually keeps pods off it.
 
@@ -55,7 +55,7 @@ Like the empty foam, stranded capacity is measured against capacity, not allocat
 
 ## Audit and hygiene
 
-Every pod is checked against the audit rules. A pod that breaks one gets a **small warning glyph in the top-right corner** of its box (hover it for the reasons). The **Problems** tab counts the affected pods per rule. Click a chip to highlight those pods in 2D and 3D. This sets the query to `audit:<rule>`; click the chip again to clear it. A clean cluster reads `No problems found`.
+Every pod is checked against the audit rules. A pod that breaks one gets a **small warning glyph in the top-right corner** of its box (hover it for the reasons). A rule's chip sets the query `audit:<rule>`. A clean cluster reads `No problems found`.
 
 The rules, their thresholds and the details worth knowing are in the [audit rules reference](../../reference/audit-rules/); to move a threshold or switch a rule off, see [Tuning the audit](../tuning-the-audit/).
 
@@ -75,7 +75,7 @@ Under memory pressure the kubelet evicts pods by QoS class. Set **Color by → Q
 | amber | `Burstable` | second, requests are set but lower than limits |
 | green | `Guaranteed` | last, every container's requests equal its limits |
 
-The Pods cell of the summary strip shows pods per class as a segmented bar, riskiest first, in every color mode. Hover a segment for its count. Click a segment to highlight those pods; this sets the query to `qos:<Class>`. Click it again to clear.
+The Pods cell of the summary strip shows pods per class as a segmented bar, riskiest first, in every color mode. Hover a segment for its count. Click a segment to set the query `qos:<Class>`.
 
 ```
 qos:BestEffort
@@ -109,7 +109,7 @@ A node looks full but its pods look small. Here `worker-3` stands in for your ow
 
    **What you'll see:** how much capacity is stranded and on which axis, CPU or memory. Free CPU with no memory beside it, or the reverse, cannot hold a pod of the cluster's median shape.
 
-4. **Narrow to lopsided pods.** Add the `ratio-asymmetry` audit rule, which flags pods whose share of node CPU and share of node memory differ by 4× or more, where the larger share is at least 10% (see the [audit rules reference](../../reference/audit-rules/)):
+4. **Narrow to lopsided pods.** Add the `ratio-asymmetry` audit rule, which flags lopsided pods (see the [audit rules](../../reference/audit-rules/)):
 
    ```
    audit:ratio-asymmetry node:worker-3

@@ -3,7 +3,7 @@ title: Audit rules
 weight: 2
 ---
 
-Nine rules: four best-practice rules, three crash signals and two resize signals. For the glyph, the Problems chips and `audit:` queries, see [Finding problems](../../guides/finding-problems/#audit-and-hygiene).
+Every pod is checked against the rules below. For the glyph, the Problems chips and `audit:` queries, see [Finding problems](../../guides/finding-problems/#audit-and-hygiene).
 
 | Severity | Rule | Flagged when |
 | --- | --- | --- |

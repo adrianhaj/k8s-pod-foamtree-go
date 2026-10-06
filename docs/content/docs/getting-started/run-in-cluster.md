@@ -65,7 +65,7 @@ patches:
           - --oidc-allowed-groups=k8sfoams-viewers
 ```
 
-**What you'll see:** nothing yet; this is a file. `kubectl kustomize my-overlay` prints the Deployment with these arguments.
+`kubectl kustomize my-overlay` prints the Deployment with these arguments.
 
 **4. Set the ingress host and apply.** Add a second patch under `patches:` in the same file. The base uses `k8sfoams.example.com` in the TLS hosts and the rule.
 

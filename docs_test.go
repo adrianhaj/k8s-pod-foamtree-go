@@ -86,20 +86,27 @@ func TestDocsReferenceCoversAuditRules(t *testing.T) {
 
 // The README points into the docs site instead of repeating it.
 func TestReadmeLinksTheDocs(t *testing.T) {
+	const site = "https://adrianhaj.github.io/k8s-pod-foamtree-go/"
 	readme := read(t, "README.md")
 	for _, want := range []string{
-		"https://adrianhaj.github.io/k8s-pod-foamtree-go/",
-		"https://adrianhaj.github.io/k8s-pod-foamtree-go/docs/reference/flags/",
-		"https://adrianhaj.github.io/k8s-pod-foamtree-go/docs/reference/http-api/",
+		site,
+		site + "docs/reference/flags/",
+		site + "docs/reference/http-api/",
 		"## Development",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Errorf("README is missing %q", want)
+			continue
 		}
-	}
-	for _, page := range []string{"flags", "http-api"} {
-		if _, err := os.Stat("docs/content/docs/reference/" + page + ".md"); err != nil {
-			t.Errorf("README links the %s page: %v", page, err)
+		path, ok := strings.CutPrefix(want, site+"docs/")
+		if !ok {
+			continue
+		}
+		path = "docs/content/docs/" + strings.TrimSuffix(path, "/")
+		if _, err := os.Stat(path + ".md"); err != nil {
+			if _, err := os.Stat(path + "/_index.md"); err != nil {
+				t.Errorf("README links %s but no page exists at %s(.md|/_index.md)", want, path)
+			}
 		}
 	}
 	if n := strings.Count(readme, "\n"); n > 60 {

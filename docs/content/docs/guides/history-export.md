@@ -13,12 +13,6 @@ The browser records every refresh that changed something: in memory, per tab, up
 
 **What you'll see:** after pressing Compare and waiting for a rollout, added pods in green and removed pods in red in the **Changes** tab, with the new pods highlighted on the map.
 
-{{< callout type="warning" >}}
-**Sharp edges**
-
-History lives in the browser tab only. A reload, or a second tab, starts with an empty recording.
-{{< /callout >}}
-
 ## Export
 
 The download button in the top bar saves the 2D map as SVG or PNG, the 3D view as PNG, either as PDF through the print dialog (pick *Save as PDF*), and downloads both reports.
