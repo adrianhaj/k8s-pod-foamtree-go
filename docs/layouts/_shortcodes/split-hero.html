@@ -1,0 +1,9 @@
+<section class="split-hero">
+  <div class="split-hero-text">
+    <h1>{{ .Get "title" }}</h1>
+    <p class="lead">{{ .Get "lead" }}</p>
+    <div class="split-hero-buttons">{{ .Inner }}</div>
+    <pre class="mono"><code>{{ .Get "install" }}</code></pre>
+  </div>
+  <img class="split-hero-shot" src="{{ .Get "image" | relURL }}" alt="k8sfoams treemap of a cluster" width="1200" height="750"/>
+</section>

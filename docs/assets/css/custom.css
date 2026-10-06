@@ -33,3 +33,17 @@ code, pre, kbd, .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", m
 
 /* One sheet: Hextra's footer and dark chrome use the console panel colour. */
 .hextra-footer, html.dark .hextra-footer { background: var(--panel); border-top: 1px solid var(--line); }
+
+.split-hero { display: grid; grid-template-columns: 1fr 1.2fr; gap: 3rem; align-items: center; max-width: 72rem; margin: 3rem auto 2rem; padding: 0 1.5rem; }
+.split-hero h1 { font-size: 2.6rem; letter-spacing: -0.02em; line-height: 1.1; margin: 0 0 1rem; }
+.split-hero .lead { color: var(--text-dim); font-size: 1.15rem; margin: 0 0 1.5rem; }
+.split-hero pre { margin-top: 1.25rem; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: .6rem .9rem; overflow-x: auto; }
+.split-hero-shot { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(20, 22, 28, .12); }
+.btn { display: inline-block; padding: .55rem 1.1rem; border-radius: 6px; font-weight: 600; margin-right: .5rem; text-decoration: none; }
+.btn-primary { background: var(--accent); color: #fff; }
+html.dark .btn-primary { color: #0c1422; }
+.btn-secondary { border: 1px solid var(--line); color: var(--text); }
+@media (max-width: 768px) {
+  .split-hero { grid-template-columns: 1fr; gap: 1.5rem; margin-top: 1.5rem; }
+  .split-hero h1 { font-size: 2rem; }
+}
