@@ -8,7 +8,7 @@ const { SEV_RANK } = window.k8sNodeStatus;
 const POD_FINDINGS = {
   "missing-requests": { label: "missing requests", sev: "warn", why: "no CPU or memory request — the scheduler packs it blind" },
   "missing-limits":   { label: "no memory limit",  sev: "info", why: "no memory limit — a leak can take the node down" },
-  "monolith":         { label: "monolith",         sev: "warn", why: "reserves over 80% of its node — nowhere else to reschedule it" },
+  "monolith":         { label: "monolith",         sev: "warn", why: "reserves most of its node (over 80% by default) — nowhere else to reschedule it" },
   "ratio-asymmetry":  { label: "ratio asymmetry",  sev: "info", why: "CPU:memory ratio far from the node's — strands the other resource" },
   "crashloop":  { label: "crash loop", sev: "danger", why: "a container keeps crashing and Kubernetes is backing off restarts", status: true },
   "oom-killed": { label: "OOM killed", sev: "danger", why: "a container's last run was killed for running out of memory", status: true },

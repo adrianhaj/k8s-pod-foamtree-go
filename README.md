@@ -108,13 +108,15 @@ Every pod is checked against nine rules: four best-practice rules, three crash s
 | --- | --- | --- |
 | amber | `missing requests` | a regular container requests 0 CPU or 0 memory |
 | blue | `no memory limit` | a regular container sets no `limits.memory` |
-| amber | `monolith` | the pod reserves more than 80% of its node's CPU or memory |
-| blue | `ratio asymmetry` | the pod's share of node CPU and its share of node memory differ by 4× or more, and the larger share is at least 10% |
+| amber | `monolith` | the pod reserves more than 80% (`--audit-monolith`) of its node's CPU or memory |
+| blue | `ratio asymmetry` | the pod's share of node CPU and its share of node memory differ by 4× (`--audit-ratio`) or more, and the larger share is at least 10% (`--audit-ratio-min-share`) |
 | red | `crash loop` | a container is waiting in `CrashLoopBackOff` |
 | red | `OOM killed` | a container's last run ended `OOMKilled`, even if it has recovered since |
 | amber | `image pull` | a container is waiting in `ImagePullBackOff` or `ErrImagePull` |
 | blue | `resize deferred` | an in-place resize is waiting for room (`PodResizePending`, reason `Deferred`); the map still counts the larger of old and new requests, as the scheduler does |
 | amber | `resize infeasible` | an in-place resize can never fit the node (`PodResizePending`, reason `Infeasible`); the map counts the old, allocated requests |
+
+The thresholds are set at startup, see [Flags](#flags). A rule turned off with `--audit-disable` is not computed for anything: the Problems tab, `audit:` queries, both reports and the assistant's tools.
 
 Four details are worth knowing:
 
@@ -388,6 +390,9 @@ Releases: an admin pushes a `v*` tag (`git tag v1.0.0 && git push origin v1.0.0`
 | `--llm-allowed-hosts` | | comma-separated globs of hosts viewers may send their own key to; empty means only the `--llm-url` host. Ignored on a loopback run without auth, where any URL is allowed |
 | `--llm-max-tokens-per-question` | `50000` | token cap for one question; `0` means none. Server connection only |
 | `--synthetic` | | serve a made-up cluster, e.g. `100x50` (nodes × pods per node), for UI work and scale tests; includes GPU, ephemeral-storage and hugepages nodes and three unschedulable pods |
+| `--audit-monolith` | `80` | percent of a node's CPU or memory above which a pod is a `monolith`; (0, 100] |
+| `--audit-ratio`, `--audit-ratio-min-share` | `4`, `10` | `ratio asymmetry` factor (above 1), and the larger share in percent under which a pod is skipped; [0, 100] |
+| `--audit-disable` | | comma-separated rules to turn off: `missing-requests`, `missing-limits`, `monolith`, `ratio-asymmetry`, `crashloop`, `oom-killed`, `image-pull`, `resize-deferred`, `resize-infeasible` |
 
 Secrets come from the environment only: `K8SFOAMS_OIDC_CLIENT_SECRET`, `K8SFOAMS_SESSION_KEY` (32 bytes, base64; unset means a random key, so sessions end on restart), and `K8SFOAMS_LLM_API_KEY`, or `--llm-api-key-file` for a mounted Secret.
 
