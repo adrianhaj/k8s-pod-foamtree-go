@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/foam"
 )
 
 // themeTokens are the console tokens the docs theme copies; they must keep the console's values.
@@ -51,6 +53,33 @@ func TestDocsThemeMatchesConsole(t *testing.T) {
 			if got[tok] != want[tok] {
 				t.Errorf("%s %s: docs %q, console %q", name, tok, got[tok], want[tok])
 			}
+		}
+	}
+}
+
+func TestDocsReferenceCoversFlags(t *testing.T) {
+	src := read(t, "main.go")
+	page := read(t, "docs/content/docs/reference/flags.md")
+	names := regexp.MustCompile(`fs\.\w+Var\(&[^,]+, "([a-z0-9-]+)"`).FindAllStringSubmatch(src, -1)
+	if len(names) < 20 {
+		t.Fatalf("found only %d flags in main.go; has parseFlags moved?", len(names))
+	}
+	for _, m := range names {
+		flag := "--" + m[1]
+		if m[1] == "v" {
+			flag = "-v"
+		}
+		if !strings.Contains(page, "`"+flag+"`") {
+			t.Errorf("flags.md has no row for %s", flag)
+		}
+	}
+}
+
+func TestDocsReferenceCoversAuditRules(t *testing.T) {
+	page := read(t, "docs/content/docs/reference/audit-rules.md")
+	for _, rule := range foam.AuditRules {
+		if !strings.Contains(page, "`"+rule+"`") {
+			t.Errorf("audit-rules.md has no row for %s", rule)
 		}
 	}
 }
