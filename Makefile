@@ -65,20 +65,18 @@ port-forward:
 	$(KIND_KUBECTL) -n k8sfoams port-forward svc/k8sfoams 8080:80
 
 HUGO ?= cd docs && go tool hugo
+# The site is built under its Pages base path, so htmltest resolves
+# /k8s-pod-foamtree-go/... links and flags any that skip the prefix.
+SITE := build/site/k8s-pod-foamtree-go
 
 docs:
-	$(HUGO) --gc --minify --panicOnWarning --cleanDestinationDir
+	$(HUGO) --gc --minify --panicOnWarning --cleanDestinationDir --destination ../$(SITE)
 
 docs-serve:
 	$(HUGO) server --panicOnWarning
 
-# htmltest needs root-relative links, so the check build uses baseURL /;
-# the grep then lists every root-relative href/src in the real build (quotes
-# optional, minify strips them) and fails if any lacks the /k8s-pod-foamtree-go/ prefix.
 docs-check: docs
-	$(HUGO) --gc --panicOnWarning --baseURL / --cleanDestinationDir --destination ../build/docs-check
 	cd docs && go tool htmltest -c .htmltest.yml
-	! grep -rIhoE --include='*.html' '(href|src)="?/[^/"> ][^"> ]*' docs/public | grep -vE '^(href|src)="?/k8s-pod-foamtree-go/'
 
 clean:
-	rm -rf bin build $(APP_JS) $(THREE_JS) docs/public docs/resources
+	rm -rf bin build $(APP_JS) $(THREE_JS) docs/resources

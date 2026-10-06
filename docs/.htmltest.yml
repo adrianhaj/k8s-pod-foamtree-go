@@ -1,5 +1,4 @@
-DirectoryPath: ../build/docs-check
+DirectoryPath: ../build/site
 CheckExternal: false
-IgnoreAltMissing: false
 IgnoreDirectoryMissingTrailingSlash: true
 OutputDir: ../build/htmltest

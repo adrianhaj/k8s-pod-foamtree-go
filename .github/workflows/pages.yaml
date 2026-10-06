@@ -25,12 +25,11 @@ jobs:
           cache-dependency-path: |
             go.sum
             docs/go.sum
-      - id: pages
-        uses: actions/configure-pages@v6
+      - uses: actions/configure-pages@v6
       - run: make docs-check
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: docs/public
+          path: build/site/k8s-pod-foamtree-go
 
   deploy:
     needs: build

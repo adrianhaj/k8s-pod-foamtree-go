@@ -15,12 +15,11 @@ html.dark {
 }
 
 body { font-family: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif; background: var(--panel); color: var(--text); }
-code, pre, kbd, .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", monospace; }
+code, pre, kbd { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", monospace; }
 
 /* Style B, editorial: one sheet, a readable column, calm headings. */
 .content { max-width: 72ch; line-height: 1.6; }
 .content h1 { font-size: 2rem; letter-spacing: -0.015em; line-height: 1.15; }
-.content h2 { border-bottom: 1px solid var(--line); padding-bottom: .25em; }
 .content pre { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; }
 .content table th { color: var(--text-soft); font-weight: 500; }
 .content table td, .content table th { border-color: var(--line); }
