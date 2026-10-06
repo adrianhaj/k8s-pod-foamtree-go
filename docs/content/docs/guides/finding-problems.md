@@ -5,9 +5,9 @@ weight: 2
 
 Spot nodes that refuse pods, capacity that no pod can use, pods that break best practice, and pods first in line for eviction.
 
-[Try it in the demo →](../../../demo/?q=audit%3Amissing-limits): the synthetic cluster has 33 pods without limits, so they stay highlighted and the rest dim.
-
 Node health and audit findings are counted in the **Problems** tab of the bottom panel. Click a chip there to highlight those nodes or pods in 2D and 3D and dim the rest; this sets the query (see [Querying](../querying/)), and clicking the chip again clears it. Stranded capacity and QoS are not counted there; QoS is in the summary strip's Pods cell.
+
+[Try it in the demo →](../../../demo/?q=audit%3Amissing-limits): the synthetic cluster has 33 pods without limits, so they stay highlighted and the rest dim.
 
 ## Node health
 
