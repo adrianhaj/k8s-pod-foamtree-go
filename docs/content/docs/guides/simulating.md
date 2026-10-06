@@ -16,19 +16,15 @@ disk=ssd,zone=a
 
 **What you'll see:** pasted into the node selector of *Fit a pod*, the nodes without those labels dim, and each one's overlay gives the reason.
 
-{{< callout type="warning" title="Sharp edges" >}}
-Modelled: allocatable CPU, memory and pod count, cordons, `NoSchedule` / `NoExecute` taints, node selectors and required node affinity. Not modelled: pod (anti-)affinity, topology spread, volume zones, host ports, extended resources and preemption. The drain also ignores PodDisruptionBudgets.
-{{< /callout >}}
-
 ## Worked example: is it safe to drain worker-3?
 
 Here `worker-3` stands in for your own node name. With `--synthetic` the nodes are named `node-0000`, `node-0001` and so on.
 
 1. **Open the node.** Click `worker-3` on the map to open its overlay.
 
-   **What you'll see:** the node's pods and a **Drain** button.
+   **What you'll see:** the node's pods and a **Simulate drain** button.
 
-2. **Press Drain.** This opens the **Drain simulation** tab on *Drain a node*, with the node filled in.
+2. **Press Simulate drain.** This opens the **Drain simulation** tab on *Drain a node*, with the node filled in.
 
    **What you'll see:** one row per pod that would be moved, with a summary chip counting how many are `Pending`.
 
@@ -46,3 +42,7 @@ curl 'http://127.0.0.1:8080/api/drain?node=worker-3'
 ```
 
 **What you'll see:** JSON listing the pods that would stay pending, the unmanaged pods and where the rest would land.
+
+{{< callout type="warning" title="Sharp edges" >}}
+Modelled: allocatable CPU, memory and pod count, cordons, `NoSchedule` / `NoExecute` taints, node selectors and required node affinity. Not modelled: pod (anti-)affinity, topology spread, volume zones, host ports, extended resources and preemption. The drain also ignores PodDisruptionBudgets.
+{{< /callout >}}

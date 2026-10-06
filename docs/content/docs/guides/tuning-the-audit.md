@@ -32,8 +32,8 @@ The rules and their markers are in the [audit rules reference](../../reference/a
    ```
 
    **What you'll see:**
-   - The monolith tooltip on a pod says `reserves over 70% of its node — nowhere else to reschedule it`.
-   - Typing `audit:missing-limits` in the query bar reports `audit: rule missing-limits is turned off on this server (--audit-disable)` instead of matching nothing.
+   - On a pod that reserves more than 70% of its node, the monolith tooltip says `reserves over 70% of its node — nowhere else to reschedule it`.
+   - When you type `audit:missing-limits` in the query bar, it reports `audit: rule missing-limits is turned off on this server (--audit-disable)` instead of matching nothing.
    - When the cluster is clean, the Problems tab reads `No problems found. Every node is schedulable and every pod passes the audit (1 rule turned off).`
 
 {{< callout type="warning" title="Sharp edges" >}}
