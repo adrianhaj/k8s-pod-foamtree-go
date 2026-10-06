@@ -11,10 +11,10 @@
   };
   const realFetch = window.fetch.bind(window);
   const data = name => new URL("data/" + name, document.baseURI).href;
-  const json = (status, error) => new Response(JSON.stringify({ error }),
-    { status, headers: { "Content-Type": "application/json" } });
-  const unavailable = () => json(501, "not available in the demo — install k8sfoams to try this");
-  const recorded = (name, missing) => realFetch(data(name)).then(r => r.ok ? r : json(404, missing));
+  // Plain text, like the server's http.Error: the console shows the body as is.
+  const text = (status, msg) => new Response(msg, { status, headers: { "Content-Type": "text/plain" } });
+  const unavailable = () => text(501, "not available in the demo — install k8sfoams to try this");
+  const recorded = (name, missing) => realFetch(data(name)).then(r => r.ok ? r : text(404, missing));
 
   window.fetch = function (input, init) {
     const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;

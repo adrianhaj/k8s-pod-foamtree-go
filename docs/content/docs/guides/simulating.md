@@ -5,7 +5,7 @@ weight: 5
 
 Ask whether a pod fits, or where pods would go if a node disappeared, before you touch the cluster.
 
-[Try it in the demo →](../../../demo/): open any node → Drain.
+[Try it in the demo →](../../../demo/): open any node → **Simulate drain**.
 
 These are read-only dry runs of the scheduler's filters on the cached cluster: nothing is created, evicted or cordoned.
 

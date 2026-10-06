@@ -8,12 +8,13 @@ if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then echo "port $port is bus
 rm -rf "$out" && mkdir -p "$out/data"
 cp -R "$root/web/static/." "$out/"
 
-"$root/bin/k8sfoams" --synthetic 20x10 --port "$port" >/dev/null 2>&1 &
+log=$(mktemp)
+"$root/bin/k8sfoams" --synthetic 20x10 --port "$port" >"$log" 2>&1 &
 pid=$!
-trap 'kill $pid 2>/dev/null || true' EXIT
+trap 'kill $pid 2>/dev/null || true; rm -f "$log"' EXIT
 healthy=
 for _ in $(seq 50); do curl -fs "localhost:$port/healthcheck" >/dev/null && { healthy=1; break; }; sleep 0.2; done
-if [ -z "$healthy" ] || ! kill -0 $pid 2>/dev/null; then echo "k8sfoams did not start on :$port" >&2; exit 1; fi
+if [ -z "$healthy" ] || ! kill -0 $pid 2>/dev/null; then echo "k8sfoams did not start on :$port" >&2; cat "$log" >&2; exit 1; fi
 
 get() { curl -fsS "localhost:$port$1" -o "$out/data/$2"; }
 get /contexts contexts.json

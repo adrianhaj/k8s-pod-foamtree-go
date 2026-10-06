@@ -84,4 +84,4 @@ docs-check: docs
 	cd docs && go tool -modfile=tools.mod htmltest -c .htmltest.yml
 
 clean:
-	rm -rf bin build $(APP_JS) $(THREE_JS) docs/resources
+	rm -rf bin build $(APP_JS) $(THREE_JS) docs/resources docs/static/demo
