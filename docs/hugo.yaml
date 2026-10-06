@@ -2,6 +2,7 @@ baseURL: https://adrianhaj.github.io/k8s-pod-foamtree-go/
 title: k8sfoams
 locale: en-us
 module:
+  proxy: https://proxy.golang.org,direct
   imports:
     - path: github.com/imfing/hextra
 markup:

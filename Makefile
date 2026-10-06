@@ -64,7 +64,9 @@ deploy-dev: kind-load
 port-forward:
 	$(KIND_KUBECTL) -n k8sfoams port-forward svc/k8sfoams 8080:80
 
-HUGO ?= cd docs && go tool hugo
+# Hugo and htmltest are pinned in docs/tools.mod, apart from the site's own
+# go.mod: Hugo runs `go list -m all` on that one, which must list only the theme.
+HUGO ?= cd docs && go tool -modfile=tools.mod hugo
 # The site is built under its Pages base path, so htmltest resolves
 # /k8s-pod-foamtree-go/... links and flags any that skip the prefix.
 SITE := build/site/k8s-pod-foamtree-go
@@ -76,7 +78,7 @@ docs-serve:
 	$(HUGO) server --panicOnWarning
 
 docs-check: docs
-	cd docs && go tool htmltest -c .htmltest.yml
+	cd docs && go tool -modfile=tools.mod htmltest -c .htmltest.yml
 
 clean:
 	rm -rf bin build $(APP_JS) $(THREE_JS) docs/resources
