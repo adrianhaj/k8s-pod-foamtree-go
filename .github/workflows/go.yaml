@@ -33,6 +33,7 @@ jobs:
           cache-dependency-path: |
             go.sum
             docs/go.sum
+            docs/tools.sum
 
       - run: make docs-check
 
