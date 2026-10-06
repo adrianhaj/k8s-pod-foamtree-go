@@ -48,7 +48,7 @@ type Audit struct {
 
 var DefaultAudit = Audit{MonolithShare: 0.8, RatioFactor: 4, RatioMinShare: 0.10}
 
-// AuditRules lists every slug Findings emits, in its order.
+// AuditRules lists every slug Findings emits.
 var AuditRules = []string{"missing-requests", "missing-limits", "monolith", "ratio-asymmetry",
 	"crashloop", "oom-killed", "image-pull", "resize-deferred", "resize-infeasible"}
 

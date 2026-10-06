@@ -164,7 +164,7 @@ type problem struct {
 var urgency = map[string]int{"crashloop": 0, "oom-killed": 0, "not-ready": 0, "cordoned": 0,
 	"image-pull": 1, "resize-infeasible": 1, "memory-pressure": 1, "disk-pressure": 1, "pid-pressure": 1}
 
-func problems(nodes []foam.Node, pods []foam.Pod, a foam.Audit) []problem {
+func problems(nodes []foam.Node, pods []foam.Pod, audit foam.Audit) []problem {
 	out := []problem{}
 	byName := map[string]foam.Node{}
 	for _, n := range nodes {
@@ -174,7 +174,7 @@ func problems(nodes []foam.Node, pods []foam.Pod, a foam.Audit) []problem {
 		}
 	}
 	for _, p := range pods {
-		for _, f := range foam.Findings(p, byName[p.NodeName], a) {
+		for _, f := range foam.Findings(p, byName[p.NodeName], audit) {
 			out = append(out, problem{p.Namespace + "/" + p.Name, p.NodeName, f})
 		}
 	}
