@@ -1,4 +1,4 @@
-/* Tokens copied from web/static/styles.css (TestDocsThemeMatchesConsole keeps them equal). */
+/* Tokens copied from web/static/styles.css; keep them equal when the console theme changes. */
 :root {
   --accent: #1f5fd6; --text: #1a1e25; --text-dim: #4b5362; --text-soft: #7c8494;
   --line: #dde0e6; --panel: #ffffff; --panel-2: #f7f8fa;
