@@ -11,7 +11,7 @@ JSX := $(addprefix web/src/,prefs.jsx format.jsx icons.jsx nodestatus.jsx podaud
 APP_JS := web/static/app.js
 THREE_JS := web/static/three.js
 
-.PHONY: web build run test lint image image-push kind-up kind-down kind-load deploy-dev port-forward clean
+.PHONY: web build run test lint image image-push kind-up kind-down kind-load deploy-dev port-forward docs docs-serve docs-check clean
 
 web: $(APP_JS) $(THREE_JS)
 
@@ -64,5 +64,20 @@ deploy-dev: kind-load
 port-forward:
 	$(KIND_KUBECTL) -n k8sfoams port-forward svc/k8sfoams 8080:80
 
+HUGO ?= cd docs && go tool hugo
+
+docs:
+	$(HUGO) --gc --minify --panicOnWarning
+
+docs-serve:
+	$(HUGO) server --panicOnWarning
+
+# htmltest needs root-relative links, so the check build uses baseURL /;
+# the grep then proves the real build never emits an unprefixed root path.
+docs-check: docs
+	$(HUGO) --gc --panicOnWarning --baseURL / --destination ../build/docs-check
+	cd docs && go tool htmltest -c .htmltest.yml
+	! grep -rIlE --include='*.html' '(href|src)="/[^/]' docs/public
+
 clean:
-	rm -rf bin build $(APP_JS) $(THREE_JS)
+	rm -rf bin build $(APP_JS) $(THREE_JS) docs/public docs/resources build/docs-check

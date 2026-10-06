@@ -1,0 +1,4 @@
+DirectoryPath: ../build/docs-check
+CheckExternal: false
+IgnoreAltMissing: false
+IgnoreDirectoryMissingTrailingSlash: true
