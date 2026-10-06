@@ -17,13 +17,11 @@ for _ in $(seq 50); do curl -fs "localhost:$port/healthcheck" >/dev/null && { he
 if [ -z "$healthy" ] || ! kill -0 $pid 2>/dev/null; then echo "k8sfoams did not start on :$port" >&2; cat "$log" >&2; exit 1; fi
 
 get() { curl -fsS "localhost:$port$1" -o "$out/data/$2"; }
-get /contexts contexts.json
-get /api/me me.json
-get /api/llm/config llm-config.json
-get /resources/cpu resources-cpu.json
-get /resources/memory resources-memory.json
-get /report.json report.json
-get /report.csv report.csv
+# File names follow dataFile in demo-shim.js: /api/me -> api-me.json, /report.csv -> report.csv.
+for path in /contexts /api/me /api/llm/config /resources/cpu /resources/memory /report.json /report.csv; do
+  f=${path#/}; f=${f//\//-}; [[ $f == *.* ]] || f=$f.json
+  get "$path" "$f"
+done
 ctx=$(grep -o '"context":"[^"]*"' "$out/data/contexts.json" | head -1 | cut -d'"' -f4 || true)
 [ -n "$ctx" ] || { echo "no context in contexts.json" >&2; exit 1; }
 nodes=$(grep -o '"node":"[^"]*"' "$out/data/report.json" | cut -d'"' -f4 | sort -u || true)
@@ -32,11 +30,6 @@ for node in $nodes; do
   get "/api/drain?context=$ctx&node=$node" "drain-$node.json"
 done
 
-banner=$(tr -d '\n' < "$root/docs/demo/banner.html")
-awk -v banner="$banner" '
-  /<script src="app.js">/ { print "<script src=\"demo-shim.js\"></script>" }
-  { print }
-  /<body[^>]*>/ { print banner }
-' "$root/web/static/index.html" > "$out/index.html"
+sed 's|<script src="app.js">|<script src="demo-shim.js"></script>&|' "$root/web/static/index.html" > "$out/index.html"
 grep -q demo-shim.js "$out/index.html" || { echo "demo shim not injected into index.html" >&2; exit 1; }
 cp "$root/docs/demo/demo-shim.js" "$out/demo-shim.js"
