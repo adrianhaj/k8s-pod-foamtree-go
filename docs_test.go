@@ -83,3 +83,21 @@ func TestDocsReferenceCoversAuditRules(t *testing.T) {
 		}
 	}
 }
+
+// The README points into the docs site instead of repeating it.
+func TestReadmeLinksTheDocs(t *testing.T) {
+	readme := read(t, "README.md")
+	for _, want := range []string{
+		"https://adrianhaj.github.io/k8s-pod-foamtree-go/",
+		"https://adrianhaj.github.io/k8s-pod-foamtree-go/docs/reference/flags/",
+		"https://adrianhaj.github.io/k8s-pod-foamtree-go/docs/reference/http-api/",
+		"## Development",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Errorf("README is missing %q", want)
+		}
+	}
+	if n := strings.Count(readme, "\n"); n > 60 {
+		t.Errorf("README is %d lines; the details belong on the docs site", n)
+	}
+}
