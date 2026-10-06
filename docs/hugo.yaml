@@ -16,6 +16,9 @@ menu:
     - name: Docs
       pageRef: /docs
       weight: 1
+    - name: Demo
+      url: /demo/
+      weight: 2
     - name: Search
       weight: 3
       params:

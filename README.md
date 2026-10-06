@@ -28,6 +28,7 @@ Full docs: <https://adrianhaj.github.io/k8s-pod-foamtree-go/>
 - [Guides](https://adrianhaj.github.io/k8s-pod-foamtree-go/docs/guides/)
 - [Flags](https://adrianhaj.github.io/k8s-pod-foamtree-go/docs/reference/flags/)
 - [HTTP API](https://adrianhaj.github.io/k8s-pod-foamtree-go/docs/reference/http-api/)
+- [Live demo](https://adrianhaj.github.io/k8s-pod-foamtree-go/demo/)
 
 ## Development
 
