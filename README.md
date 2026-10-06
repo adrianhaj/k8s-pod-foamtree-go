@@ -391,7 +391,7 @@ Releases: an admin pushes a `v*` tag (`git tag v1.0.0 && git push origin v1.0.0`
 | `--llm-max-tokens-per-question` | `50000` | token cap for one question; `0` means none. Server connection only |
 | `--synthetic` | | serve a made-up cluster, e.g. `100x50` (nodes × pods per node), for UI work and scale tests; includes GPU, ephemeral-storage and hugepages nodes and three unschedulable pods |
 | `--audit-monolith` | `80` | percent of a node's CPU or memory above which a pod is a `monolith`; (0, 100] |
-| `--audit-ratio`, `--audit-ratio-min-share` | `4`, `10` | `ratio asymmetry` factor (above 1), and the larger share in percent under which a pod is skipped; [0, 100] |
+| `--audit-ratio`, `--audit-ratio-min-share` | `4`, `10` | `ratio asymmetry` factor (finite, above 1); the larger share in percent, [0, 100], under which a pod is skipped |
 | `--audit-disable` | | comma-separated rules to turn off: `missing-requests`, `missing-limits`, `monolith`, `ratio-asymmetry`, `crashloop`, `oom-killed`, `image-pull`, `resize-deferred`, `resize-infeasible` |
 
 Secrets come from the environment only: `K8SFOAMS_OIDC_CLIENT_SECRET`, `K8SFOAMS_SESSION_KEY` (32 bytes, base64; unset means a random key, so sessions end on restart), and `K8SFOAMS_LLM_API_KEY`, or `--llm-api-key-file` for a mounted Secret.

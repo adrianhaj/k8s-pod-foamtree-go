@@ -92,11 +92,6 @@ func TestFindings(t *testing.T) {
 			if got := Findings(tc.pod, tc.node, DefaultAudit); !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("got %v, want %v", got, tc.want)
 			}
-			for _, f := range Findings(tc.pod, tc.node, DefaultAudit) {
-				if !slices.Contains(AuditRules, f) {
-					t.Errorf("%q is emitted but missing from AuditRules", f)
-				}
-			}
 		})
 	}
 	for _, p := range []Pod{auditPod(3600, 14_400_000_000, true), auditPod(3600, 13_000_000_000, true)} {
@@ -138,6 +133,23 @@ func TestResizeFindings(t *testing.T) {
 		if got := Findings(p, worker, DefaultAudit); !reflect.DeepEqual(got, []string{want}) {
 			t.Fatalf("%s: got %v", state, got)
 		}
+	}
+}
+
+func TestAuditRulesCoverFindings(t *testing.T) {
+	crash := auditPod(400, 1_600_000_000, true)
+	crash.Statuses = []ContainerStatus{{Name: "app", Waiting: "CrashLoopBackOff", LastExitReason: "OOMKilled"}, {Name: "web", Waiting: "ImagePullBackOff"}}
+	deferred, infeasible := auditPod(400, 1_600_000_000, true), auditPod(400, 1_600_000_000, true)
+	deferred.Resize, infeasible.Resize = &Resize{State: "deferred"}, &Resize{State: "infeasible"}
+
+	var emitted []string
+	for _, p := range []Pod{auditPod(3600, 0, false), auditPod(2000, 800_000_000, true), crash, deferred, infeasible} {
+		emitted = append(emitted, Findings(p, worker, DefaultAudit)...)
+	}
+	slices.Sort(emitted)
+	want := slices.Sorted(slices.Values(AuditRules))
+	if got := slices.Compact(emitted); !slices.Equal(got, want) {
+		t.Fatalf("emitted %v, AuditRules %v", got, want)
 	}
 }
 
