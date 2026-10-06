@@ -64,3 +64,15 @@ A node without the label goes to its own group, `no zone`, `no pool`, and so on.
 ## Themes
 
 The dashboard follows the OS light or dark setting by default. **Settings → Theme** on the rail (System, Light, Dark) overrides it, and the choice is remembered per browser.
+
+## Controls
+
+- **Memory unit**: MiB, GiB (default), or TiB, under Settings on the rail.
+- **Size by**: CPU or Memory, in the toolbar (in 3D, a **Zoom** slider takes its place).
+- **Color by**: in the toolbar. *Namespace* (default) colors each pod by its namespace; *QoS* by its QoS class (see [QoS & eviction risk](../finding-problems/)); *Problems* by the severity of its audit findings. A legend sits beside it.
+- **Context**: the context picker in the top bar lists every context from your kubeconfig, in kubeconfig order, the active one checked, tagged by provider. **Switching only changes the context inside the k8sfoams web server — your ~/.kube/config file is never modified.**
+- **Refresh**: the Auto-refresh menu in the top bar (Off, 15 s … 10 min), plus a *Refresh now* button beside it.
+- **Filter**: the query bar in the top bar highlights matching pods and dims the rest — nothing is removed from the view. See [Filtering](../querying/) for the full grammar.
+- **Focus**: click a node to open an overlay listing its pods with per-pod CPU/memory and container breakdown, plus its instance type, zone and pool.
+- **Pending**: the Pending tab of the bottom panel lists pods no node has taken, with the scheduler's reason, e.g. `0/12 nodes are available: 12 Insufficient memory.`
+- **Share**: the address bar always links to the view on screen. Context, 2D or 3D, Size by, Group by, Color by and the query are kept in the URL (`/?view=3d&group=zone&q=ns%3Apayments`), so a pasted link opens the same picture, also after an OIDC sign-in. With more than one kubeconfig context the URL also names the context, so the link opens the same cluster. Theme, memory unit and panel state stay per browser.
