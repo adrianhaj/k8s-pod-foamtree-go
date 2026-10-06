@@ -7,6 +7,8 @@ Spot nodes that refuse pods, capacity that no pod can use, pods that break best 
 
 Node health and audit findings are counted in the **Problems** tab of the bottom panel. Click a chip there to highlight those nodes or pods in 2D and 3D and dim the rest; this sets the query (see [Querying](../querying/)), and clicking the chip again clears it. Stranded capacity and QoS are not counted there; QoS is in the summary strip's Pods cell.
 
+[Try it in the demo →](../../../demo/?q=audit%3Amissing-limits): pods without limits stay highlighted and the rest dim.
+
 ## Node health
 
 Free capacity on a node that refuses pods is not really free. A node that is cordoned, under pressure, or carrying a `NoSchedule` taint has its **idle foam hatched with diagonal warning stripes** (the plate surface in 3D), gets a warning badge next to the utilization percentage. A healthy cluster looks exactly as it did before, nothing is added.

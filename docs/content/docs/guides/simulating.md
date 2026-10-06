@@ -5,6 +5,8 @@ weight: 5
 
 Ask whether a pod fits, or where pods would go if a node disappeared, before you touch the cluster.
 
+[Try it in the demo →](../../../demo/): open any node → **Simulate drain**.
+
 These are read-only dry runs of the scheduler's filters on the cached cluster: nothing is created, evicted or cordoned.
 
 - **Can I fit this pod?** (**Drain simulation** tab, *Fit a pod*): CPU and memory requests, a node selector (`disk=ssd,zone=a`) and tolerations (`spot=true:NoSchedule,gpu`). Nodes that cannot take the pod are dimmed; the node overlay says why, e.g. `insufficient cpu: requires 4000m, available 1200m`. `GET /api/fit?cpu=&memory=&nodeSelector=&tolerations=`.

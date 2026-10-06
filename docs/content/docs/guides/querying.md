@@ -5,6 +5,8 @@ weight: 3
 
 Narrow the map to the pods and nodes you care about with the query bar.
 
+[Try it in the demo →](../../../demo/?q=ns%3Ateam-0): `ns:team-0` highlights that namespace's pods and dims the rest.
+
 ## Filtering
 
 The query bar in the top bar is a **highlighter, not a filter of last resort**: matching pods glow, everything else dims. No pod, node or box ever leaves the layout, so the shape of the cluster stays comparable while you narrow down. Once the query is non-empty and valid, a live counter inside the input reads `N / M pods` (and turns red at `0`).

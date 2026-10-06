@@ -5,6 +5,8 @@ weight: 7
 
 Move the audit thresholds, or switch rules off, so the Problems tab reports what matters on your cluster.
 
+[Try it in the demo →](../../../demo/?q=audit%3Amissing-limits): the demo runs with the default rules, so `missing-limits` is on and its pods are highlighted. On your own server with `--audit-disable missing-limits` the same query reports the rule as turned off.
+
 The rules and their markers are in the [audit rules reference](../../reference/audit-rules/); every threshold is a startup flag, listed in the [flags reference](../../reference/flags/). The UI follows the server's settings.
 
 ## Worked example: tighten the audit for prod

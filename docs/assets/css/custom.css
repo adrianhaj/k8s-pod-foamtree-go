@@ -39,7 +39,7 @@ code, pre, kbd { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", monospac
 .split-hero .lead { color: var(--text-dim); font-size: 1.15rem; margin: 0 0 1.5rem; }
 .split-hero pre { margin-top: 1.25rem; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: .6rem .9rem; overflow-x: auto; }
 .split-hero-shot { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(20, 22, 28, .12); }
-.btn { display: inline-block; padding: .55rem 1.1rem; border-radius: 6px; font-weight: 600; margin-right: .5rem; text-decoration: none; }
+.btn { display: inline-block; padding: .55rem 1.1rem; border-radius: 6px; font-weight: 600; margin: 0 .5rem .5rem 0; text-decoration: none; }
 .btn-primary { background: var(--accent); color: #fff; }
 html.dark .btn-primary { color: #0c1422; }
 .btn-secondary { border: 1px solid var(--line); color: var(--text); }
