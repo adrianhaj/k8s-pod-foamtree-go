@@ -73,11 +73,12 @@ docs-serve:
 	$(HUGO) server --panicOnWarning
 
 # htmltest needs root-relative links, so the check build uses baseURL /;
-# the grep then proves the real build never emits an unprefixed root path.
+# the grep then lists every root-relative href/src in the real build (quotes
+# optional, minify strips them) and fails if any lacks the /k8s-pod-foamtree-go/ prefix.
 docs-check: docs
 	$(HUGO) --gc --panicOnWarning --baseURL / --destination ../build/docs-check
 	cd docs && go tool htmltest -c .htmltest.yml
-	! grep -rIlE --include='*.html' '(href|src)="/[^/]' docs/public
+	! grep -rIhoE --include='*.html' '(href|src)="?/[^/"> ][^"> ]*' docs/public | grep -vE '^(href|src)="?/k8s-pod-foamtree-go/'
 
 clean:
 	rm -rf bin build $(APP_JS) $(THREE_JS) docs/public docs/resources build/docs-check
