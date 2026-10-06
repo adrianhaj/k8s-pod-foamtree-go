@@ -116,7 +116,7 @@ Every pod is checked against nine rules: four best-practice rules, three crash s
 | blue | `resize deferred` | an in-place resize is waiting for room (`PodResizePending`, reason `Deferred`); the map still counts the larger of old and new requests, as the scheduler does |
 | amber | `resize infeasible` | an in-place resize can never fit the node (`PodResizePending`, reason `Infeasible`); the map counts the old, allocated requests |
 
-The thresholds are set at startup, see [Flags](#flags). A rule turned off with `--audit-disable` is not computed for anything: the Problems tab, `audit:` queries, both reports and the assistant's tools.
+The thresholds are set at startup, see [Flags](#flags). A rule turned off with `--audit-disable` is not reported anywhere: the Problems tab, `audit:` queries, both reports and the assistant's tools.
 
 Four details are worth knowing:
 

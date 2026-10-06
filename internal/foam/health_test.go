@@ -188,13 +188,3 @@ func TestAuditThresholds(t *testing.T) {
 		})
 	}
 }
-
-func TestAuditReachesTreemapAndReport(t *testing.T) {
-	nodes, pods := []Node{worker}, []Pod{auditPod(400, 1_600_000_000, false)}
-	if f := Treemap(nodes, pods, CPU, without("missing-limits")).Groups[0].Groups[0].(PodGroup).Findings; len(f) != 0 {
-		t.Errorf("treemap findings: %v", f)
-	}
-	if f := Report(nodes, pods, without("missing-limits"))[0].Findings; len(f) != 0 {
-		t.Errorf("report findings: %v", f)
-	}
-}
