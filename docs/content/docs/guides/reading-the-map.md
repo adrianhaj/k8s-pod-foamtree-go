@@ -7,11 +7,12 @@ Understand what the 2D map and the 3D view show, and how to group and recolour t
 
 ## How the map is built
 
-k8sfoams reads kubeconfig contexts as described in [Run locally](../../getting-started/run-locally/). From the watch cache it builds the map in three steps:
+k8sfoams reads kubeconfig contexts as described in [Run locally](../../getting-started/run-locally/). From the watch cache it builds the map in four steps:
 
 1. **Normalize.** CPU becomes millicores and memory becomes decimal kB, using Kubernetes' own quantity parser. A pod's **effective request** is the scheduler's formula (`k8s.io/component-helpers` `PodRequests`): regular containers and native sidecars (init containers with `restartPolicy: Always`) are summed, plain init containers run one at a time so the largest of them is maxed against that sum, and pod overhead and pod-level resources are added. During a pending in-place resize the scheduler counts the larger of the spec and the kubelet's allocated/actuated resources, or only the allocated/actuated ones when the resize is Infeasible.
 2. **Nest.** The result is nested node → pod → container, with a synthetic `empty` child per node for free capacity.
-3. **Serve.** The nested tree is served as JSON, and the single-page app fetches CPU and memory in parallel, merges them and renders. The view auto-refreshes every 60 seconds by default.
+3. **Serve.** The nested tree is served as JSON.
+4. **Render.** A React single-page app, compiled at build time by `go tool esbuild`, is embedded in the binary together with React's production build, so nothing loads from a CDN. It fetches CPU and memory in parallel, merges them, and renders. The view auto-refreshes every 60 seconds by default.
 
 ## 2D map
 

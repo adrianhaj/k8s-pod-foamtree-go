@@ -110,10 +110,10 @@ A node looks full but its pods look small. Here `worker-3` stands in for your ow
 
    **What you'll see:** how much capacity is stranded and on which axis, CPU or memory. Free CPU with no memory beside it, or the reverse, cannot hold a pod of the cluster's median shape.
 
-4. **Narrow to lopsided pods.** Add the audit rule for pods whose CPU share and memory share differ the most:
+4. **Narrow to lopsided pods.** Add the `ratio-asymmetry` audit rule, which flags pods whose share of node CPU and share of node memory differ by 4× or more, where the larger share is at least 10% (see the [audit rules reference](../../reference/audit-rules/)):
 
    ```
    audit:ratio-asymmetry node:worker-3
    ```
 
-   **What you'll see:** only the pods on `worker-3` that break the `ratio asymmetry` rule stay highlighted. Those are the pods whose shape leaves the other resource stranded.
+   **What you'll see:** only the pods on `worker-3` that break the `ratio asymmetry` rule stay highlighted.
