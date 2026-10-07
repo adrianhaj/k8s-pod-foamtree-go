@@ -17,7 +17,7 @@ The browser records every refresh that changed something: in memory, per tab, up
 
 The download button in the top bar saves the 2D map as SVG or PNG, the 3D view as PNG, either as PDF through the print dialog (pick *Save as PDF*), and downloads both reports.
 
-`/report.csv` and `/report.json` list every pod with its node, requests, limits and findings (CPU in millicores, memory in bytes). Pending pods are listed last, with the node columns empty:
+`/report.csv` and `/report.json` list every pod with its node, requests, limits and findings (CPU in millicores, memory in bytes), plus estimated [cost](../cost/) per hour when the server runs with `--prices`. Pending pods are listed last, with the node columns empty:
 
 ```bash
 curl -o pods.csv 'http://127.0.0.1:8080/report.csv?context=kind-k8sfoams'

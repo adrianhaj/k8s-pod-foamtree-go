@@ -15,6 +15,13 @@ function fmtMem(mib, unit, capacity = false) {
   return v.toFixed(d);
 }
 
+// Costs arrive in USD per hour and read as a month, like the bill: 730
+// hours, OpenCost's month. The ~ marks every figure as an estimate.
+function fmtCost(hourly) {
+  const m = hourly * 730;
+  return `~$${m >= 10 ? Math.round(m).toLocaleString("en-US") : m.toFixed(2)}/mo`;
+}
+
 function shortContext(ctx) {
   const last = ctx.split("/").pop();
   const region = ctx.match(/(us|eu|ap)-[a-z]+-\d+/);
@@ -33,4 +40,4 @@ function timeAgo(ts) {
   return `${Math.floor(s / 3600)}h ago`;
 }
 
-window.k8sFormat = { fmtMem, shortContext, clock, timeAgo };
+window.k8sFormat = { fmtMem, fmtCost, shortContext, clock, timeAgo };

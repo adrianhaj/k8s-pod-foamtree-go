@@ -18,7 +18,7 @@ k8sfoams reads kubeconfig contexts as described in [Run locally](../../getting-s
 
 ![k8sfoams 2D treemap view](../../../img/k8s-foam-tree.png)
 
-A squarified treemap. Each node is a square box, each pod is a foam inside it. A pod with more than one container is split into sub-foams. The empty foam is unused (free) capacity on that node. Pick **CPU** or **Memory** with **Size by** in the toolbar; **Group by** boxes the nodes by zone, region, pool, instance type or capacity type, see [Topology](#topology). Nodes that offer GPUs, ephemeral storage or hugepages add them to that control: the map then sizes nodes and pods by that resource, nodes without it drop out, and the node overlay shows how much of each is requested.
+A squarified treemap. Each node is a square box, each pod is a foam inside it. A pod with more than one container is split into sub-foams. The empty foam is unused (free) capacity on that node. Pick **CPU** or **Memory** with **Size by** in the toolbar; **Group by** boxes the nodes by zone, region, pool, instance type or capacity type, see [Topology](#topology). Nodes that offer GPUs, ephemeral storage or hugepages add them to that control: the map then sizes nodes and pods by that resource, nodes without it drop out, and the node overlay shows how much of each is requested. With a [price table](../cost/), **Cost** joins them.
 
 **What you'll see:** one box per node, pods as foams inside it, and a foam for the free capacity left on that node.
 

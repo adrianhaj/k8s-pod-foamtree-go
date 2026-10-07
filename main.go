@@ -49,6 +49,8 @@ type options struct {
 	audit                foam.Audit
 	// "" when metrics are off: no listener and no /metrics route anywhere.
 	metricsAddr string
+	// nil without --prices: no node or pod carries a cost.
+	prices foam.Prices
 }
 
 func parseFlags(args []string) (options, error) {
@@ -80,6 +82,8 @@ func parseFlags(args []string) (options, error) {
 	fs.Float64Var(&minShare, "audit-ratio-min-share", d.RatioMinShare*100, "skip ratio-asymmetry when the pod's larger share is under this percent")
 	fs.StringVar(&disable, "audit-disable", "", "comma-separated audit rules to turn off")
 	fs.StringVar(&o.metricsAddr, "metrics-addr", "", "serve Prometheus metrics at /metrics on this host:port, e.g. :9090; unset means no metrics")
+	var pricesFile string
+	fs.StringVar(&pricesFile, "prices", "", "CSV of node prices (instance_type,region,capacity_type,hourly_usd) for cost estimates")
 	fs.BoolVar(&o.version, "version", false, "print the version and exit")
 	fs.BoolVar(&o.version, "v", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil || o.version {
@@ -112,6 +116,11 @@ func parseFlags(args []string) (options, error) {
 		return o, err
 	}
 	o.audit = a
+	if pricesFile != "" {
+		if o.prices, err = loadPrices(pricesFile); err != nil {
+			return o, fmt.Errorf("--prices: %w", err)
+		}
+	}
 	if o.syntheticSpec != "" {
 		s, err := parseSynthetic(o.syntheticSpec)
 		if err != nil {
@@ -133,6 +142,40 @@ func parseFlags(args []string) (options, error) {
 	// endpoint such as Ollama on localhost is fine.
 	o.llm.AllowAnyURL = o.authMode == "none" && isLoopback(o.host)
 	return o, nil
+}
+
+func loadPrices(name string) (foam.Prices, error) {
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return foam.ParsePrices(f)
+}
+
+// pricedSource stamps each node's price on every snapshot, so the map, the
+// reports read the same costs.
+type pricedSource struct {
+	source
+	prices foam.Prices
+}
+
+func (s pricedSource) Snapshot(ctx context.Context, name string) ([]foam.Node, []foam.Pod, error) {
+	nodes, pods, err := s.source.Snapshot(ctx, name)
+	// Nodes share a few label combinations: scan the table once for each.
+	seen := map[[3]string]*float64{}
+	for i, n := range nodes {
+		k := [3]string{n.InstanceType, n.Region, n.CapacityType}
+		p, ok := seen[k]
+		if !ok {
+			if v, found := s.prices.Price(n); found {
+				p = &v
+			}
+			seen[k] = p
+		}
+		nodes[i].HourlyPrice = p
+	}
+	return nodes, pods, err
 }
 
 func list(s string) []string {
@@ -232,6 +275,9 @@ func run(ctx context.Context, o options) error {
 	var src source = kube.NewSource(o.inCluster)
 	if o.synthetic != nil {
 		src = o.synthetic
+	}
+	if o.prices != nil {
+		src = pricedSource{src, o.prices}
 	}
 	assistant := llm.New(o.llm)
 	assistant.Tools = func(cluster string) llm.Toolbox { return &clusterTools{src: src, cluster: cluster, audit: o.audit} }

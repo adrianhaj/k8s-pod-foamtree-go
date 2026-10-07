@@ -305,3 +305,13 @@ func TestTreemapCarriesAuditConfig(t *testing.T) {
 		t.Fatalf("nothing disabled must be [], not null: %s", b)
 	}
 }
+
+func TestPodLevelLeafCost(t *testing.T) {
+	price := 1.0
+	n := Node{Name: "n", CPU: 4000, Memory: 4000, HourlyPrice: &price}
+	p := Pod{Name: "p", NodeName: "n", CPU: 2000, PodLevel: Container{CPU: 2000}, Containers: []Container{{Name: "app"}}}
+	leaves := Treemap([]Node{n}, []Pod{p}, CPU, DefaultAudit()).Groups[0].Groups[0].(PodGroup).Groups
+	if l := leaves[len(leaves)-1]; l.Label != "(pod-level)" || l.HourlyCost == nil || *l.HourlyCost != 0.5 {
+		t.Fatalf("got %+v", l)
+	}
+}

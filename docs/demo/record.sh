@@ -9,7 +9,7 @@ rm -rf "$out" && mkdir -p "$out/data"
 cp -R "$root/web/static/." "$out/"
 
 log=$(mktemp)
-"$root/bin/k8sfoams" --synthetic 20x10 --port "$port" >"$log" 2>&1 &
+"$root/bin/k8sfoams" --synthetic 20x10 --prices "$root/docs/demo/prices.csv" --port "$port" >"$log" 2>&1 &
 pid=$!
 trap 'kill $pid 2>/dev/null || true; rm -f "$log"' EXIT
 healthy=

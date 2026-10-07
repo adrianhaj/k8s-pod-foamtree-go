@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
@@ -120,12 +122,12 @@ func TestReportRoutes(t *testing.T) {
 			{Name: "pending", Namespace: "dev", CPU: 100},
 		},
 	}
-	h := newHandler(src, static, nil, nil, foam.DefaultAudit())
+	h := newHandler(pricedSource{src, foam.Prices{{Hourly: 0.1}}}, static, nil, nil, foam.DefaultAudit())
 	w := get(h, "/report.csv?context=kind")
 	want := "node,zone,pool,instance_type,node_cpu_m,node_memory_bytes,node_warnings,namespace,pod,qos," +
-		"cpu_request_m,cpu_limit_m,memory_request_bytes,memory_limit_bytes,findings\n" +
-		"minikube,z1,,,2000,1000000000,,kube-system,etcd,,150,,100000000,,\n" +
-		",,,,0,0,,dev,pending,,100,,0,,\n"
+		"cpu_request_m,cpu_limit_m,memory_request_bytes,memory_limit_bytes,findings,node_hourly_usd,pod_hourly_usd\n" +
+		"minikube,z1,,,2000,1000000000,,kube-system,etcd,,150,,100000000,,,0.100000,0.010000\n" +
+		",,,,0,0,,dev,pending,,100,,0,,,,\n"
 	if w.Code != 200 || w.Body.String() != want || src.asked != "kind" ||
 		w.Header().Get("Content-Type") != "text/csv; charset=utf-8" ||
 		w.Header().Get("Content-Disposition") != "attachment" {
@@ -195,6 +197,48 @@ func TestFlags(t *testing.T) {
 	}
 	if _, err := parseFlags([]string{"--audit-disable", "sidecars"}); err == nil || !strings.Contains(err.Error(), "ratio-asymmetry") {
 		t.Fatalf("unknown rule should list the valid ones: %v", err)
+	}
+}
+
+func TestPricesFlag(t *testing.T) {
+	dir := t.TempDir()
+	good, bad := filepath.Join(dir, "good.csv"), filepath.Join(dir, "bad.csv")
+	os.WriteFile(good, []byte("instance_type,region,capacity_type,hourly_usd\nm5.xlarge,,,0.192\n"), 0o600)
+	os.WriteFile(bad, []byte("instance_type,region,capacity_type,hourly_usd\nm5.xlarge,,,free\n"), 0o600)
+	if o, err := parseFlags([]string{"--prices", good}); err != nil || len(o.prices) != 1 {
+		t.Fatalf("good: %v %v", o.prices, err)
+	}
+	for _, f := range []string{bad, filepath.Join(dir, "missing.csv")} {
+		if _, err := parseFlags([]string{"--prices", f}); err == nil || !strings.HasPrefix(err.Error(), "--prices: ") {
+			t.Errorf("%s: %v", f, err)
+		}
+	}
+}
+
+func TestPricedResources(t *testing.T) {
+	src := &fakeSource{
+		nodes: []foam.Node{{Name: "a", CPU: 2000, Memory: 1_000_000_000, InstanceType: "m5"}, {Name: "b", CPU: 2000, Memory: 1_000_000_000}},
+		pods: []foam.Pod{{Name: "etcd", NodeName: "a", CPU: 1000, Containers: []foam.Container{{Name: "etcd", CPU: 500}}},
+			{Name: "web", NodeName: "b", CPU: 1000}},
+	}
+	h := newHandler(pricedSource{src, foam.Prices{{InstanceType: "m5", Hourly: 0.2}}}, static, nil, nil, foam.DefaultAudit())
+	var tree struct {
+		Groups []struct {
+			Label      string
+			HourlyCost *float64
+			Groups     []map[string]any
+		}
+	}
+	if err := json.Unmarshal(get(h, "/resources/cpu").Body.Bytes(), &tree); err != nil {
+		t.Fatal(err)
+	}
+	a, b := tree.Groups[0], tree.Groups[1]
+	if a.HourlyCost == nil || *a.HourlyCost != 0.2 || a.Groups[0]["hourlyCost"] != 0.1 ||
+		a.Groups[0]["groups"].([]any)[0].(map[string]any)["hourlyCost"] != 0.05 {
+		t.Errorf("priced node: %v %v", a.HourlyCost, a.Groups[0])
+	}
+	if _, ok := b.Groups[0]["hourlyCost"]; b.HourlyCost != nil || ok {
+		t.Errorf("unpriced node: %v %v", b.HourlyCost, b.Groups[0])
 	}
 }
 

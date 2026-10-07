@@ -24,6 +24,9 @@ type ReportRow struct {
 	MemoryBytes      int64    `json:"memoryBytes"`
 	MemoryLimitBytes *int64   `json:"memoryLimitBytes"`
 	Findings         []string `json:"findings"`
+	// Estimated USD per hour; null when the node has no price.
+	NodeHourlyCost *float64 `json:"nodeHourlyCost"`
+	HourlyCost     *float64 `json:"hourlyCost"`
 }
 
 // Report lists nodes by name with their pods by namespace then name, like the
@@ -42,6 +45,7 @@ func Report(nodes []Node, pods []Pod, a Audit) []ReportRow {
 		base := ReportRow{
 			Node: n.Name, Zone: n.Zone, Pool: n.Pool, InstanceType: n.InstanceType,
 			NodeCPU: n.CPU, NodeMemoryBytes: n.Memory, NodeWarnings: Warnings(n), Findings: []string{},
+			NodeHourlyCost: n.HourlyPrice,
 		}
 		if len(byNode[n.Name]) == 0 {
 			rows = append(rows, base)
@@ -74,6 +78,7 @@ func appendPods(rows []ReportRow, base ReportRow, n Node, pods []Pod, a Audit) [
 		r.Namespace, r.Pod, r.QOS = p.Namespace, p.Name, p.QOS
 		r.CPU, r.CPULimit, r.MemoryBytes, r.MemoryLimitBytes = p.CPU, p.CPULimit, p.Memory, p.MemoryLimit
 		r.Findings = Findings(p, n, a)
+		r.HourlyCost = PodCost(p, n)
 		rows = append(rows, r)
 	}
 	return rows
