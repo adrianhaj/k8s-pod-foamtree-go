@@ -105,6 +105,12 @@ components:
   - ../deploy/components/metrics
 ```
 
+Your step 3 patch replaces the container's `args`, which drops the component's flag, so add it to that list too:
+
+```yaml
+          - --metrics-addr=:9090
+```
+
 **What you'll see:** after `kubectl apply -k my-overlay`, a `k8sfoams-metrics` Service on port 9090 and pods annotated for Prometheus. `kubectl -n k8sfoams port-forward svc/k8sfoams-metrics 9090` then `curl localhost:9090/metrics` prints the `k8sfoams_*` gauges. See [Prometheus metrics](../../reference/metrics/).
 
 ## Images and releases

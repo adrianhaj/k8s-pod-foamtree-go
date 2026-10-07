@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,9 +15,8 @@ import (
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/foam"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 func TestMetricsExposition(t *testing.T) {
+	memLimit := int64(2_000_000_000)
 	src := &fakeSource{
 		started: []string{"kind"},
 		nodes: []foam.Node{
@@ -26,7 +26,7 @@ func TestMetricsExposition(t *testing.T) {
 		},
 		pods: []foam.Pod{
 			{Name: "web", Namespace: "shop", NodeName: "n1", CPU: 1000, Memory: 2_000_000_000,
-				Containers: []foam.Container{{Name: "web", CPU: 1000, Memory: 2_000_000_000, MemoryLimit: ptr[int64](2_000_000_000)}}},
+				Containers: []foam.Container{{Name: "web", CPU: 1000, Memory: 2_000_000_000, MemoryLimit: &memLimit}}},
 			{Name: "batch", Namespace: "jobs", NodeName: "n3", CPU: 500,
 				Containers: []foam.Container{{Name: "batch", CPU: 500}}},
 			{Name: "queued", Namespace: "jobs", CPU: 100, Memory: 100,
@@ -39,7 +39,10 @@ func TestMetricsExposition(t *testing.T) {
 	if w.Code != 200 || w.Header().Get("Content-Type") != "text/plain; version=0.0.4; charset=utf-8" {
 		t.Fatalf("%d %q", w.Code, w.Header().Get("Content-Type"))
 	}
-	want := `# HELP k8sfoams_capacity_cpu_cores Node CPU capacity per pool and zone.
+	want := `# HELP k8sfoams_context_up 1 when the context's watch cache answered this scrape, 0 when it failed or the default context has not started.
+# TYPE k8sfoams_context_up gauge
+k8sfoams_context_up{context="kind"} 1
+# HELP k8sfoams_capacity_cpu_cores Node CPU capacity per pool and zone.
 # TYPE k8sfoams_capacity_cpu_cores gauge
 k8sfoams_capacity_cpu_cores{context="kind",pool="",zone="b"} 8
 k8sfoams_capacity_cpu_cores{context="kind",pool="general",zone="a"} 6
@@ -88,21 +91,35 @@ k8sfoams_pending_pods{context="kind"} 1
 	}
 }
 
-// Nothing started means no samples, not an error: Prometheus still sees the
-// families and an up target.
-func TestMetricsWithNoStartedContext(t *testing.T) {
+// samples drops the HELP and TYPE lines.
+func samples(body string) []string {
+	var out []string
+	for l := range strings.Lines(body) {
+		if !strings.HasPrefix(l, "#") {
+			out = append(out, strings.TrimSuffix(l, "\n"))
+		}
+	}
+	return out
+}
+
+// A default context that has not started reads as down, not as a quiet
+// cluster: zero findings and zero pending would look healthy.
+func TestMetricsReportTheDefaultContextDownUntilStarted(t *testing.T) {
 	w := get(newMetricsHandler(&fakeSource{}, foam.DefaultAudit()), "/metrics")
-	if w.Code != 200 || strings.Contains(w.Body.String(), "{") || !strings.Contains(w.Body.String(), "# TYPE k8sfoams_pending_pods gauge") {
-		t.Fatalf("%d\n%s", w.Code, w.Body)
+	if got := samples(w.Body.String()); w.Code != 200 || !slices.Equal(got, []string{`k8sfoams_context_up{context="kind"} 0`}) {
+		t.Fatalf("%d %q", w.Code, got)
+	}
+	if !strings.Contains(w.Body.String(), "# TYPE k8sfoams_pending_pods gauge") {
+		t.Fatalf("families missing:\n%s", w.Body)
 	}
 }
 
-// One broken context must not hide the others' numbers.
-func TestMetricsSkipsAContextThatFails(t *testing.T) {
+// A context that fails reads as down, with none of its numbers.
+func TestMetricsReportAFailingContextDown(t *testing.T) {
 	src := &fakeSource{started: []string{"kind"}, err: errors.New("gone")}
 	w := get(newMetricsHandler(src, foam.DefaultAudit()), "/metrics")
-	if w.Code != 200 || strings.Contains(w.Body.String(), `context="kind"`) {
-		t.Fatalf("%d\n%s", w.Code, w.Body)
+	if got := samples(w.Body.String()); w.Code != 200 || !slices.Equal(got, []string{`k8sfoams_context_up{context="kind"} 0`}) {
+		t.Fatalf("%d %q", w.Code, got)
 	}
 }
 
@@ -184,11 +201,51 @@ func TestRunFailsWhenTheMetricsPortIsTaken(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer busy.Close()
-	o := options{host: "127.0.0.1", port: freePort(t), authMode: "none", synthetic: &syntheticSource{nodes: 1, podsPerNode: 1, now: time.Now},
-		audit: foam.DefaultAudit(), metricsAddr: busy.Addr().String()}
+	syn, _ := parseSynthetic("2x2")
+	o := options{host: "127.0.0.1", port: freePort(t), authMode: "none", synthetic: syn, audit: foam.DefaultAudit(),
+		metricsAddr: busy.Addr().String()}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := run(ctx, o); err == nil || !strings.Contains(err.Error(), "metrics") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// flakySource fails its first snapshots, as a cluster still coming up does.
+type flakySource struct {
+	*fakeSource
+	failures, calls int
+}
+
+func (f *flakySource) Snapshot(ctx context.Context, name string) ([]foam.Node, []foam.Pod, error) {
+	if f.calls++; f.calls <= f.failures {
+		return nil, nil, errors.New("connection refused")
+	}
+	return f.fakeSource.Snapshot(ctx, name)
+}
+
+// One failed start must not leave /metrics reporting the default context
+// down forever.
+func TestStartDefaultRetriesUntilTheContextStarts(t *testing.T) {
+	src := &flakySource{fakeSource: &fakeSource{}, failures: 2}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	startDefault(ctx, src, time.Millisecond)
+	if src.calls != 3 || src.asked != "" {
+		t.Fatalf("calls=%d asked=%q", src.calls, src.asked)
+	}
+}
+
+func TestStartDefaultStopsWithTheServer(t *testing.T) {
+	src := &flakySource{fakeSource: &fakeSource{}, failures: 1 << 30}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { startDefault(ctx, src, time.Hour); close(done) }()
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("still retrying after shutdown")
 	}
 }

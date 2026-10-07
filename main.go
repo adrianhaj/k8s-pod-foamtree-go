@@ -241,65 +241,70 @@ func run(ctx context.Context, o options) error {
 	}
 	// Bind every port before serving any, so a taken metrics port fails
 	// startup instead of leaving a dashboard whose alerts never fire.
-	listeners := []listener{{name: "dashboard", addr: net.JoinHostPort(o.host, strconv.Itoa(o.port)), handler: h}}
+	endpoints := []endpoint{{name: "dashboard", addr: net.JoinHostPort(o.host, strconv.Itoa(o.port)), handler: h}}
 	if o.metricsAddr != "" {
 		m := newMetricsHandler(src, o.audit)
 		if host, _, _ := net.SplitHostPort(o.metricsAddr); isLoopback(host) {
 			m = loopbackHostOnly(m)
 		}
-		listeners = append(listeners, listener{name: "metrics", addr: o.metricsAddr, handler: m})
+		endpoints = append(endpoints, endpoint{name: "metrics", addr: o.metricsAddr, path: "/metrics", handler: m})
+		go startDefault(ctx, src, 30*time.Second)
 	}
-	var servers []*http.Server
-	var bound []net.Listener
-	for _, l := range listeners {
-		ln, err := net.Listen("tcp", l.addr)
+	for i := range endpoints {
+		e := &endpoints[i]
+		ln, err := net.Listen("tcp", e.addr)
 		if err != nil {
-			for _, b := range bound {
-				b.Close()
+			for _, b := range endpoints[:i] {
+				b.ln.Close()
 			}
-			return fmt.Errorf("%s: %w", l.name, err)
+			return fmt.Errorf("%s: %w", e.name, err)
 		}
-		bound = append(bound, ln)
-		servers = append(servers, &http.Server{Handler: l.handler, ReadHeaderTimeout: 10 * time.Second})
+		e.ln, e.srv = ln, &http.Server{Handler: e.handler, ReadHeaderTimeout: 10 * time.Second}
 	}
-	if o.metricsAddr != "" {
-		// Metrics read only started contexts; start the default one, so an
-		// in-cluster scrape has numbers before anyone opens the dashboard.
-		go func() {
-			if _, _, err := src.Snapshot(ctx, ""); err != nil && ctx.Err() == nil {
-				slog.Warn("metrics: default context", "err", err)
-			}
-		}()
+	slog.Info("k8sfoams starting", "auth", o.authMode, "inCluster", o.inCluster)
+	errs := make(chan error, len(endpoints))
+	for _, e := range endpoints {
+		slog.Info("listening", "on", e.name, "url", "http://"+e.ln.Addr().String()+e.path)
+		go func() { errs <- e.srv.Serve(e.ln) }()
 	}
-	errs := make(chan error, len(servers))
-	for i, srv := range servers {
-		go func() { errs <- srv.Serve(bound[i]) }()
-	}
-	stop := func() {
-		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		for _, srv := range servers {
-			_ = srv.Shutdown(shutdown)
-		}
-	}
-	slog.Info("k8sfoams listening", "url", "http://"+bound[0].Addr().String(), "auth", o.authMode, "inCluster", o.inCluster)
-	if len(bound) > 1 {
-		slog.Info("metrics listening", "url", "http://"+bound[1].Addr().String()+"/metrics")
-	}
+	var err error
 	select {
 	case <-ctx.Done():
-		stop()
-		return nil
-	case err := <-errs:
-		// Serve only returns early on a failed accept: take the other down too.
-		stop()
-		return err
+	case err = <-errs:
+		// Serve only returns early on a failed accept: take the others down too.
 	}
+	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, e := range endpoints {
+		_ = e.srv.Shutdown(shutdown)
+	}
+	return err
 }
 
-type listener struct {
-	name, addr string
-	handler    http.Handler
+// endpoint is one port k8sfoams serves; ln and srv are set once bound.
+type endpoint struct {
+	name, addr, path string
+	handler          http.Handler
+	ln               net.Listener
+	srv              *http.Server
+}
+
+// startDefault starts the default context's watch, retrying until it syncs:
+// /metrics reads only started contexts, and in-cluster nobody may open the
+// dashboard to start it. Until then the scrape reports it down.
+func startDefault(ctx context.Context, src source, retry time.Duration) {
+	for {
+		_, _, err := src.Snapshot(ctx, "")
+		if err == nil || ctx.Err() != nil {
+			return
+		}
+		slog.Warn("metrics: default context, retrying", "in", retry, "err", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(retry):
+		}
+	}
 }
 
 func main() {
