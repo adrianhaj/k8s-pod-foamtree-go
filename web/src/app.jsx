@@ -568,7 +568,7 @@ function App() {
   const ext = activeMetric !== "cpu" && activeMetric !== "mem" && metrics.find(m => m.id === activeMetric);
   const extCell = ext && {
     label: `${ext.label} requested`, u: totals.extUsed / (totals.extCap || 1), value: fmtReq(totals.extUsed, activeMetric),
-    of: activeMetric === "cost" ? `of ${fmtCost(totals.extCap)} in priced nodes` : `of ${fmtExt(totals.extCap, activeMetric, memUnit, true)} ${extUnit(activeMetric, memUnit)}`,
+    of: activeMetric === "cost" ? `of ${fmtCost(totals.extCap)}` : `of ${fmtExt(totals.extCap, activeMetric, memUnit, true)} ${extUnit(activeMetric, memUnit)}`,
   };
   const openTab = id => setPanel(p => (p.open && p.tab === id ? { ...p, open: false } : showTab(p, id)));
 

@@ -19,7 +19,7 @@ function fmtMem(mib, unit, capacity = false) {
 // hours, OpenCost's month. The ~ marks every figure as an estimate.
 function fmtCost(hourly) {
   const m = hourly * 730;
-  return `~$${m >= 100 ? Math.round(m).toLocaleString("en-US") : m.toFixed(2)}/mo`;
+  return `~$${m >= 10 ? Math.round(m).toLocaleString("en-US") : m.toFixed(2)}/mo`;
 }
 
 function shortContext(ctx) {

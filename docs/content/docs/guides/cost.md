@@ -37,11 +37,11 @@ Costs read per month of 730 hours.
    k8sfoams --synthetic 20x10 --prices prices.csv
    ```
 
-   **What you'll see:** **Size by** in the toolbar offers **Cost**. Pick it: nodes and pods are sized by cost, and the summary strip shows `Cost requested` against the price of the priced nodes. The `r.4xlarge` and `g.4xlarge` nodes have no row in this table, so they drop out of the cost map, like nodes without GPUs drop out of a GPU map.
+   **What you'll see:** **Size by** in the toolbar offers **Cost**. Pick it: nodes and pods are sized by cost, and the summary strip shows `Cost requested` against the total price of the priced nodes. The `r.4xlarge` and `g.4xlarge` nodes have no row in this table, so they drop out of the cost map, like nodes without GPUs drop out of a GPU map.
 
 2. **Cost of a namespace.** Type `ns:team-3` in the query bar.
 
-   **What you'll see:** the match count adds the monthly cost of the matched pods, something like `22 / 200 pods · ~$91.51/mo`. Any query works the same way, so `app=svc07` prices one app.
+   **What you'll see:** the match count adds the monthly cost of the matched pods, something like `22 / 200 pods · ~$92/mo`. Any query works the same way, so `app=svc07` prices one app.
 
 3. **Cost of a workload.** Click a pod to pin its workload.
 
