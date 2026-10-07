@@ -47,6 +47,8 @@ type options struct {
 	llm                  llm.Config
 	llmHosts             string
 	audit                foam.Audit
+	// "" when metrics are off: no listener and no /metrics route anywhere.
+	metricsAddr string
 }
 
 func parseFlags(args []string) (options, error) {
@@ -77,6 +79,7 @@ func parseFlags(args []string) (options, error) {
 	fs.Float64Var(&ratio, "audit-ratio", d.RatioFactor, "flag pods whose CPU and memory shares of their node differ by this factor or more")
 	fs.Float64Var(&minShare, "audit-ratio-min-share", d.RatioMinShare*100, "skip ratio-asymmetry when the pod's larger share is under this percent")
 	fs.StringVar(&disable, "audit-disable", "", "comma-separated audit rules to turn off")
+	fs.StringVar(&o.metricsAddr, "metrics-addr", "", "serve Prometheus metrics at /metrics on this host:port, e.g. :9090; unset means no metrics")
 	fs.BoolVar(&o.version, "version", false, "print the version and exit")
 	fs.BoolVar(&o.version, "v", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil || o.version {
@@ -99,6 +102,9 @@ func parseFlags(args []string) (options, error) {
 		if err := llm.CheckBaseURL(o.llm.URL); err != nil {
 			return o, fmt.Errorf("--llm-url: %w", err)
 		}
+	}
+	if err := checkMetricsAddr(o.metricsAddr, o.port); err != nil {
+		return o, err
 	}
 	o.oidc.Scopes, o.oidc.AllowedEmails, o.oidc.AllowedGroups = list(o.scopes), list(o.emails), list(o.groups)
 	a, err := auditConfig(monolith, ratio, minShare, list(disable))
@@ -159,6 +165,26 @@ func auditConfig(monolith, ratio, minShare float64, disabled []string) (foam.Aud
 	return a, nil
 }
 
+// checkMetricsAddr refuses what would only fail at bind time, or worse bind:
+// a named or zero port picks something no scrape config expects.
+func checkMetricsAddr(addr string, dashboardPort int) error {
+	if addr == "" {
+		return nil
+	}
+	_, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("--metrics-addr wants host:port, e.g. :9090: %w", err)
+	}
+	port, err := strconv.Atoi(p)
+	switch {
+	case err != nil || port < 1 || port > 65535:
+		return fmt.Errorf("--metrics-addr port must be 1-65535, got %q", p)
+	case port == dashboardPort:
+		return fmt.Errorf("--metrics-addr must not use the dashboard's port %d", dashboardPort)
+	}
+	return nil
+}
+
 func isLoopback(host string) bool {
 	ip := net.ParseIP(host)
 	return host == "localhost" || (ip != nil && ip.IsLoopback())
@@ -213,22 +239,67 @@ func run(ctx context.Context, o options) error {
 	if a == nil && isLoopback(o.host) {
 		h = loopbackHostOnly(h)
 	}
-	srv := &http.Server{
-		Addr:              net.JoinHostPort(o.host, strconv.Itoa(o.port)),
-		Handler:           h,
-		ReadHeaderTimeout: 10 * time.Second,
+	// Bind every port before serving any, so a taken metrics port fails
+	// startup instead of leaving a dashboard whose alerts never fire.
+	listeners := []listener{{name: "dashboard", addr: net.JoinHostPort(o.host, strconv.Itoa(o.port)), handler: h}}
+	if o.metricsAddr != "" {
+		m := newMetricsHandler(src, o.audit)
+		if host, _, _ := net.SplitHostPort(o.metricsAddr); isLoopback(host) {
+			m = loopbackHostOnly(m)
+		}
+		listeners = append(listeners, listener{name: "metrics", addr: o.metricsAddr, handler: m})
 	}
-	go func() {
-		<-ctx.Done()
+	var servers []*http.Server
+	var bound []net.Listener
+	for _, l := range listeners {
+		ln, err := net.Listen("tcp", l.addr)
+		if err != nil {
+			for _, b := range bound {
+				b.Close()
+			}
+			return fmt.Errorf("%s: %w", l.name, err)
+		}
+		bound = append(bound, ln)
+		servers = append(servers, &http.Server{Handler: l.handler, ReadHeaderTimeout: 10 * time.Second})
+	}
+	if o.metricsAddr != "" {
+		// Metrics read only started contexts; start the default one, so an
+		// in-cluster scrape has numbers before anyone opens the dashboard.
+		go func() {
+			if _, _, err := src.Snapshot(ctx, ""); err != nil && ctx.Err() == nil {
+				slog.Warn("metrics: default context", "err", err)
+			}
+		}()
+	}
+	errs := make(chan error, len(servers))
+	for i, srv := range servers {
+		go func() { errs <- srv.Serve(bound[i]) }()
+	}
+	stop := func() {
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = srv.Shutdown(shutdown)
-	}()
-	slog.Info("k8sfoams listening", "url", "http://"+srv.Addr, "auth", o.authMode, "inCluster", o.inCluster)
-	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		for _, srv := range servers {
+			_ = srv.Shutdown(shutdown)
+		}
+	}
+	slog.Info("k8sfoams listening", "url", "http://"+bound[0].Addr().String(), "auth", o.authMode, "inCluster", o.inCluster)
+	if len(bound) > 1 {
+		slog.Info("metrics listening", "url", "http://"+bound[1].Addr().String()+"/metrics")
+	}
+	select {
+	case <-ctx.Done():
+		stop()
+		return nil
+	case err := <-errs:
+		// Serve only returns early on a failed accept: take the other down too.
+		stop()
 		return err
 	}
-	return nil
+}
+
+type listener struct {
+	name, addr string
+	handler    http.Handler
 }
 
 func main() {

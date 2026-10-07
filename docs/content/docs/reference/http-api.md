@@ -19,5 +19,6 @@ The routes the server registers. Reports and dry runs also take `?context=<name>
 | `POST /api/llm/chat` | takes JSON `{url?, model?, context, budget, messages}` and an optional `X-LLM-Key` header; a question is limited to 8 rounds (the last offers no lookups), 16 lookups and 64 KiB of lookup output; streams `text/event-stream` events `delta`, `tool` (one per lookup the model makes), `notice`, `error` and `done` (with `usage` and `masked`, the count of values masked before sending) |
 | `GET /api/me` | `{"auth": "none"}`, or `{"auth": "oidc", "email": "...", "name": "..."}` for the signed-in user |
 | `GET /auth/login`, `GET /auth/callback`, `POST /auth/logout` | OIDC sign-in and sign-out (only with `--auth=oidc`) |
+| `GET /metrics` | Prometheus text format, only on the `--metrics-addr` listener and never on the dashboard's port. See [Prometheus metrics](../metrics/) |
 
 An unknown `context` returns 400; an unreachable cluster or rejected credentials return 503 with the error text.

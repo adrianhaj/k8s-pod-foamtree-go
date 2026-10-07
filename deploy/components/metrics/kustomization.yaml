@@ -1,0 +1,23 @@
+# Prometheus metrics on their own port, outside OIDC. Add to your overlay:
+#   components: [../../components/metrics]
+# then scrape the k8sfoams-metrics Service, or the pod through the
+# prometheus.io annotations. Keep port 9090 off the Ingress.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - service.yaml
+patches:
+  - target: {kind: Deployment, name: k8sfoams}
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --metrics-addr=:9090
+      - op: add
+        path: /spec/template/spec/containers/0/ports/-
+        value: {name: metrics, containerPort: 9090}
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "9090"
+          prometheus.io/path: /metrics

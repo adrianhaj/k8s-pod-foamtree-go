@@ -96,6 +96,17 @@ The service account can only `get`/`list`/`watch` nodes and pods, and `get` pod 
 On Microsoft Entra ID, prefer `--oidc-allowed-groups` or a single-tenant issuer: Entra omits `email_verified`, and an email glob would trust an unverified address.
 {{< /callout >}}
 
+## Prometheus metrics
+
+To alert on headroom, pending pods and audit findings, add the metrics component to `my-overlay/kustomization.yaml`:
+
+```yaml
+components:
+  - ../deploy/components/metrics
+```
+
+**What you'll see:** after `kubectl apply -k my-overlay`, a `k8sfoams-metrics` Service on port 9090 and pods annotated for Prometheus. `kubectl -n k8sfoams port-forward svc/k8sfoams-metrics 9090` then `curl localhost:9090/metrics` prints the `k8sfoams_*` gauges. See [Prometheus metrics](../../reference/metrics/).
+
 ## Images and releases
 
 Every release publishes the image as `ghcr.io/adrianhaj/k8sfoams:<tag>` and `:latest`. Pre-release tags such as `v1.1.0-rc.1` skip `:latest`. Pin a tag in production.
