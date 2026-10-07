@@ -218,7 +218,8 @@ func TestPricesFlag(t *testing.T) {
 func TestPricedResources(t *testing.T) {
 	src := &fakeSource{
 		nodes: []foam.Node{{Name: "a", CPU: 2000, Memory: 1_000_000_000, InstanceType: "m5"}, {Name: "b", CPU: 2000, Memory: 1_000_000_000}},
-		pods:  []foam.Pod{{Name: "etcd", NodeName: "a", CPU: 1000}, {Name: "web", NodeName: "b", CPU: 1000}},
+		pods: []foam.Pod{{Name: "etcd", NodeName: "a", CPU: 1000, Containers: []foam.Container{{Name: "etcd", CPU: 500}}},
+			{Name: "web", NodeName: "b", CPU: 1000}},
 	}
 	h := newHandler(pricedSource{src, foam.Prices{{InstanceType: "m5", Hourly: 0.2}}}, static, nil, nil, foam.DefaultAudit())
 	var tree struct {
@@ -232,7 +233,8 @@ func TestPricedResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, b := tree.Groups[0], tree.Groups[1]
-	if a.HourlyCost == nil || *a.HourlyCost != 0.2 || a.Groups[0]["hourlyCost"] != 0.1 {
+	if a.HourlyCost == nil || *a.HourlyCost != 0.2 || a.Groups[0]["hourlyCost"] != 0.1 ||
+		a.Groups[0]["groups"].([]any)[0].(map[string]any)["hourlyCost"] != 0.05 {
 		t.Errorf("priced node: %v %v", a.HourlyCost, a.Groups[0])
 	}
 	if _, ok := b.Groups[0]["hourlyCost"]; b.HourlyCost != nil || ok {

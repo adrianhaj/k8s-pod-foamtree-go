@@ -29,8 +29,6 @@ const METRICS = [
   { id: "cpu", label: "CPU" },
   { id: "mem", label: "Memory" },
 ];
-// Offered only when --prices priced at least one node.
-const COST_METRIC = { id: "cost", label: "Cost" };
 
 // Sum of the priced pods' costs, null when none is priced.
 function sumCost(pods) {
@@ -109,8 +107,7 @@ function mergeResources(cpuData, memData) {
           cpu: cc.weight || 0,
           // Convert memory from kB to MiB
           mem: kbToMib(mc.weight || 0),
-          // Only proportions matter inside a pod box: the pod rule on this container.
-          cost: cg.hourlyCost != null ? cg.hourlyCost * Math.max((cc.weight || 0) / (cg.weight || 1), (mc.weight || 0) / (mg.weight || 1)) : null,
+          cost: cc.hourlyCost ?? null,
           ext: cc.extended || {}
         };
       });
@@ -434,7 +431,7 @@ function App() {
 
   const metrics = useMemo(() => {
     const keys = new Set(nodes.flatMap(n => Object.keys(n.ext)));
-    return [...METRICS, ...(nodes.some(n => n.cost != null) ? [COST_METRIC] : []), ...[...keys].sort().map(extMetric)];
+    return [...METRICS, ...(nodes.some(n => n.cost != null) ? [{ id: "cost", label: "Cost" }] : []), ...[...keys].sort().map(extMetric)];
   }, [nodes]);
   // A context without the chosen resource shows CPU; switching back restores it.
   const activeMetric = metrics.some(m => m.id === metric) ? metric : "cpu";
@@ -569,12 +566,9 @@ function App() {
   const attention = useMemo(() => attentionBySev(nodes), [nodes]);
   const showGroupBy = useMemo(() => nodes.some(n => n.zone || n.region || n.pool || n.instanceType || n.capacityType), [nodes]);
   const ext = activeMetric !== "cpu" && activeMetric !== "mem" && metrics.find(m => m.id === activeMetric);
-  const extCell = activeMetric === "cost" ? {
-    label: "Cost requested", u: totals.extUsed / (totals.extCap || 1),
-    value: fmtCost(totals.extUsed), of: `of ${fmtCost(totals.extCap)} in priced nodes`,
-  } : ext && {
-    label: `${ext.label} requested`, u: totals.extUsed / (totals.extCap || 1),
-    value: fmtExt(totals.extUsed, activeMetric, memUnit), of: `of ${fmtExt(totals.extCap, activeMetric, memUnit, true)} ${extUnit(activeMetric, memUnit)}`,
+  const extCell = ext && {
+    label: `${ext.label} requested`, u: totals.extUsed / (totals.extCap || 1), value: fmtReq(totals.extUsed, activeMetric),
+    of: activeMetric === "cost" ? `of ${fmtCost(totals.extCap)} in priced nodes` : `of ${fmtExt(totals.extCap, activeMetric, memUnit, true)} ${extUnit(activeMetric, memUnit)}`,
   };
   const openTab = id => setPanel(p => (p.open && p.tab === id ? { ...p, open: false } : showTab(p, id)));
 

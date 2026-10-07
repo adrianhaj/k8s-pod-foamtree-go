@@ -122,6 +122,8 @@ type Leaf struct {
 	Weight   float64          `json:"weight"`
 	Color    string           `json:"color,omitempty"`
 	Extended map[string]int64 `json:"extended,omitempty"`
+	// A container priced by the pod rule; absent on an unpriced node.
+	HourlyCost *float64 `json:"hourlyCost,omitempty"`
 }
 
 const (
@@ -182,7 +184,7 @@ func podGroup(p Pod, n Node, axis Axis, a Audit) PodGroup {
 	leaves := make([]Leaf, 0, len(p.Containers)+len(p.InitContainers)+1)
 	rest := axis.container(p.PodLevel)
 	for _, c := range p.Containers {
-		leaves = append(leaves, Leaf{Label: c.Name, Weight: axis.weight(axis.container(c)), Extended: c.Extended})
+		leaves = append(leaves, Leaf{Label: c.Name, Weight: axis.weight(axis.container(c)), Extended: c.Extended, HourlyCost: containerCost(c, n)})
 		rest -= axis.container(c)
 	}
 	// Pod-level budget no container claims would otherwise draw as nothing.
@@ -191,7 +193,7 @@ func podGroup(p Pod, n Node, axis Axis, a Audit) PodGroup {
 	}
 	for _, c := range p.InitContainers {
 		if w := axis.container(c); w > 0 {
-			leaves = append(leaves, Leaf{Label: c.Name + " (init)", Weight: axis.weight(w), Color: initColor, Extended: c.Extended})
+			leaves = append(leaves, Leaf{Label: c.Name + " (init)", Weight: axis.weight(w), Color: initColor, Extended: c.Extended, HourlyCost: containerCost(c, n)})
 		}
 	}
 	var rz *PodResize

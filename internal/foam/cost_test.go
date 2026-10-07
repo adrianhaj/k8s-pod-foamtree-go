@@ -34,7 +34,7 @@ func TestParsePrices(t *testing.T) {
 			t.Errorf("%s: got %v %v, want %v", tc.name, got, ok, tc.want)
 		}
 	}
-	if _, ok := p[:3].Price(Node{InstanceType: "c5.large"}); ok {
+	if _, ok := p[:len(p)-1].Price(Node{InstanceType: "c5.large"}); ok {
 		t.Error("unlisted type priced without a catch-all")
 	}
 }

@@ -42,7 +42,7 @@ func ParsePrices(r io.Reader) (Prices, error) {
 	var p Prices
 	for i, rec := range records[1:] {
 		h, err := strconv.ParseFloat(rec[3], 64)
-		if err != nil || h < 0 || math.IsInf(h, 0) || math.IsNaN(h) {
+		if err != nil || !(h >= 0) || math.IsInf(h, 1) {
 			return nil, fmt.Errorf("row %d: hourly_usd must be a number, 0 or more, got %q", i+2, rec[3])
 		}
 		if c := rec[2]; c != "" && c != "spot" && c != "on-demand" {
@@ -50,35 +50,31 @@ func ParsePrices(r io.Reader) (Prices, error) {
 		}
 		p = append(p, PriceRow{InstanceType: rec[0], Region: rec[1], CapacityType: rec[2], Hourly: h})
 	}
+	// Most specific first, file order on a tie, so Price takes the first match.
+	slices.SortStableFunc(p, func(a, b PriceRow) int { return b.specificity() - a.specificity() })
 	return p, nil
+}
+
+func (r PriceRow) specificity() int {
+	n := 0
+	for _, f := range []string{r.InstanceType, r.Region, r.CapacityType} {
+		if f != "" {
+			n++
+		}
+	}
+	return n
 }
 
 // Price is the hourly price of the most specific row matching n, the first
 // such row on a tie.
 func (p Prices) Price(n Node) (float64, bool) {
-	best, bestScore := -1, -1
-	for i, r := range p {
-		score := 0
-		for _, f := range [][2]string{{r.InstanceType, n.InstanceType}, {r.Region, n.Region}, {r.CapacityType, n.CapacityType}} {
-			switch f[0] {
-			case "":
-			case f[1]:
-				score++
-			default:
-				score = -1
-			}
-			if score < 0 {
-				break
-			}
-		}
-		if score > bestScore {
-			best, bestScore = i, score
+	m := func(want, got string) bool { return want == "" || want == got }
+	for _, r := range p {
+		if m(r.InstanceType, n.InstanceType) && m(r.Region, n.Region) && m(r.CapacityType, n.CapacityType) {
+			return r.Hourly, true
 		}
 	}
-	if best < 0 {
-		return 0, false
-	}
-	return p[best].Hourly, true
+	return 0, false
 }
 
 // PodCost charges a pod its node's price times its larger share of the node,
@@ -90,4 +86,8 @@ func PodCost(p Pod, n Node) *float64 {
 	}
 	c := *n.HourlyPrice * max(share(float64(p.CPU), float64(n.CPU)), share(float64(p.Memory), float64(n.Memory)))
 	return &c
+}
+
+func containerCost(c Container, n Node) *float64 {
+	return PodCost(Pod{CPU: c.CPU, Memory: c.Memory}, n)
 }

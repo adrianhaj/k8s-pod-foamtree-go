@@ -162,10 +162,18 @@ type pricedSource struct {
 
 func (s pricedSource) Snapshot(ctx context.Context, name string) ([]foam.Node, []foam.Pod, error) {
 	nodes, pods, err := s.source.Snapshot(ctx, name)
-	for i := range nodes {
-		if p, ok := s.prices.Price(nodes[i]); ok {
-			nodes[i].HourlyPrice = &p
+	// Nodes share a few label combinations: scan the table once for each.
+	seen := map[[3]string]*float64{}
+	for i, n := range nodes {
+		k := [3]string{n.InstanceType, n.Region, n.CapacityType}
+		p, ok := seen[k]
+		if !ok {
+			if v, found := s.prices.Price(n); found {
+				p = &v
+			}
+			seen[k] = p
 		}
+		nodes[i].HourlyPrice = p
 	}
 	return nodes, pods, err
 }
