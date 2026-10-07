@@ -32,6 +32,8 @@ type fakeSource struct {
 	logReq kube.LogRequest
 	// Contexts whose watches /metrics may read.
 	started []string
+	// nil means one active context, "kind".
+	contexts []kube.Context
 }
 
 func (f *fakeSource) Started() []string { return f.started }
@@ -45,6 +47,9 @@ func (f *fakeSource) Logs(_ context.Context, name string, req kube.LogRequest) (
 }
 
 func (f *fakeSource) Contexts() ([]kube.Context, error) {
+	if f.contexts != nil {
+		return f.contexts, nil
+	}
 	return []kube.Context{{Context: "kind", Active: true}}, nil
 }
 

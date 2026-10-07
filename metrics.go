@@ -19,11 +19,27 @@ import (
 func newMetricsHandler(src source, audit foam.Audit) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
-		var clusters []cluster
-		if name, ok := defaultNotStarted(src); ok {
-			clusters = append(clusters, cluster{name: name})
+		// Read the started set once: the startup goroutine may finish a
+		// context mid-scrape, and listing it both down and up would make a
+		// duplicate series.
+		started := src.Started()
+		contexts, err := src.Contexts()
+		if err != nil {
+			slog.Warn("metrics", "err", err)
 		}
-		for _, name := range src.Started() {
+		var clusters []cluster
+		known := map[string]bool{}
+		for _, c := range contexts {
+			known[c.Context] = true
+			if c.Active && !slices.Contains(started, c.Context) {
+				clusters = append(clusters, cluster{name: c.Context})
+			}
+		}
+		for _, name := range started {
+			// Gone from kubeconfig: its cache lingers, its alert should not.
+			if !known[name] {
+				continue
+			}
 			ctx, cancel := context.WithTimeout(r.Context(), snapshotTimeout)
 			nodes, pods, err := src.Snapshot(ctx, name)
 			cancel()
@@ -43,22 +59,6 @@ func newMetricsHandler(src source, audit foam.Audit) http.Handler {
 		}
 	})
 	return mux
-}
-
-// defaultNotStarted names the default context while its watch has not
-// started, so the scrape reports it down rather than leaving it out.
-func defaultNotStarted(src source) (string, bool) {
-	cs, err := src.Contexts()
-	if err != nil {
-		slog.Warn("metrics", "err", err)
-		return "", false
-	}
-	for _, c := range cs {
-		if c.Active && !slices.Contains(src.Started(), c.Context) {
-			return c.Context, true
-		}
-	}
-	return "", false
 }
 
 // cluster is one context's scrape; summary is nil when it is down.
@@ -93,7 +93,7 @@ func ratio(used, total int64) float64 {
 }
 
 var families = []family{
-	{"k8sfoams_context_up", "1 when the context's watch cache answered this scrape, 0 when it failed or the default context has not started.", true, func(emit emitFunc, c cluster) {
+	{"k8sfoams_context_up", "1 when the context's watch cache answered this scrape, 0 when it failed or the current context has not started.", true, func(emit emitFunc, c cluster) {
 		up := 0.0
 		if c.summary != nil {
 			up = 1

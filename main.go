@@ -248,7 +248,6 @@ func run(ctx context.Context, o options) error {
 			m = loopbackHostOnly(m)
 		}
 		endpoints = append(endpoints, endpoint{name: "metrics", addr: o.metricsAddr, path: "/metrics", handler: m})
-		go startDefault(ctx, src, 30*time.Second)
 	}
 	for i := range endpoints {
 		e := &endpoints[i]
@@ -260,6 +259,9 @@ func run(ctx context.Context, o options) error {
 			return fmt.Errorf("%s: %w", e.name, err)
 		}
 		e.ln, e.srv = ln, &http.Server{Handler: e.handler, ReadHeaderTimeout: 10 * time.Second}
+	}
+	if o.metricsAddr != "" {
+		go startDefault(ctx, src, 30*time.Second)
 	}
 	slog.Info("k8sfoams starting", "auth", o.authMode, "inCluster", o.inCluster)
 	errs := make(chan error, len(endpoints))
@@ -289,22 +291,51 @@ type endpoint struct {
 	srv              *http.Server
 }
 
-// startDefault starts the default context's watch, retrying until it syncs:
-// /metrics reads only started contexts, and in-cluster nobody may open the
-// dashboard to start it. Until then the scrape reports it down.
+var errNoCurrentContext = errors.New("kubeconfig has no current context")
+
+// startDefault keeps the current context's watch started for as long as the
+// server runs: /metrics reads only started contexts, and in-cluster nobody
+// may open the dashboard to start one. Every retry it starts the current
+// context if it is not yet, so a failed start or a `kubectl config
+// use-context` catches up. Until then the scrape reports it down. An error
+// is logged when it changes, not every retry.
 func startDefault(ctx context.Context, src source, retry time.Duration) {
+	var last string
 	for {
-		_, _, err := src.Snapshot(ctx, "")
-		if err == nil || ctx.Err() != nil {
+		err := startCurrent(ctx, src)
+		switch {
+		case ctx.Err() != nil:
 			return
+		case err == nil:
+			last = ""
+		case err.Error() != last:
+			last = err.Error()
+			slog.Warn("metrics: current context not started, retrying", "every", retry, "err", err)
 		}
-		slog.Warn("metrics: default context, retrying", "in", retry, "err", err)
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(retry):
 		}
 	}
+}
+
+func startCurrent(ctx context.Context, src source) error {
+	contexts, err := src.Contexts()
+	if err != nil {
+		return err
+	}
+	for _, c := range contexts {
+		if !c.Active {
+			continue
+		}
+		if slices.Contains(src.Started(), c.Context) {
+			return nil
+		}
+		_, _, err := src.Snapshot(ctx, c.Context)
+		return err
+	}
+	return errNoCurrentContext
 }
 
 func main() {

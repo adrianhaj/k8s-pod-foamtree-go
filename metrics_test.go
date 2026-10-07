@@ -9,10 +9,12 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/foam"
+	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/kube"
 )
 
 func TestMetricsExposition(t *testing.T) {
@@ -39,7 +41,7 @@ func TestMetricsExposition(t *testing.T) {
 	if w.Code != 200 || w.Header().Get("Content-Type") != "text/plain; version=0.0.4; charset=utf-8" {
 		t.Fatalf("%d %q", w.Code, w.Header().Get("Content-Type"))
 	}
-	want := `# HELP k8sfoams_context_up 1 when the context's watch cache answered this scrape, 0 when it failed or the default context has not started.
+	want := `# HELP k8sfoams_context_up 1 when the context's watch cache answered this scrape, 0 when it failed or the current context has not started.
 # TYPE k8sfoams_context_up gauge
 k8sfoams_context_up{context="kind"} 1
 # HELP k8sfoams_capacity_cpu_cores Node CPU capacity per pool and zone.
@@ -125,7 +127,8 @@ func TestMetricsReportAFailingContextDown(t *testing.T) {
 
 // Context names come from kubeconfig and can hold anything.
 func TestMetricsEscapesLabelValues(t *testing.T) {
-	src := &fakeSource{started: []string{"a\"b\\c\nd"}}
+	name := "a\"b\\c\nd"
+	src := &fakeSource{started: []string{name}, contexts: []kube.Context{{Context: name, Active: true}}}
 	w := get(newMetricsHandler(src, foam.DefaultAudit()), "/metrics")
 	if !strings.Contains(w.Body.String(), `k8sfoams_pending_pods{context="a\"b\\c\nd"} 0`) {
 		t.Fatalf("%s", w.Body)
@@ -211,33 +214,127 @@ func TestRunFailsWhenTheMetricsPortIsTaken(t *testing.T) {
 	}
 }
 
-// flakySource fails its first snapshots, as a cluster still coming up does.
-type flakySource struct {
+// lateSource finishes starting "kind" right after the first Started call,
+// as the startup goroutine can mid-scrape.
+type lateSource struct {
 	*fakeSource
-	failures, calls int
+	calls int
 }
 
-func (f *flakySource) Snapshot(ctx context.Context, name string) ([]foam.Node, []foam.Pod, error) {
-	if f.calls++; f.calls <= f.failures {
+func (l *lateSource) Started() []string {
+	if l.calls++; l.calls == 1 {
+		return nil
+	}
+	return []string{"kind"}
+}
+
+// One scrape lists each context once: a duplicate series with a 0 and a 1
+// would make Prometheus reject the scrape.
+func TestMetricsListEachContextOnce(t *testing.T) {
+	w := get(newMetricsHandler(&lateSource{fakeSource: &fakeSource{}}, foam.DefaultAudit()), "/metrics")
+	if n := strings.Count(w.Body.String(), "k8sfoams_context_up{"); n != 1 {
+		t.Fatalf("%d context_up samples:\n%s", n, w.Body)
+	}
+}
+
+// A context removed from kubeconfig keeps its cache but is no longer
+// reported, so its alert stops instead of firing forever.
+func TestMetricsLeaveOutAContextGoneFromKubeconfig(t *testing.T) {
+	src := &fakeSource{started: []string{"kind", "staging"}}
+	w := get(newMetricsHandler(src, foam.DefaultAudit()), "/metrics")
+	if body := w.Body.String(); strings.Contains(body, "staging") || !strings.Contains(body, `k8sfoams_context_up{context="kind"} 1`) {
+		t.Fatalf("%s", body)
+	}
+}
+
+// watchSource is a kubeconfig whose current context can change, with
+// started watches like kube.Source; safe for startDefault's goroutine.
+type watchSource struct {
+	fakeSource
+	mu       sync.Mutex
+	active   string
+	failures int
+	started  []string
+	asked    []string
+}
+
+func (w *watchSource) Contexts() ([]kube.Context, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	var out []kube.Context
+	for _, name := range []string{"a", "b"} {
+		out = append(out, kube.Context{Context: name, Active: name == w.active})
+	}
+	return out, nil
+}
+
+func (w *watchSource) Started() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return slices.Clone(w.started)
+}
+
+func (w *watchSource) Snapshot(_ context.Context, name string) ([]foam.Node, []foam.Pod, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.asked = append(w.asked, name)
+	if w.failures > 0 {
+		w.failures--
 		return nil, nil, errors.New("connection refused")
 	}
-	return f.fakeSource.Snapshot(ctx, name)
+	w.started = append(w.started, name)
+	return nil, nil, nil
 }
 
-// One failed start must not leave /metrics reporting the default context
-// down forever.
-func TestStartDefaultRetriesUntilTheContextStarts(t *testing.T) {
-	src := &flakySource{fakeSource: &fakeSource{}, failures: 2}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func (w *watchSource) set(active string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.active = active
+}
+
+// eventually polls until the startup loop has caught up.
+func eventually(t *testing.T, ok func() bool) {
+	t.Helper()
+	for range 500 {
+		if ok() {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatal("condition never held")
+}
+
+// The default context is retried until it starts, and a later switch of
+// kubeconfig's current context starts the new one too.
+func TestStartDefaultFollowsTheCurrentContext(t *testing.T) {
+	src := &watchSource{active: "a", failures: 2}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { startDefault(ctx, src, time.Millisecond); close(done) }()
+	defer func() { cancel(); <-done }()
+	eventually(t, func() bool { return slices.Equal(src.Started(), []string{"a"}) })
+	src.set("b")
+	eventually(t, func() bool { return slices.Equal(src.Started(), []string{"a", "b"}) })
+	src.mu.Lock()
+	defer src.mu.Unlock()
+	if !slices.Equal(src.asked, []string{"a", "a", "a", "b"}) {
+		t.Fatalf("asked %q: a started context must not be snapshotted again", src.asked)
+	}
+}
+
+// With no current context there is nothing to start: no snapshot.
+func TestStartDefaultWaitsForACurrentContext(t *testing.T) {
+	src := &watchSource{}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	startDefault(ctx, src, time.Millisecond)
-	if src.calls != 3 || src.asked != "" {
-		t.Fatalf("calls=%d asked=%q", src.calls, src.asked)
+	if len(src.asked) != 0 {
+		t.Fatalf("asked %q", src.asked)
 	}
 }
 
 func TestStartDefaultStopsWithTheServer(t *testing.T) {
-	src := &flakySource{fakeSource: &fakeSource{}, failures: 1 << 30}
+	src := &watchSource{active: "a", failures: 1 << 30}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { startDefault(ctx, src, time.Hour); close(done) }()

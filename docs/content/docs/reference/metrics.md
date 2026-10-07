@@ -7,11 +7,11 @@ With `--metrics-addr`, k8sfoams serves `GET /metrics` in the Prometheus text for
 
 The metrics listener serves only `/metrics`: no dashboard, no API and no OIDC sign-in. Keep its port off your Ingress. Startup fails on a malformed address, a port outside 1–65535, the dashboard's own `--port`, or a port already in use.
 
-Every scrape reads the watch cache of each context that has already started: the default context, which k8sfoams starts when metrics are on and retries every 30 seconds until it syncs, and any other context a viewer has opened. A scrape never starts a watch. Every sample carries a `context` label.
+Every scrape reads the watch cache of each context that has already started: kubeconfig's current context, which k8sfoams keeps started while metrics are on (it checks every 30 seconds, so a failed start or a `kubectl config use-context` catches up), and any other context a viewer has opened. A scrape never starts a watch. A context removed from kubeconfig drops out of the metrics. Every sample carries a `context` label.
 
 | Metric | Labels | |
 | --- | --- | --- |
-| `k8sfoams_context_up` | `context` | `1` when the context's watch cache answered this scrape; `0` when it failed, or for the default context before it has started. A context that is down has no other samples |
+| `k8sfoams_context_up` | `context` | `1` when the context's watch cache answered this scrape; `0` when it failed, or for the current context before it has started. A context that is down has no other samples |
 | `k8sfoams_capacity_cpu_cores` | `context`, `pool`, `zone` | node CPU capacity, summed |
 | `k8sfoams_headroom_cpu_cores` | `context`, `pool`, `zone` | CPU capacity no pod requests: the empty foam |
 | `k8sfoams_capacity_memory_bytes` | `context`, `pool`, `zone` | node memory capacity, summed |
