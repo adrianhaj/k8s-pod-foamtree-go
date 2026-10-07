@@ -189,7 +189,12 @@ func podGroup(p Pod, n Node, axis Axis, a Audit) PodGroup {
 	}
 	// Pod-level budget no container claims would otherwise draw as nothing.
 	if rest > 0 {
-		leaves = append(leaves, Leaf{Label: "(pod-level)", Weight: axis.weight(rest)})
+		unclaimed := p.PodLevel
+		for _, c := range p.Containers {
+			unclaimed.CPU, unclaimed.Memory = unclaimed.CPU-c.CPU, unclaimed.Memory-c.Memory
+		}
+		unclaimed.CPU, unclaimed.Memory = max(unclaimed.CPU, 0), max(unclaimed.Memory, 0)
+		leaves = append(leaves, Leaf{Label: "(pod-level)", Weight: axis.weight(rest), HourlyCost: containerCost(unclaimed, n)})
 	}
 	for _, c := range p.InitContainers {
 		if w := axis.container(c); w > 0 {

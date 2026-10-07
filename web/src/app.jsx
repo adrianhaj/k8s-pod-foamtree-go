@@ -30,11 +30,14 @@ const METRICS = [
   { id: "mem", label: "Memory" },
 ];
 
-// Sum of the priced pods' costs, null when none is priced.
-function sumCost(pods) {
-  let total = null;
-  for (const p of pods) if (p.cost != null) total = (total || 0) + p.cost;
-  return total;
+// "~$60/mo", plus how many pods it leaves out; null when none is priced.
+function costNote(pods) {
+  let total = null, unpriced = 0;
+  for (const p of pods) {
+    if (p.cost == null) unpriced++;
+    else total = (total || 0) + p.cost;
+  }
+  return total == null ? null : fmtCost(total) + (unpriced ? ` (${unpriced} unpriced)` : "");
 }
 
 // Extended resources become metrics when a node offers them. Byte-sized ones
@@ -456,7 +459,7 @@ function App() {
       }
     }
     return { active, pods, dimNodes, count: active ? pods.size : total, total, errors: parsedQuery.errors,
-      cost: active ? sumCost(pods) : null };
+      cost: active ? costNote(pods) : null };
   }, [nodes, parsedQuery]);
 
   const changeLists = useMemo(() => changes ? {
@@ -491,7 +494,7 @@ function App() {
         spread.add(n.name);
       }
     }
-    return { key: selectedWorkload, replicas: pods.length, nodes: spread.size, cost: sumCost(pods) };
+    return { key: selectedWorkload, replicas: pods.length, nodes: spread.size, cost: costNote(pods) };
   }, [nodes, selectedWorkload]);
 
   // Totals
@@ -718,7 +721,7 @@ function QueryBar({ query, setQuery, match, hintOpen, setHintOpen }) {
           placeholder="Filter pods, e.g. ns:payments qos:Burstable app=api" />
         {counting && (
           <span className={`query-count ${match.count === 0 ? "query-count-none" : ""}`}>
-            {match.count} / {match.total} pods{match.cost != null && ` · ${fmtCost(match.cost)}`}
+            {match.count} / {match.total} pods{match.cost && ` · ${match.cost}`}
           </span>
         )}
         {query && <button className="search-clear" onClick={() => setQuery("")}>×</button>}

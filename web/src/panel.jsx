@@ -2,7 +2,7 @@
 // presentation only; App owns the state and hands each tab its data.
 
 const { Icon, SevGlyph } = window.k8sIcons;
-const { clock, fmtCost } = window.k8sFormat;
+const { clock } = window.k8sFormat;
 
 const TABS = [
   { id: "problems", label: "Problems" },
@@ -187,7 +187,7 @@ function MapChips({ lit, ring, litPod, workload, onClearWorkload, onLogs, at, on
       {at != null && <span className="chip">History · {clock(at)}<button onClick={onLive}>Back to live</button></span>}
       {workload && (
         <span className="chip chip-wl" title={workload.key}>
-          <span>{workload.key} · {workload.replicas} replica{workload.replicas === 1 ? "" : "s"} · {workload.nodes} node{workload.nodes === 1 ? "" : "s"}{workload.cost != null && ` · ${fmtCost(workload.cost)}`}</span>
+          <span>{workload.key} · {workload.replicas} replica{workload.replicas === 1 ? "" : "s"} · {workload.nodes} node{workload.nodes === 1 ? "" : "s"}{workload.cost && ` · ${workload.cost}`}</span>
           <button className="chip-act" onClick={onLogs} title="Open logs for this workload">Logs</button>
           <button onClick={onClearWorkload} aria-label="Clear selection (Esc)">×</button>
         </span>

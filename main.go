@@ -154,7 +154,7 @@ func loadPrices(name string) (foam.Prices, error) {
 }
 
 // pricedSource stamps each node's price on every snapshot, so the map, the
-// reports and the assistant all see the same costs.
+// reports read the same costs.
 type pricedSource struct {
 	source
 	prices foam.Prices

@@ -49,6 +49,37 @@ func TestParsePricesFirstRowWinsTies(t *testing.T) {
 	}
 }
 
+func TestPriceRanking(t *testing.T) {
+	p, err := ParsePrices(strings.NewReader("\ufeffinstance_type,region,capacity_type,hourly_usd\n" +
+		",eu-west-1,spot,0.05\n g5.12xlarge , ,,5.67\nm5.xlarge,,on-demand,0.19\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name string
+		node Node
+		want float64
+		ok   bool
+	}{
+		{"instance type beats region and spot", Node{InstanceType: "g5.12xlarge", Region: "eu-west-1", CapacityType: "spot"}, 5.67, true},
+		{"region and spot without a type row", Node{InstanceType: "c5.large", Region: "eu-west-1", CapacityType: "spot"}, 0.05, true},
+		{"on-demand matches an unlabelled node", Node{InstanceType: "m5.xlarge"}, 0.19, true},
+		{"on-demand never matches spot", Node{InstanceType: "m5.xlarge", CapacityType: "spot"}, 0, false},
+	}
+	for _, tc := range cases {
+		if got, ok := p.Price(tc.node); ok != tc.ok || got != tc.want {
+			t.Errorf("%s: got %v %v, want %v %v", tc.name, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+func TestParsePricesErrorLine(t *testing.T) {
+	_, err := ParsePrices(strings.NewReader("# prices\ninstance_type,region,capacity_type,hourly_usd\n# m5\nm5.xlarge,,,free\n"))
+	if err == nil || !strings.HasPrefix(err.Error(), "line 4:") {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestParsePricesRejects(t *testing.T) {
 	const header = "instance_type,region,capacity_type,hourly_usd\n"
 	for name, in := range map[string]string{

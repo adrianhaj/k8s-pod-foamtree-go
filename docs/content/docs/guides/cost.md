@@ -20,7 +20,11 @@ m5.xlarge,eu-west-1,spot,0.07
 ,,,0.10
 ```
 
-A blank cell matches any value. A node takes the row that matches the most of its instance type, region and capacity type (`spot` or `on-demand`, from the node labels the map's [topology grouping](../reading-the-map/#topology) reads); on a tie the first row wins. The last row above is a catch-all for every other node. A node no row matches stays **unpriced**: it has no cost anywhere rather than a cost of $0. A malformed file stops the server at startup.
+A blank cell matches any value, and cells are trimmed, so a CSV saved from Excel works as is. A node takes the most specific matching row: a row naming the instance type beats any row that does not, then region beats capacity type; on a tie the first row wins. The last row above is a catch-all for every other node.
+
+Capacity type is `spot` or `on-demand`, from the node labels the map's [topology grouping](../reading-the-map/#topology) reads. GKE and self-managed EKS label only their spot nodes, so an `on-demand` row also matches a node with no capacity label.
+
+A node no row matches stays **unpriced**: it has no cost anywhere rather than a cost of $0, and a total over pods says how many it leaves out. A malformed file stops the server at startup, naming the line.
 
 ## How a pod is charged
 
@@ -41,11 +45,11 @@ Costs read per month of 730 hours.
 
 2. **Cost of a namespace.** Type `ns:team-3` in the query bar.
 
-   **What you'll see:** the match count adds the monthly cost of the matched pods, something like `22 / 200 pods · ~$92/mo`. Any query works the same way, so `app=svc07` prices one app.
+   **What you'll see:** the match count adds the monthly cost of the matched pods, something like `22 / 200 pods · ~$92/mo (8 unpriced)`: 8 of them run on the `r.4xlarge` and `g.4xlarge` nodes this table leaves unpriced. Any query works the same way, so `app=svc07` prices one app.
 
 3. **Cost of a workload.** Click a pod to pin its workload.
 
-   **What you'll see:** the workload chip adds the cost of all its replicas.
+   **What you'll see:** the workload chip adds the cost of all its replicas, with the same unpriced count.
 
 4. **Cost per pod.** Click a node.
 
