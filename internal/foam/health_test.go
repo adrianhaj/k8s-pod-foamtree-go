@@ -153,6 +153,15 @@ func TestAuditRulesCoverFindings(t *testing.T) {
 	}
 }
 
+// /metrics counts nodes per slug from this list, so a new warning must join it.
+func TestNodeWarningsCoverWarnings(t *testing.T) {
+	worst := Node{Unschedulable: true, Taints: []Taint{{Key: "k", Effect: "NoExecute"}},
+		Conditions: map[string]bool{"Ready": false, "MemoryPressure": true, "DiskPressure": true, "PIDPressure": true}}
+	if got := Warnings(worst); !slices.Equal(got, NodeWarnings) {
+		t.Fatalf("emitted %v, NodeWarnings %v", got, NodeWarnings)
+	}
+}
+
 func without(rules ...string) Audit {
 	a := DefaultAudit()
 	for _, r := range rules {

@@ -139,6 +139,21 @@ func (s *Source) Snapshot(ctx context.Context, name string) ([]foam.Node, []foam
 	return nodes, pods, nil
 }
 
+// Started lists, sorted, the contexts whose watches hold their initial list:
+// what /metrics reports on without starting a watch of its own.
+func (s *Source) Started() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	for name, c := range s.caches {
+		if c.nodes.HasSynced() && c.pods.HasSynced() {
+			out = append(out, name)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // Logs returns the newest MaxLogBytes of one container's logs through the
 // context's cached client, starting its watches if this is the first request
 // for that context.

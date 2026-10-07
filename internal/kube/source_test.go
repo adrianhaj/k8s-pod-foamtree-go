@@ -134,6 +134,39 @@ func TestSnapshotRecoversAfterFailedFirstSync(t *testing.T) {
 	}
 }
 
+// /metrics reports only on contexts a viewer has already opened, and must
+// not start a watch itself.
+func TestStartedListsSyncedContexts(t *testing.T) {
+	s := testSource(t, fake.NewClientset())
+	if got := s.Started(); len(got) != 0 {
+		t.Fatalf("before any snapshot: %v", got)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, name := range []string{"kind-b", "kind-a"} {
+		if _, _, err := s.Snapshot(ctx, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := s.Started(); !reflect.DeepEqual(got, []string{"kind-a", "kind-b"}) {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestStartedSkipsAFailedContext(t *testing.T) {
+	cs := fake.NewClientset()
+	cs.PrependReactor("list", "*", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("Unauthorized")
+	})
+	s := testSource(t, cs)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	s.Snapshot(ctx, "kind-a")
+	if got := s.Started(); len(got) != 0 {
+		t.Fatalf("got %v", got)
+	}
+}
+
 // The fake clientset ignores field selectors, so this pins the request shape
 // itself: dropping activePods would pass every other test silently.
 func TestSnapshotFiltersPodsByFieldSelector(t *testing.T) {

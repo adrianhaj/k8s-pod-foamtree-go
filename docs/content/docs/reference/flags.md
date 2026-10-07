@@ -29,5 +29,6 @@ weight: 1
 | `--audit-ratio` | `4` | `ratio asymmetry` factor (finite, above 1) |
 | `--audit-ratio-min-share` | `10` | the larger share in percent, [0, 100], under which a pod is skipped |
 | `--audit-disable` | | comma-separated rules to turn off: `missing-requests`, `missing-limits`, `monolith`, `ratio-asymmetry`, `crashloop`, `oom-killed`, `image-pull`, `resize-deferred`, `resize-infeasible` |
+| `--metrics-addr` | | serve [Prometheus metrics](../metrics/) at `/metrics` on this `host:port`, e.g. `:9090`, outside OIDC; unset means no metrics listener. The port must be 1–65535 and differ from `--port` |
 
 Secrets come from the environment only: `K8SFOAMS_OIDC_CLIENT_SECRET`, `K8SFOAMS_SESSION_KEY` (32 bytes, base64; unset means a random key, so sessions end on restart), and `K8SFOAMS_LLM_API_KEY`, or `--llm-api-key-file` for a mounted Secret.

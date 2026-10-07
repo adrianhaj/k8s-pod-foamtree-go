@@ -47,6 +47,8 @@ type options struct {
 	llm                  llm.Config
 	llmHosts             string
 	audit                foam.Audit
+	// "" when metrics are off: no listener and no /metrics route anywhere.
+	metricsAddr string
 }
 
 func parseFlags(args []string) (options, error) {
@@ -77,6 +79,7 @@ func parseFlags(args []string) (options, error) {
 	fs.Float64Var(&ratio, "audit-ratio", d.RatioFactor, "flag pods whose CPU and memory shares of their node differ by this factor or more")
 	fs.Float64Var(&minShare, "audit-ratio-min-share", d.RatioMinShare*100, "skip ratio-asymmetry when the pod's larger share is under this percent")
 	fs.StringVar(&disable, "audit-disable", "", "comma-separated audit rules to turn off")
+	fs.StringVar(&o.metricsAddr, "metrics-addr", "", "serve Prometheus metrics at /metrics on this host:port, e.g. :9090; unset means no metrics")
 	fs.BoolVar(&o.version, "version", false, "print the version and exit")
 	fs.BoolVar(&o.version, "v", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil || o.version {
@@ -99,6 +102,9 @@ func parseFlags(args []string) (options, error) {
 		if err := llm.CheckBaseURL(o.llm.URL); err != nil {
 			return o, fmt.Errorf("--llm-url: %w", err)
 		}
+	}
+	if err := checkMetricsAddr(o.metricsAddr, o.port); err != nil {
+		return o, err
 	}
 	o.oidc.Scopes, o.oidc.AllowedEmails, o.oidc.AllowedGroups = list(o.scopes), list(o.emails), list(o.groups)
 	a, err := auditConfig(monolith, ratio, minShare, list(disable))
@@ -159,6 +165,26 @@ func auditConfig(monolith, ratio, minShare float64, disabled []string) (foam.Aud
 	return a, nil
 }
 
+// checkMetricsAddr refuses what would only fail at bind time, or worse bind:
+// a named or zero port picks something no scrape config expects.
+func checkMetricsAddr(addr string, dashboardPort int) error {
+	if addr == "" {
+		return nil
+	}
+	_, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("--metrics-addr wants host:port, e.g. :9090: %w", err)
+	}
+	port, err := strconv.Atoi(p)
+	switch {
+	case err != nil || port < 1 || port > 65535:
+		return fmt.Errorf("--metrics-addr port must be 1-65535, got %q", p)
+	case port == dashboardPort:
+		return fmt.Errorf("--metrics-addr must not use the dashboard's port %d", dashboardPort)
+	}
+	return nil
+}
+
 func isLoopback(host string) bool {
 	ip := net.ParseIP(host)
 	return host == "localhost" || (ip != nil && ip.IsLoopback())
@@ -213,22 +239,103 @@ func run(ctx context.Context, o options) error {
 	if a == nil && isLoopback(o.host) {
 		h = loopbackHostOnly(h)
 	}
-	srv := &http.Server{
-		Addr:              net.JoinHostPort(o.host, strconv.Itoa(o.port)),
-		Handler:           h,
-		ReadHeaderTimeout: 10 * time.Second,
+	// Bind every port before serving any, so a taken metrics port fails
+	// startup instead of leaving a dashboard whose alerts never fire.
+	endpoints := []endpoint{{name: "dashboard", addr: net.JoinHostPort(o.host, strconv.Itoa(o.port)), handler: h}}
+	if o.metricsAddr != "" {
+		m := newMetricsHandler(src, o.audit)
+		if host, _, _ := net.SplitHostPort(o.metricsAddr); isLoopback(host) {
+			m = loopbackHostOnly(m)
+		}
+		endpoints = append(endpoints, endpoint{name: "metrics", addr: o.metricsAddr, path: "/metrics", handler: m})
 	}
-	go func() {
-		<-ctx.Done()
-		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(shutdown)
-	}()
-	slog.Info("k8sfoams listening", "url", "http://"+srv.Addr, "auth", o.authMode, "inCluster", o.inCluster)
-	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+	for i := range endpoints {
+		e := &endpoints[i]
+		ln, err := net.Listen("tcp", e.addr)
+		if err != nil {
+			for _, b := range endpoints[:i] {
+				b.ln.Close()
+			}
+			return fmt.Errorf("%s: %w", e.name, err)
+		}
+		e.ln, e.srv = ln, &http.Server{Handler: e.handler, ReadHeaderTimeout: 10 * time.Second}
+	}
+	if o.metricsAddr != "" {
+		go startDefault(ctx, src, 30*time.Second)
+	}
+	slog.Info("k8sfoams starting", "auth", o.authMode, "inCluster", o.inCluster)
+	errs := make(chan error, len(endpoints))
+	for _, e := range endpoints {
+		slog.Info("listening", "on", e.name, "url", "http://"+e.ln.Addr().String()+e.path)
+		go func() { errs <- e.srv.Serve(e.ln) }()
+	}
+	var err error
+	select {
+	case <-ctx.Done():
+	case err = <-errs:
+		// Serve only returns early on a failed accept: take the others down too.
+	}
+	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, e := range endpoints {
+		_ = e.srv.Shutdown(shutdown)
+	}
+	return err
+}
+
+// endpoint is one port k8sfoams serves; ln and srv are set once bound.
+type endpoint struct {
+	name, addr, path string
+	handler          http.Handler
+	ln               net.Listener
+	srv              *http.Server
+}
+
+var errNoCurrentContext = errors.New("kubeconfig has no current context")
+
+// startDefault keeps the current context's watch started for as long as the
+// server runs: /metrics reads only started contexts, and in-cluster nobody
+// may open the dashboard to start one. Every retry it starts the current
+// context if it is not yet, so a failed start or a `kubectl config
+// use-context` catches up. Until then the scrape reports it down. An error
+// is logged when it changes, not every retry.
+func startDefault(ctx context.Context, src source, retry time.Duration) {
+	var last string
+	for {
+		err := startCurrent(ctx, src)
+		switch {
+		case ctx.Err() != nil:
+			return
+		case err == nil:
+			last = ""
+		case err.Error() != last:
+			last = err.Error()
+			slog.Warn("metrics: current context not started, retrying", "every", retry, "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(retry):
+		}
+	}
+}
+
+func startCurrent(ctx context.Context, src source) error {
+	contexts, err := src.Contexts()
+	if err != nil {
 		return err
 	}
-	return nil
+	for _, c := range contexts {
+		if !c.Active {
+			continue
+		}
+		if slices.Contains(src.Started(), c.Context) {
+			return nil
+		}
+		_, _, err := src.Snapshot(ctx, c.Context)
+		return err
+	}
+	return errNoCurrentContext
 }
 
 func main() {

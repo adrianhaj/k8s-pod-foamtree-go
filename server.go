@@ -26,6 +26,8 @@ import (
 type source interface {
 	Contexts() ([]kube.Context, error)
 	Snapshot(ctx context.Context, name string) ([]foam.Node, []foam.Pod, error)
+	// Contexts whose watches already hold their initial list.
+	Started() []string
 	Logs(ctx context.Context, name string, req kube.LogRequest) (io.ReadCloser, error)
 }
 

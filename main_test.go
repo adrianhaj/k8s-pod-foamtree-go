@@ -30,7 +30,13 @@ type fakeSource struct {
 	logs   string
 	logErr error
 	logReq kube.LogRequest
+	// Contexts whose watches /metrics may read.
+	started []string
+	// nil means one active context, "kind".
+	contexts []kube.Context
 }
+
+func (f *fakeSource) Started() []string { return f.started }
 
 func (f *fakeSource) Logs(_ context.Context, name string, req kube.LogRequest) (io.ReadCloser, error) {
 	f.asked, f.logReq = name, req
@@ -41,6 +47,9 @@ func (f *fakeSource) Logs(_ context.Context, name string, req kube.LogRequest) (
 }
 
 func (f *fakeSource) Contexts() ([]kube.Context, error) {
+	if f.contexts != nil {
+		return f.contexts, nil
+	}
 	return []kube.Context{{Context: "kind", Active: true}}, nil
 }
 
@@ -186,6 +195,32 @@ func TestFlags(t *testing.T) {
 	}
 	if _, err := parseFlags([]string{"--audit-disable", "sidecars"}); err == nil || !strings.Contains(err.Error(), "ratio-asymmetry") {
 		t.Fatalf("unknown rule should list the valid ones: %v", err)
+	}
+}
+
+func TestMetricsFlags(t *testing.T) {
+	cases := []struct {
+		args []string
+		ok   bool
+	}{
+		{nil, true},
+		{[]string{"--metrics-addr", ":9090"}, true},
+		{[]string{"--metrics-addr", "0.0.0.0:9090"}, true},
+		{[]string{"--metrics-addr", "[::1]:9090"}, true},
+		{[]string{"--metrics-addr", "9090"}, false},
+		{[]string{"--metrics-addr", "localhost:"}, false},
+		{[]string{"--metrics-addr", ":http"}, false},
+		{[]string{"--metrics-addr", ":0"}, false},
+		{[]string{"--metrics-addr", ":65536"}, false},
+		{[]string{"--metrics-addr", ":8080"}, false},
+		{[]string{"--metrics-addr", "10.0.0.1:8080"}, false},
+		{[]string{"--metrics-addr", ":8080", "--port", "9000"}, true},
+		{[]string{"--metrics-addr", ":9000", "--port", "9000"}, false},
+	}
+	for _, tc := range cases {
+		if _, err := parseFlags(tc.args); (err == nil) != tc.ok {
+			t.Errorf("%v: err=%v", tc.args, err)
+		}
 	}
 }
 

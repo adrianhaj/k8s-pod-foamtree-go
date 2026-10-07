@@ -37,6 +37,8 @@ func (s *syntheticSource) Contexts() ([]kube.Context, error) {
 	return []kube.Context{{Context: "synthetic", Active: true}}, nil
 }
 
+func (s *syntheticSource) Started() []string { return []string{"synthetic"} }
+
 // Logs makes up steady request lines. A previous run ends in an OOM, so the
 // Logs tab and the assistant have a crash to look at.
 func (s *syntheticSource) Logs(_ context.Context, _ string, req kube.LogRequest) (io.ReadCloser, error) {

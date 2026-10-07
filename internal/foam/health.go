@@ -8,6 +8,9 @@ var pressureSlugs = map[string]string{
 	"PIDPressure":    "pid-pressure",
 }
 
+// NodeWarnings lists every slug Warnings emits, in its order.
+var NodeWarnings = []string{"cordoned", "not-ready", "memory-pressure", "disk-pressure", "pid-pressure", "tainted"}
+
 // Warnings lists why a node is a bad scheduling target, worst first, as
 // render-ready slugs so the 2D and 3D views cannot disagree.
 func Warnings(n Node) []string {
