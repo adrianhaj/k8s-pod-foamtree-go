@@ -1,0 +1,6 @@
+# Made-up prices for the synthetic cluster's instance types, USD per hour.
+# r.4xlarge has no row, so the demo also shows unpriced nodes.
+instance_type,region,capacity_type,hourly_usd
+m.4xlarge,,,0.768
+m.4xlarge,,spot,0.29
+g.4xlarge,,,4.10

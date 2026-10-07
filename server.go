@@ -223,14 +223,22 @@ func writeCSV(w http.ResponseWriter, rows []foam.ReportRow) {
 		}
 		return strconv.FormatInt(*v, 10)
 	}
+	usd := func(v *float64) string {
+		if v == nil {
+			return ""
+		}
+		return strconv.FormatFloat(*v, 'f', 6, 64)
+	}
 	cw := csv.NewWriter(w)
 	cw.Write([]string{"node", "zone", "pool", "instance_type", "node_cpu_m", "node_memory_bytes", "node_warnings",
-		"namespace", "pod", "qos", "cpu_request_m", "cpu_limit_m", "memory_request_bytes", "memory_limit_bytes", "findings"})
+		"namespace", "pod", "qos", "cpu_request_m", "cpu_limit_m", "memory_request_bytes", "memory_limit_bytes", "findings",
+		"node_hourly_usd", "pod_hourly_usd"})
 	for _, r := range rows {
 		cw.Write([]string{r.Node, r.Zone, r.Pool, r.InstanceType, strconv.FormatInt(r.NodeCPU, 10),
 			strconv.FormatInt(r.NodeMemoryBytes, 10), strings.Join(r.NodeWarnings, " "),
 			r.Namespace, r.Pod, r.QOS, strconv.FormatInt(r.CPU, 10), opt(r.CPULimit),
-			strconv.FormatInt(r.MemoryBytes, 10), opt(r.MemoryLimitBytes), strings.Join(r.Findings, " ")})
+			strconv.FormatInt(r.MemoryBytes, 10), opt(r.MemoryLimitBytes), strings.Join(r.Findings, " "),
+			usd(r.NodeHourlyCost), usd(r.HourlyCost)})
 	}
 	cw.Flush()
 	if err := cw.Error(); err != nil {

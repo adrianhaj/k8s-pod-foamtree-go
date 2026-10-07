@@ -90,6 +90,8 @@ type NodeGroup struct {
 	Pool          string           `json:"pool"`
 	CapacityType  string           `json:"capacityType"`
 	Extended      map[string]int64 `json:"extended,omitempty"`
+	// Estimated USD per hour; absent when the node has no price.
+	HourlyCost *float64 `json:"hourlyCost,omitempty"`
 }
 
 type PodGroup struct {
@@ -106,6 +108,7 @@ type PodGroup struct {
 	Limit             *float64          `json:"limit"`
 	Extended          map[string]int64  `json:"extended,omitempty"`
 	Resize            *PodResize        `json:"resize,omitempty"`
+	HourlyCost        *float64          `json:"hourlyCost,omitempty"`
 }
 
 type PodResize struct {
@@ -165,6 +168,7 @@ func Treemap(nodes []Node, pods []Pod, axis Axis, a Audit) Tree {
 			Pool:          n.Pool,
 			CapacityType:  n.CapacityType,
 			Extended:      n.Extended,
+			HourlyCost:    n.HourlyPrice,
 		})
 	}
 	tree.Pending = make([]PendingPod, 0, len(byNode[""]))
@@ -208,6 +212,7 @@ func podGroup(p Pod, n Node, axis Axis, a Audit) PodGroup {
 		Limit:             axis.limit(p),
 		Extended:          p.Extended,
 		Resize:            rz,
+		HourlyCost:        PodCost(p, n),
 	}
 }
 

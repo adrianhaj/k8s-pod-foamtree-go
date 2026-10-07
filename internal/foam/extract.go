@@ -93,6 +93,8 @@ type Node struct {
 	AllocCPU    int64
 	AllocMemory int64
 	AllocPods   int64
+	// USD per hour from --prices; nil when no row matches or none was given.
+	HourlyPrice *float64
 }
 
 // Kubernetes adds this taint itself on cordon; spec.unschedulable already

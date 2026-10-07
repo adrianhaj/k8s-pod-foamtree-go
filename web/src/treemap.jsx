@@ -65,14 +65,14 @@ function squarify(items, x, y, w, h) {
   return out;
 }
 
-// Pods and containers carry CPU and memory, plus extended requests (GPUs,
-// ephemeral-storage, hugepages) under ext; any of them can be the metric.
+// Pods and containers carry CPU, memory and cost, plus extended requests
+// (GPUs, ephemeral-storage, hugepages) under ext; any of them can be the metric.
 function metricValue(o, metric) {
-  return metric === "cpu" ? o.cpu : metric === "mem" ? o.mem : (o.ext[metric] || 0);
+  return metric === "cpu" ? o.cpu : metric === "mem" ? o.mem : metric === "cost" ? (o.cost || 0) : (o.ext[metric] || 0);
 }
 
 function metricCap(node, metric) {
-  return metric === "cpu" ? node.cpuCapacity : metric === "mem" ? node.memCapacity : (node.ext[metric] || 0);
+  return metric === "cpu" ? node.cpuCapacity : metric === "mem" ? node.memCapacity : metric === "cost" ? (node.cost || 0) : (node.ext[metric] || 0);
 }
 
 // The pods and free space a node card lays out; the SVG export uses it too.

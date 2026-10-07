@@ -16,7 +16,7 @@ const { Legend } = window.k8sLegend;
 const { groupNodes, GROUP_BY, podShape, stranded, largestFit } = window.k8sTopology;
 const { pack, unpack, record, diff } = window.k8sHistory;
 const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY, PANEL_DEFAULT, validPanel, readViewParams, viewSearch } = window.k8sPrefs;
-const { fmtMem, shortContext, clock } = window.k8sFormat;
+const { fmtMem, fmtCost, shortContext, clock } = window.k8sFormat;
 const { buildProblems, problemChips } = window.k8sProblems;
 const { pickShown } = window.k8sHighlight;
 const { TAB_IDS, BottomPanel, ProblemsTab, PendingTab, ChangesTab, DrainTab, MapChips, showTab } = window.k8sPanel;
@@ -29,6 +29,15 @@ const METRICS = [
   { id: "cpu", label: "CPU" },
   { id: "mem", label: "Memory" },
 ];
+// Offered only when --prices priced at least one node.
+const COST_METRIC = { id: "cost", label: "Cost" };
+
+// Sum of the priced pods' costs, null when none is priced.
+function sumCost(pods) {
+  let total = null;
+  for (const p of pods) if (p.cost != null) total = (total || 0) + p.cost;
+  return total;
+}
 
 // Extended resources become metrics when a node offers them. Byte-sized ones
 // are shown in the memory unit, the rest (GPUs…) are device counts.
@@ -100,6 +109,8 @@ function mergeResources(cpuData, memData) {
           cpu: cc.weight || 0,
           // Convert memory from kB to MiB
           mem: kbToMib(mc.weight || 0),
+          // Only proportions matter inside a pod box: the pod rule on this container.
+          cost: cg.hourlyCost != null ? cg.hourlyCost * Math.max((cc.weight || 0) / (cg.weight || 1), (mc.weight || 0) / (mg.weight || 1)) : null,
           ext: cc.extended || {}
         };
       });
@@ -136,6 +147,8 @@ function mergeResources(cpuData, memData) {
         cpuLimit: cp.limit ?? null,
         memLimit: mp.limit != null ? kbToMib(mp.limit) : null,
         ext: cp.extended || {},
+        // Estimated USD per hour; null on a node --prices does not cover.
+        cost: cp.hourlyCost ?? null,
         containers
       });
     }
@@ -152,6 +165,7 @@ function mergeResources(cpuData, memData) {
       pool: cg.pool || "",
       instanceType: cg.instanceType || "",
       capacityType: cg.capacityType || "",
+      cost: cg.hourlyCost ?? null,
       cpuCapacity: cg.weight || 0,
       memCapacity: memCapacity,
       cpuUsed,
@@ -420,7 +434,7 @@ function App() {
 
   const metrics = useMemo(() => {
     const keys = new Set(nodes.flatMap(n => Object.keys(n.ext)));
-    return [...METRICS, ...[...keys].sort().map(extMetric)];
+    return [...METRICS, ...(nodes.some(n => n.cost != null) ? [COST_METRIC] : []), ...[...keys].sort().map(extMetric)];
   }, [nodes]);
   // A context without the chosen resource shows CPU; switching back restores it.
   const activeMetric = metrics.some(m => m.id === metric) ? metric : "cpu";
@@ -444,7 +458,8 @@ function App() {
         if (window.k8sQuery.podMatches(p, parsedQuery, n)) pods.add(p);
       }
     }
-    return { active, pods, dimNodes, count: active ? pods.size : total, total, errors: parsedQuery.errors };
+    return { active, pods, dimNodes, count: active ? pods.size : total, total, errors: parsedQuery.errors,
+      cost: active ? sumCost(pods) : null };
   }, [nodes, parsedQuery]);
 
   const changeLists = useMemo(() => changes ? {
@@ -471,15 +486,15 @@ function App() {
   const workloadStats = useMemo(() => {
     if (!selectedWorkload) return null;
     const spread = new Set();
-    let replicas = 0;
+    const pods = [];
     for (const n of nodes) {
       for (const p of n.pods) {
         if (workloadKey(p.name) !== selectedWorkload) continue;
-        replicas++;
+        pods.push(p);
         spread.add(n.name);
       }
     }
-    return { key: selectedWorkload, replicas, nodes: spread.size };
+    return { key: selectedWorkload, replicas: pods.length, nodes: spread.size, cost: sumCost(pods) };
   }, [nodes, selectedWorkload]);
 
   // Totals
@@ -491,8 +506,8 @@ function App() {
       t.memCap += n.memCapacity;
       t.memUsed += n.memUsed;
       t.pods += n.pods.length;
-      t.extCap += n.ext[activeMetric] || 0;
-      for (const p of n.pods) t.extUsed += p.ext[activeMetric] || 0;
+      t.extCap += metricCap(n, activeMetric);
+      for (const p of n.pods) t.extUsed += metricValue(p, activeMetric);
     }
     return t;
   }, [nodes, activeMetric]);
@@ -548,12 +563,16 @@ function App() {
   // Namespace colour slots stick across refreshes; a context switch starts over.
   const nsRef = useRef(new Map());
   const nsMap = useMemo(() => (nsRef.current = assignNamespaces(nodes, nsRef.current)), [nodes]);
-  const fmtReq = (v, m) => (m === "cpu" ? `${Math.round(v)}m` : m === "mem" ? `${fmtMem(v, memUnit)} ${memUnit}` : fmtExt(v, m, memUnit));
+  const fmtReq = (v, m) => (m === "cpu" ? `${Math.round(v)}m` : m === "mem" ? `${fmtMem(v, memUnit)} ${memUnit}`
+    : m === "cost" ? fmtCost(v) : fmtExt(v, m, memUnit));
 
   const attention = useMemo(() => attentionBySev(nodes), [nodes]);
   const showGroupBy = useMemo(() => nodes.some(n => n.zone || n.region || n.pool || n.instanceType || n.capacityType), [nodes]);
   const ext = activeMetric !== "cpu" && activeMetric !== "mem" && metrics.find(m => m.id === activeMetric);
-  const extCell = ext && {
+  const extCell = activeMetric === "cost" ? {
+    label: "Cost requested", u: totals.extUsed / (totals.extCap || 1),
+    value: fmtCost(totals.extUsed), of: `of ${fmtCost(totals.extCap)} in priced nodes`,
+  } : ext && {
     label: `${ext.label} requested`, u: totals.extUsed / (totals.extCap || 1),
     value: fmtExt(totals.extUsed, activeMetric, memUnit), of: `of ${fmtExt(totals.extCap, activeMetric, memUnit, true)} ${extUnit(activeMetric, memUnit)}`,
   };
@@ -705,7 +724,7 @@ function QueryBar({ query, setQuery, match, hintOpen, setHintOpen }) {
           placeholder="Filter pods, e.g. ns:payments qos:Burstable app=api" />
         {counting && (
           <span className={`query-count ${match.count === 0 ? "query-count-none" : ""}`}>
-            {match.count} / {match.total} pods
+            {match.count} / {match.total} pods{match.cost != null && ` · ${fmtCost(match.cost)}`}
           </span>
         )}
         {query && <button className="search-clear" onClick={() => setQuery("")}>×</button>}
@@ -834,7 +853,7 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, str
           <div>
             <div className="overlay-title">{node.name}</div>
             <div className="overlay-sub">
-              {[node.instanceType, node.zone || node.region, node.pool].filter(Boolean).map(s => `${s} · `)}
+              {[node.instanceType, node.zone || node.region, node.pool, node.cost != null && fmtCost(node.cost)].filter(Boolean).map(s => `${s} · `)}
               <span className={`status-pill status-${node.status}`}>{node.status}</span>
             </div>
           </div>
@@ -926,6 +945,11 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, str
                         <span key={j} className={`container-pill${c.init ? " init" : ""}`}>{c.name}</span>
                       ))}
                     </div>
+                    {p.cost != null && (
+                      <div className="pod-row-containers">
+                        <span className="container-pill" title="Node price times the pod's larger share of CPU or memory">{fmtCost(p.cost)}</span>
+                      </div>
+                    )}
                     {Object.keys(p.ext).length > 0 && (
                       <div className="pod-row-containers">
                         {Object.keys(p.ext).sort().map(key => (
