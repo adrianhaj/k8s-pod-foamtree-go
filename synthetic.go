@@ -113,8 +113,22 @@ func syntheticPod(k, gen int) (name, ns string, cpu, mem int64) {
 	if k%13 == 0 {
 		cpu, mem = 0, 0
 	}
-	// The last segment changes for pod k once every 50 generations.
-	return fmt.Sprintf("svc%02d-%x-%x", k%40, k, (k+gen)/50), fmt.Sprintf("team-%d", k%9), cpu, mem
+	// Deployment-style names (svc05-<rs hash>-<suffix>) so the console groups
+	// replicas into one workload across nodes. The hash changes for pod k once
+	// every 50 generations; the suffix keeps names unique (7919 is coprime to 27^5).
+	svc := k % 40
+	return fmt.Sprintf("svc%02d-%s-%s", svc, randToken((k+gen)/50*104729+svc, 8), randToken(k*7919%14_348_907, 5)),
+		fmt.Sprintf("team-%d", svc%9), cpu, mem
+}
+
+// randToken spells x in the alphabet Kubernetes uses for generated name parts.
+func randToken(x, n int) string {
+	const alphabet = "bcdfghjklmnpqrstvwxz2456789"
+	b := make([]byte, n)
+	for i := range b {
+		b[i], x = alphabet[x%len(alphabet)], x/len(alphabet)
+	}
+	return string(b)
 }
 
 func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam.Pod, error) {

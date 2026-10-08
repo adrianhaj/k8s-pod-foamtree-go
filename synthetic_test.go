@@ -249,3 +249,29 @@ func TestSyntheticUsage(t *testing.T) {
 		t.Fatalf("%d readings match no pod", len(usage)-read)
 	}
 }
+
+// The console groups replicas by stripping the ReplicaSet hash and pod suffix
+// (web/src/workload.jsx); every app must land on more than one node.
+func TestSyntheticReplicasSpreadAcrossNodes(t *testing.T) {
+	s, _ := parseSynthetic("20x10")
+	_, pods, _ := s.Snapshot(context.Background(), "")
+	spread := map[string]map[string]bool{}
+	for _, p := range pods {
+		parts := strings.Split(p.Name, "-")
+		if p.NodeName == "" || len(parts) != 3 {
+			continue
+		}
+		if spread[parts[0]] == nil {
+			spread[parts[0]] = map[string]bool{}
+		}
+		spread[parts[0]][p.NodeName] = true
+	}
+	if len(spread) != 40 {
+		t.Fatalf("want 40 apps, got %d", len(spread))
+	}
+	for app, nodes := range spread {
+		if len(nodes) < 2 {
+			t.Errorf("%s runs on %d node(s)", app, len(nodes))
+		}
+	}
+}
