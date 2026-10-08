@@ -77,6 +77,34 @@ func (s *syntheticSource) Usage(context.Context, string) (map[string]kube.Usage,
 	return out, nil
 }
 
+// Quotas caps three namespaces from their own requests: team-0 is at its CPU
+// quota, team-1 has room, team-2 is near its pod count.
+func (s *syntheticSource) Quotas(ctx context.Context, name string) ([]kube.Quota, error) {
+	nodes, pods, _ := s.Snapshot(ctx, name)
+	// The Showback rows' own totals, so the Quota column matches the row beside it.
+	rows, _ := foam.Showback(nodes, pods, "namespace")
+	used := map[string]map[string]float64{}
+	for _, r := range rows {
+		used[r.Group] = map[string]float64{"requests.cpu": float64(r.CPU) / 1000, "requests.memory": float64(r.MemoryBytes), "pods": float64(r.Pods)}
+	}
+	scaled := func(u map[string]float64, f float64, keys ...string) map[string]float64 {
+		h := map[string]float64{}
+		for _, k := range keys {
+			h[k] = u[k] * f
+		}
+		return h
+	}
+	q := func(ns, name string, f float64, keys ...string) kube.Quota {
+		return kube.Quota{Namespace: ns, Name: name, Hard: scaled(used[ns], f, keys...), Used: scaled(used[ns], 1, keys...)}
+	}
+	return []kube.Quota{
+		q("team-0", "compute", 1, "requests.cpu", "requests.memory"),
+		q("team-1", "compute", 1.6, "requests.cpu", "requests.memory"),
+		q("team-2", "compute", 1.3, "requests.cpu"),
+		q("team-2", "objects", 1.05, "pods"),
+	}, nil
+}
+
 func (s *syntheticSource) gen() int { return int(s.now().UnixNano() / int64(syntheticChurn)) }
 
 // syntheticPod is what Snapshot and Usage agree on for pod k: name, namespace and requests.
@@ -198,6 +226,9 @@ func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam
 				p.HPA = fmt.Sprintf("svc%02d", svc)
 			case svc < 10:
 				p.VPA = &foam.Container{CPU: cpu * 6 / 10, Memory: mem * 8 / 10}
+			}
+			if k%23 == 1 {
+				p.LimitRange = "cpu, memory request for container app"
 			}
 			p.Containers = []foam.Container{c}
 			pods = append(pods, p)

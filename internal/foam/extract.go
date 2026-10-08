@@ -39,6 +39,9 @@ type Resize struct {
 	Desired Container
 }
 
+// LimitRangerAnnotation is where the LimitRanger admission plugin records the defaults it set.
+const LimitRangerAnnotation = "kubernetes.io/limit-ranger"
+
 type Pod struct {
 	Name, NodeName, Namespace string
 	// Effective request — what the scheduler reserves for the pod.
@@ -67,6 +70,9 @@ type Pod struct {
 	HPA string
 	// The VerticalPodAutoscaler's target summed over containers; nil when none recommends.
 	VPA *Container
+	// What the LimitRanger admission plugin filled in from a LimitRange
+	// default, e.g. "cpu request for container app"; "" when nothing.
+	LimitRange string
 	// nil unless a resize waits on the kubelet.
 	Resize *Resize
 	// The scheduler's PodScheduled=False reason and message; "" once
@@ -280,6 +286,7 @@ func FromPod(p *corev1.Pod) Pod {
 		Tolerations:  p.Spec.Tolerations,
 		Phase:        string(p.Status.Phase),
 		Statuses:     statuses(p),
+		LimitRange:   strings.TrimPrefix(p.Annotations[LimitRangerAnnotation], "LimitRanger plugin set: "),
 	}
 	if ref := metav1.GetControllerOf(p); ref != nil {
 		out.Controller, out.Workload = ref.Kind, ref.Name

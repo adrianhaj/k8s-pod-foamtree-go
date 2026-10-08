@@ -507,3 +507,11 @@ func TestWorkload(t *testing.T) {
 		}
 	}
 }
+
+func TestLimitRange(t *testing.T) {
+	p := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+		LimitRangerAnnotation: "LimitRanger plugin set: cpu request for container app"}}}
+	if got := FromPod(p).LimitRange; got != "cpu request for container app" {
+		t.Errorf("limit range %q", got)
+	}
+}

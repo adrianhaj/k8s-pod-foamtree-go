@@ -956,6 +956,8 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 .ptable.pending { grid-template-columns: minmax(220px, 340px) 130px minmax(0, 1fr); }
 .ptable.pending .ptr > * { display: block; line-height: 23px; }
 .ptable.showback { grid-template-columns: minmax(200px, 1fr) 70px 100px 110px minmax(160px, 1fr); }
+.ptable.showback.quota { grid-template-columns: minmax(200px, 1fr) 70px 100px 110px minmax(160px, 1fr) minmax(200px, 1fr); }
+.ptable meter { width: 60px; height: 8px; flex: none; }
 .ptr { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; text-align: left; color: var(--text); }
 .ptr > * { display: flex; align-items: center; gap: 6px; height: 23px; padding: 0 10px; border-top: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ptr.th > * { font: 600 10px/1 var(--font-sans); letter-spacing: .07em; text-transform: uppercase; color: var(--text-dim); background: var(--panel-2); }

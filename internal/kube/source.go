@@ -388,9 +388,14 @@ func slimPod(obj any) (any, error) {
 		affinity = &corev1.Affinity{NodeAffinity: &corev1.NodeAffinity{
 			RequiredDuringSchedulingIgnoredDuringExecution: a.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution}}
 	}
+	// Only the annotation the map reads: others can be large (last-applied-configuration).
+	var annotations map[string]string
+	if v, ok := p.Annotations[foam.LimitRangerAnnotation]; ok {
+		annotations = map[string]string{foam.LimitRangerAnnotation: v}
+	}
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: p.Name, Namespace: p.Namespace, UID: p.UID, ResourceVersion: p.ResourceVersion,
-			Labels: p.Labels, OwnerReferences: owners},
+			Labels: p.Labels, Annotations: annotations, OwnerReferences: owners},
 		Spec: corev1.PodSpec{
 			NodeName:       p.Spec.NodeName,
 			Containers:     slimContainers(p.Spec.Containers),
