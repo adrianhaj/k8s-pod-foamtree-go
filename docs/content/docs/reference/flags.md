@@ -32,6 +32,6 @@ weight: 1
 | `--prices` | | CSV of node prices, `instance_type,region,capacity_type,hourly_usd`, for [cost estimates](../../guides/cost/); a blank cell matches anything. Startup fails on a missing or malformed file |
 | `--metrics-addr` | | serve [Prometheus metrics](../metrics/) at `/metrics` on this `host:port`, e.g. `:9090`, outside OIDC; unset means no metrics listener. The port must be 1–65535 and differ from `--port` |
 | `--prometheus-url` | | Prometheus base URL that scrapes cAdvisor, e.g. `http://prometheus:9090`; turns on the `throttled` rule for `--prometheus-context` |
-| `--prometheus-context` | | kubeconfig context that `--prometheus-url` watches; the two flags go together |
+| `--prometheus-context` | | kubeconfig context that `--prometheus-url` watches (`in-cluster` when running in a pod); the two flags go together |
 
 Secrets come from the environment only: `K8SFOAMS_OIDC_CLIENT_SECRET`, `K8SFOAMS_SESSION_KEY` (32 bytes, base64; unset means a random key, so sessions end on restart), and `K8SFOAMS_LLM_API_KEY`, or `--llm-api-key-file` for a mounted Secret.

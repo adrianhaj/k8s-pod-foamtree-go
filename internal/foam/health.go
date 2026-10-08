@@ -112,11 +112,11 @@ func Findings(p Pod, n Node, a Audit) []string {
 	if oom {
 		f = append(f, "oom-killed")
 	}
-	if pull {
-		f = append(f, "image-pull")
-	}
 	if p.Throttled > throttleShare {
 		f = append(f, "throttled")
+	}
+	if pull {
+		f = append(f, "image-pull")
 	}
 	if p.Resize != nil {
 		f = append(f, "resize-"+p.Resize.State)
