@@ -38,37 +38,52 @@ type autoscaleCache struct {
 func (c *clusterCache) autoscalers(ctx context.Context) autoscalers {
 	a := &c.scalers
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if time.Since(a.at) < autoscaleTTL {
-		return a.val
+		val := a.val
+		a.mu.Unlock()
+		return val
 	}
+	// Marked before the lists run, so concurrent snapshots get the old answer rather than queue behind them.
 	a.at = time.Now()
-	// Detached: one client disconnect must not cache an empty answer for everyone.
+	a.mu.Unlock()
+	val := c.listAutoscalers(ctx)
+	a.mu.Lock()
+	a.val = val
+	a.mu.Unlock()
+	return val
+}
+
+// listAutoscalers runs detached: one client disconnect must not cache an empty answer for everyone.
+func (c *clusterCache) listAutoscalers(ctx context.Context) autoscalers {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), autoscaleTimeout)
 	defer cancel()
-	a.val = autoscalers{hpa: map[string]string{}, vpa: map[string]foam.Container{}}
 	// Optional, so a missing API or RBAC rule only hides the marks.
 	quiet := func(what string, err error) {
-		if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsForbidden(err) {
+		if !apierrors.IsNotFound(err) && !apierrors.IsForbidden(err) {
 			slog.Warn(what, "err", err)
 		}
 	}
-	hpas, err := c.client.AutoscalingV2().HorizontalPodAutoscalers(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
-	quiet("hpa", err)
-	if err == nil {
+	val := autoscalers{hpa: map[string]string{}}
+	// ResourceVersion "0" reads the apiserver's watch cache, not etcd.
+	hpas, err := c.client.AutoscalingV2().HorizontalPodAutoscalers(metav1.NamespaceAll).List(ctx, metav1.ListOptions{ResourceVersion: "0"})
+	if err != nil {
+		quiet("hpa", err)
+	} else {
 		for _, h := range hpas.Items {
-			a.val.hpa[h.Namespace+"/"+h.Spec.ScaleTargetRef.Name] = h.Name
+			val.hpa[h.Namespace+"/"+h.Spec.ScaleTargetRef.Name] = h.Name
 		}
 	}
 	// A fake clientset has no REST client to ask.
 	if rc, ok := c.client.CoreV1().RESTClient().(*rest.RESTClient); ok && rc != nil {
 		b, err := rc.Get().AbsPath("/apis/autoscaling.k8s.io/v1/verticalpodautoscalers").DoRaw(ctx)
 		if err == nil {
-			a.val.vpa, err = parseVPA(b)
+			val.vpa, err = parseVPA(b)
 		}
-		quiet("vpa", err)
+		if err != nil {
+			quiet("vpa", err)
+		}
 	}
-	return a.val
+	return val
 }
 
 // parseVPA sums each VPA's per-container targets, keyed by its target workload.
@@ -96,7 +111,7 @@ func parseVPA(b []byte) (map[string]foam.Container, error) {
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(b, &list); err != nil {
-		return map[string]foam.Container{}, err
+		return nil, err
 	}
 	out := map[string]foam.Container{}
 	for _, v := range list.Items {
