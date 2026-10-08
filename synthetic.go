@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"maps"
-	"slices"
 	"strings"
 	"time"
 
@@ -82,17 +80,12 @@ func (s *syntheticSource) Usage(context.Context, string) (map[string]kube.Usage,
 // Quotas caps three namespaces from their own requests: team-0 is at its CPU
 // quota, team-1 has room, team-2 is near its pod count.
 func (s *syntheticSource) Quotas(ctx context.Context, name string) ([]kube.Quota, error) {
-	_, pods, _ := s.Snapshot(ctx, name)
+	nodes, pods, _ := s.Snapshot(ctx, name)
+	// The Showback rows' own totals, so the Quota column matches the row beside it.
+	rows, _ := foam.Showback(nodes, pods, "namespace")
 	used := map[string]map[string]float64{}
-	for _, p := range pods {
-		u := used[p.Namespace]
-		if u == nil {
-			u = map[string]float64{}
-			used[p.Namespace] = u
-		}
-		u["requests.cpu"] += float64(p.CPU) / 1000
-		u["requests.memory"] += float64(p.Memory)
-		u["pods"]++
+	for _, r := range rows {
+		used[r.Group] = map[string]float64{"requests.cpu": float64(r.CPU) / 1000, "requests.memory": float64(r.MemoryBytes), "pods": float64(r.Pods)}
 	}
 	scaled := func(u map[string]float64, f float64, keys ...string) map[string]float64 {
 		h := map[string]float64{}
@@ -101,14 +94,14 @@ func (s *syntheticSource) Quotas(ctx context.Context, name string) ([]kube.Quota
 		}
 		return h
 	}
-	q := func(ns, name string, hard map[string]float64) kube.Quota {
-		return kube.Quota{Namespace: ns, Name: name, Hard: hard, Used: scaled(used[ns], 1, slices.Collect(maps.Keys(hard))...)}
+	q := func(ns, name string, f float64, keys ...string) kube.Quota {
+		return kube.Quota{Namespace: ns, Name: name, Hard: scaled(used[ns], f, keys...), Used: scaled(used[ns], 1, keys...)}
 	}
 	return []kube.Quota{
-		q("team-0", "compute", scaled(used["team-0"], 1, "requests.cpu", "requests.memory")),
-		q("team-1", "compute", scaled(used["team-1"], 1.6, "requests.cpu", "requests.memory")),
-		q("team-2", "compute", scaled(used["team-2"], 1.3, "requests.cpu")),
-		q("team-2", "objects", scaled(used["team-2"], 1.05, "pods")),
+		q("team-0", "compute", 1, "requests.cpu", "requests.memory"),
+		q("team-1", "compute", 1.6, "requests.cpu", "requests.memory"),
+		q("team-2", "compute", 1.3, "requests.cpu"),
+		q("team-2", "objects", 1.05, "pods"),
 	}, nil
 }
 

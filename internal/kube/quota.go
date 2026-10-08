@@ -25,6 +25,7 @@ func (s *Source) Quotas(ctx context.Context, name string) ([]Quota, error) {
 		return nil, err
 	}
 	// ResourceVersion "0" reads the apiserver's watch cache, not etcd.
+	// ponytail: one list per viewer with Showback open, per refresh; cache it on clusterCache like autoscalers if many watch at once
 	list, err := c.client.CoreV1().ResourceQuotas(metav1.NamespaceAll).List(ctx, metav1.ListOptions{ResourceVersion: "0"})
 	if apierrors.IsForbidden(err) {
 		return []Quota{}, nil
