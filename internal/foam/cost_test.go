@@ -1,6 +1,7 @@
 package foam
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -118,5 +119,46 @@ func TestPodCost(t *testing.T) {
 	}
 	if got := PodCost(Pod{CPU: 2000}, Node{CPU: 4000}); got != nil {
 		t.Errorf("unpriced node: got %v", *got)
+	}
+}
+
+func TestShowback(t *testing.T) {
+	price := 1.0
+	nodes := []Node{
+		{Name: "a", CPU: 4000, Memory: 4_000_000_000, HourlyPrice: &price},
+		{Name: "b", CPU: 4000, Memory: 4_000_000_000},
+	}
+	team := func(v string) map[string]string { return map[string]string{"team": v} }
+	pods := []Pod{
+		{Namespace: "x", NodeName: "a", CPU: 1000, Labels: team("red")},
+		{Namespace: "x", NodeName: "b", CPU: 1000, Labels: team("red")},
+		{Namespace: "y", NodeName: "a", CPU: 2000, Memory: 1_000_000_000},
+		{Namespace: "y", NodeName: "", CPU: 9000, Labels: team("red")}, // pending
+		{Namespace: "z", NodeName: "b", Memory: 1_000_000_000},
+	}
+	str := func(rows []ShowbackRow) string {
+		var b strings.Builder
+		for _, r := range rows {
+			c := "-"
+			if r.HourlyCost != nil {
+				c = fmt.Sprint(*r.HourlyCost)
+			}
+			fmt.Fprintf(&b, "%s:%d/%d/%d/%d/%s ", r.Group, r.Pods, r.UnpricedPods, r.CPU, r.MemoryBytes, c)
+		}
+		return b.String()
+	}
+	for by, want := range map[string]string{
+		"namespace":  "y:1/0/2000/1000000000/0.5 x:2/1/2000/0/0.25 z:1/1/0/1000000000/- ",
+		"label:team": ":2/1/2000/2000000000/0.5 red:2/1/2000/0/0.25 ",
+	} {
+		rows, err := Showback(nodes, pods, by)
+		if got := str(rows); err != nil || got != want {
+			t.Errorf("%s: got %q %v, want %q", by, got, err, want)
+		}
+	}
+	for _, by := range []string{"", "pool", "label:"} {
+		if _, err := Showback(nodes, pods, by); err == nil {
+			t.Errorf("%q: accepted", by)
+		}
 	}
 }

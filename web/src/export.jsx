@@ -254,4 +254,4 @@ function ExportMenu({ view, context, treemap, gridRef, sceneRef }) {
   );
 }
 
-window.k8sExport = { ExportMenu };
+window.k8sExport = { ExportMenu, fileName };

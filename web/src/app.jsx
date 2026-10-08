@@ -19,7 +19,7 @@ const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY
 const { fmtMem, fmtCost, shortContext, clock } = window.k8sFormat;
 const { buildProblems, problemChips } = window.k8sProblems;
 const { pickShown } = window.k8sHighlight;
-const { TAB_IDS, BottomPanel, ProblemsTab, PendingTab, ChangesTab, DrainTab, MapChips, showTab } = window.k8sPanel;
+const { TAB_IDS, BottomPanel, ProblemsTab, PendingTab, ShowbackTab, ChangesTab, DrainTab, MapChips, showTab } = window.k8sPanel;
 const { TopBar, SummaryStrip, Toolbar, Rail, SettingsMenu, attentionBySev } = window.k8sChrome;
 const { useAssistant, AssistantTab } = window.k8sAssistant;
 const THEME_KEY = "k8sfoams.theme";
@@ -646,6 +646,7 @@ function App() {
             onPickNode={name => setFocused(nodes.find(n => n.name === name) || null)} />
         )}
         {panel.tab === "pending" && <PendingTab pods={pending} />}
+        {panel.tab === "showback" && <ShowbackTab nodes={nodes} context={context} memUnit={memUnit} setQuery={setQuery} />}
         {panel.tab === "changes" && (
           <ChangesTab entries={entries} at={at} atLabel={at == null ? "Live" : clock(at)}
             onScrub={i => { setPlaying(false); setAt(i === entries.length - 1 ? null : entries[i].t); }}

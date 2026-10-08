@@ -24,3 +24,5 @@ curl -o pods.csv 'http://127.0.0.1:8080/report.csv?context=kind-k8sfoams'
 ```
 
 **What you'll see:** a `pods.csv` file with one row per pod, and the Pending pods at the bottom with empty node columns.
+
+Add `groupBy=namespace` or `groupBy=label:<key>` for one row per namespace or label value instead, as [showback](../cost/#showback) totals.
