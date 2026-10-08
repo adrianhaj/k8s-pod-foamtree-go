@@ -65,6 +65,8 @@ type Pod struct {
 	SchedReason, SchedMessage string
 	Phase                     string
 	Statuses                  []ContainerStatus
+	// Share of CPU periods the worst container was throttled, from Prometheus; 0 when unknown.
+	Throttled float64
 }
 
 type Taint struct {

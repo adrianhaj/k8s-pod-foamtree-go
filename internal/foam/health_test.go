@@ -141,9 +141,11 @@ func TestAuditRulesCoverFindings(t *testing.T) {
 	crash.Statuses = []ContainerStatus{{Name: "app", Waiting: "CrashLoopBackOff", LastExitReason: "OOMKilled"}, {Name: "web", Waiting: "ImagePullBackOff"}}
 	deferred, infeasible := auditPod(400, 1_600_000_000, true), auditPod(400, 1_600_000_000, true)
 	deferred.Resize, infeasible.Resize = &Resize{State: "deferred"}, &Resize{State: "infeasible"}
+	throttled := auditPod(400, 1_600_000_000, true)
+	throttled.Throttled = 0.4
 
 	var emitted []string
-	for _, p := range []Pod{auditPod(3600, 0, false), auditPod(2000, 800_000_000, true), crash, deferred, infeasible} {
+	for _, p := range []Pod{auditPod(3600, 0, false), auditPod(2000, 800_000_000, true), crash, deferred, infeasible, throttled} {
 		emitted = append(emitted, Findings(p, worker, DefaultAudit())...)
 	}
 	slices.Sort(emitted)
@@ -194,5 +196,17 @@ func TestAuditThresholds(t *testing.T) {
 				t.Fatalf("got %#v, want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestThrottledFinding(t *testing.T) {
+	ok := Container{Name: "app", CPU: 100, Memory: 100, MemoryLimit: new(int64(200))}
+	p := Pod{CPU: 100, Memory: 100, Containers: []Container{ok}, Statuses: []ContainerStatus{{Name: "app", Ready: true}}}
+	n := Node{CPU: 10_000, Memory: 10_000}
+	for share, want := range map[float64][]string{0: {}, 0.25: {}, 0.4: {"throttled"}} {
+		p.Throttled = share
+		if got := Findings(p, n, DefaultAudit()); !reflect.DeepEqual(got, want) {
+			t.Errorf("share %v: got %v, want %v", share, got, want)
+		}
 	}
 }

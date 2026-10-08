@@ -28,7 +28,7 @@ func TestSummarize(t *testing.T) {
 			{Pool: "general", Zone: "a", CPU: 6000, CPURequested: 1000, Memory: 12_000_000_000, MemoryRequested: 2_000_000_000},
 		},
 		Findings: map[string]int{"missing-requests": 1, "missing-limits": 2, "monolith": 0, "ratio-asymmetry": 0,
-			"crashloop": 0, "oom-killed": 0, "resize-deferred": 0, "resize-infeasible": 0},
+			"crashloop": 0, "oom-killed": 0, "throttled": 0, "resize-deferred": 0, "resize-infeasible": 0},
 		Warnings: map[string]int{"cordoned": 1, "not-ready": 1, "memory-pressure": 0, "disk-pressure": 0, "pid-pressure": 0, "tainted": 0},
 		Pending:  1,
 	}
