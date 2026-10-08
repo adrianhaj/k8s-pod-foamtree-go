@@ -3,7 +3,7 @@
 
 const { useState, useEffect, useRef } = React;
 const { Icon, SevGlyph } = window.k8sIcons;
-const { shortContext, timeAgo, fmtMem } = window.k8sFormat;
+const { shortContext, timeAgo, fmtMem, fmtCost } = window.k8sFormat;
 const { utilTone, COLOR_MODES } = window.k8sPalette;
 const { GROUP_BY } = window.k8sTopology;
 
@@ -116,10 +116,10 @@ function TopBar({
 
 // One summary cell: label + figure, value, indicator. The fixed third row keeps
 // every indicator on one line across cells, clear of the toolbar (spec §2).
-function Metric({ label, u, value, of }) {
+function Metric({ label, u, value, of, title }) {
   const tone = utilTone(u);
   return (
-    <div className="metric">
+    <div className="metric" title={title}>
       <div className="metric-l">{label}<b>{Math.round(u * 100)}%</b></div>
       <div className="metric-v">{value} <small>{of}</small></div>
       <div className="metric-bar"><i className={tone ? `tone-${tone}` : ""} style={{ width: `${Math.min(100, u * 100)}%` }} /></div>
@@ -127,7 +127,7 @@ function Metric({ label, u, value, of }) {
   );
 }
 
-function SummaryStrip({ totals, memUnit, qosBreakdown, attention, extCell, query, setQuery, largest }) {
+function SummaryStrip({ totals, memUnit, qosBreakdown, attention, extCell, query, setQuery, largest, idle }) {
   const q = query.trim();
   const toggle = token => setQuery(q === token ? "" : token);
   const be = qosBreakdown.find(x => x.qos === "BestEffort");
@@ -140,6 +140,8 @@ function SummaryStrip({ totals, memUnit, qosBreakdown, attention, extCell, query
       <Metric label="Memory requested" u={totals.memUsed / (totals.memCap || 1)}
         value={fmtMem(totals.memUsed, memUnit)} of={`of ${fmtMem(totals.memCap, memUnit, true)} ${memUnit}`} />
       {extCell && <Metric {...extCell} />}
+      {idle && <Metric label="Cost idle" u={idle.idle / (idle.total || 1)} value={fmtCost(idle.idle)} of={`of ${fmtCost(idle.total)}`}
+        title={`Node price no pod request is charged for${idle.unpriced ? `; leaves out ${idle.unpriced} unpriced node${idle.unpriced === 1 ? "" : "s"}` : ""}`} />}
       <div className="metric">
         <div className="metric-l">Pods by QoS<b>{be ? be.count : 0} BestEffort</b></div>
         <div className="metric-v">{totals.pods} <small>of {totals.nodes * 110} slots</small></div>

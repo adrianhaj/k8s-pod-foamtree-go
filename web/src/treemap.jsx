@@ -152,7 +152,7 @@ function NodeCard({
       {laid.map((it, i) => it.empty ? (
         <div key={`empty-${i}`} className={`pod-empty${warnSev ? ` warn-${warnSev}` : ""}`}
           style={{ left: it.x, top: it.y, width: it.w - 2, height: it.h - 2 }}>
-          {it.w > 60 && it.h > 30 && <span>idle · {Math.round((empty / cap) * 100)}%</span>}
+          {it.w > 60 && it.h > 30 && <span>idle · {metric === "cost" ? fmtReq(empty, metric) : `${Math.round((empty / cap) * 100)}%`}</span>}
         </div>
       ) : (
         <PodBox key={`pod-${i}`} pod={it.pod} rect={it} role={podToken(it.pod, colorBy, nsMap)}
