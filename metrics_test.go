@@ -74,6 +74,7 @@ k8sfoams_audit_findings{context="kind",rule="monolith"} 0
 k8sfoams_audit_findings{context="kind",rule="ratio-asymmetry"} 0
 k8sfoams_audit_findings{context="kind",rule="crashloop"} 0
 k8sfoams_audit_findings{context="kind",rule="oom-killed"} 0
+k8sfoams_audit_findings{context="kind",rule="throttled"} 0
 k8sfoams_audit_findings{context="kind",rule="resize-deferred"} 0
 k8sfoams_audit_findings{context="kind",rule="resize-infeasible"} 0
 # HELP k8sfoams_node_warnings Nodes with each warning.

@@ -161,7 +161,7 @@ type problem struct {
 
 // Severity lives in the UI's vocabulary; here only the urgent ones move up,
 // so a cap of 100 rows never hides a crash behind missing limits.
-var urgency = map[string]int{"crashloop": 0, "oom-killed": 0, "not-ready": 0, "cordoned": 0,
+var urgency = map[string]int{"crashloop": 0, "oom-killed": 0, "not-ready": 0, "cordoned": 0, "throttled": 1,
 	"image-pull": 1, "resize-infeasible": 1, "memory-pressure": 1, "disk-pressure": 1, "pid-pressure": 1}
 
 func problems(nodes []foam.Node, pods []foam.Pod, audit foam.Audit) []problem {

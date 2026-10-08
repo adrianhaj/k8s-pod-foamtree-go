@@ -16,6 +16,7 @@ const POD_FINDINGS = {
   "ratio-asymmetry":  { label: "ratio asymmetry",  sev: "info", why: "CPU:memory ratio far from the node's — strands the other resource" },
   "crashloop":  { label: "crash loop", sev: "danger", why: "a container keeps crashing and Kubernetes is backing off restarts", status: true },
   "oom-killed": { label: "OOM killed", sev: "danger", why: "a container's last run was killed for running out of memory", status: true },
+  "throttled":  { label: "throttled", sev: "warn", why: "a container hit its CPU limit in over a quarter of its scheduling periods — the request or limit is too low" },
   "image-pull": { label: "image pull", sev: "warn",   why: "a container image cannot be pulled", status: true },
   "resize-deferred":   { label: "resize deferred",   sev: "info", why: "in-place resize waits for room on its node — the scheduler already reserves the larger request" },
   "resize-infeasible": { label: "resize infeasible", sev: "warn", why: "in-place resize can never fit its node — it stays on the old requests" },

@@ -58,7 +58,10 @@ func DefaultAudit() Audit {
 
 // AuditRules lists every slug Findings emits.
 var AuditRules = []string{"missing-requests", "missing-limits", "monolith", "ratio-asymmetry",
-	"crashloop", "oom-killed", "image-pull", "resize-deferred", "resize-infeasible"}
+	"crashloop", "oom-killed", "throttled", "image-pull", "resize-deferred", "resize-infeasible"}
+
+// ponytail: fixed 25% threshold, add a flag when someone needs another
+const throttleShare = 0.25
 
 func share(requested, capacity float64) float64 {
 	if capacity == 0 {
@@ -111,6 +114,9 @@ func Findings(p Pod, n Node, a Audit) []string {
 	}
 	if pull {
 		f = append(f, "image-pull")
+	}
+	if p.Throttled > throttleShare {
+		f = append(f, "throttled")
 	}
 	if p.Resize != nil {
 		f = append(f, "resize-"+p.Resize.State)

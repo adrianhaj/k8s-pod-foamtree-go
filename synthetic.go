@@ -189,6 +189,9 @@ func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam
 				st, p.Phase = foam.ContainerStatus{Name: "app", Waiting: "ImagePullBackOff"}, "Pending"
 			}
 			p.Statuses = []foam.ContainerStatus{st}
+			if k%19 == 2 {
+				p.Throttled = 0.4
+			}
 			p.Containers = []foam.Container{c}
 			pods = append(pods, p)
 		}

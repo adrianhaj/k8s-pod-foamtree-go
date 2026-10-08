@@ -214,7 +214,7 @@ func TestSyntheticCrashes(t *testing.T) {
 			seen[f]++
 		}
 	}
-	if seen["crashloop"] == 0 || seen["oom-killed"] == 0 || seen["image-pull"] == 0 {
+	if seen["crashloop"] == 0 || seen["oom-killed"] == 0 || seen["image-pull"] == 0 || seen["throttled"] == 0 {
 		t.Fatalf("synthetic cluster should show every crash finding: %v", seen)
 	}
 }

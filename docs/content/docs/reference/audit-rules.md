@@ -13,6 +13,7 @@ Every pod is checked against the rules below. For the glyph, the Problems chips 
 | <span class="pill info">info</span> | `ratio-asymmetry` ratio asymmetry | the pod's share of node CPU and its share of node memory differ by 4× (`--audit-ratio`) or more, and the larger share is at least 10% (`--audit-ratio-min-share`) |
 | <span class="pill danger">danger</span> | `crashloop` crash loop | a container is waiting in `CrashLoopBackOff` |
 | <span class="pill danger">danger</span> | `oom-killed` OOM killed | a container's last run ended `OOMKilled`, even if it has recovered since |
+| <span class="pill warn">warn</span> | `throttled` throttled | the worst container was CPU-throttled in over 25% of its periods over the last 5 minutes, from Prometheus (`--prometheus-url`); off without that flag |
 | <span class="pill warn">warn</span> | `image-pull` image pull | a container is waiting in `ImagePullBackOff` or `ErrImagePull` |
 | <span class="pill info">info</span> | `resize-deferred` resize deferred | an in-place resize is waiting for room (`PodResizePending`, reason `Deferred`); the map still counts the larger of old and new requests, as the scheduler does |
 | <span class="pill warn">warn</span> | `resize-infeasible` resize infeasible | an in-place resize can never fit the node (`PodResizePending`, reason `Infeasible`); the map counts the old, allocated requests |

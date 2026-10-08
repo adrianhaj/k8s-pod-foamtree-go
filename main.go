@@ -51,6 +51,8 @@ type options struct {
 	metricsAddr string
 	// nil without --prices: no node or pod carries a cost.
 	prices foam.Prices
+	// Both empty unless the throttled rule has a Prometheus to ask.
+	prometheus, prometheusContext string
 }
 
 func parseFlags(args []string) (options, error) {
@@ -84,6 +86,8 @@ func parseFlags(args []string) (options, error) {
 	fs.StringVar(&o.metricsAddr, "metrics-addr", "", "serve Prometheus metrics at /metrics on this host:port, e.g. :9090; unset means no metrics")
 	var pricesFile string
 	fs.StringVar(&pricesFile, "prices", "", "CSV of node prices (instance_type,region,capacity_type,hourly_usd) for cost estimates")
+	fs.StringVar(&o.prometheus, "prometheus-url", "", "Prometheus base URL scraping cAdvisor, e.g. http://prometheus:9090; enables the throttled audit rule")
+	fs.StringVar(&o.prometheusContext, "prometheus-context", "", "kubeconfig context that --prometheus-url watches")
 	fs.BoolVar(&o.version, "version", false, "print the version and exit")
 	fs.BoolVar(&o.version, "v", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil || o.version {
@@ -101,6 +105,8 @@ func parseFlags(args []string) (options, error) {
 		return o, errors.New("set K8SFOAMS_LLM_API_KEY or --llm-api-key-file, not both")
 	case o.llm.MaxTokens < 0:
 		return o, errors.New("--llm-max-tokens-per-question must be 0 or more")
+	case (o.prometheus == "") != (o.prometheusContext == ""):
+		return o, errors.New("--prometheus-url and --prometheus-context go together")
 	}
 	if o.llm.URL != "" {
 		if err := llm.CheckBaseURL(o.llm.URL); err != nil {
@@ -151,6 +157,33 @@ func loadPrices(name string) (foam.Prices, error) {
 	}
 	defer f.Close()
 	return foam.ParsePrices(f)
+}
+
+// throttledSource marks the pods Prometheus reports as throttled, for the one
+// context it watches. A failed query leaves every pod unmarked.
+type throttledSource struct {
+	source
+	throttle *kube.Throttle
+	context  string
+}
+
+func (s throttledSource) Snapshot(ctx context.Context, name string) ([]foam.Node, []foam.Pod, error) {
+	nodes, pods, err := s.source.Snapshot(ctx, name)
+	if err != nil || name != s.context {
+		return nodes, pods, err
+	}
+	shares, qerr := s.throttle.Shares(ctx)
+	if qerr != nil {
+		slog.Warn("throttle", "err", qerr)
+		return nodes, pods, nil
+	}
+	if len(shares) == 0 {
+		return nodes, pods, nil
+	}
+	for i := range pods {
+		pods[i].Throttled = shares[pods[i].Namespace+"/"+pods[i].Name]
+	}
+	return nodes, pods, nil
 }
 
 // pricedSource stamps each node's price on every snapshot, so the map, the
@@ -278,6 +311,12 @@ func run(ctx context.Context, o options) error {
 	}
 	if o.prices != nil {
 		src = pricedSource{src, o.prices}
+	}
+	if o.prometheus != "" && !o.audit.Disabled["throttled"] {
+		src = throttledSource{src, &kube.Throttle{URL: o.prometheus}, o.prometheusContext}
+	} else if o.synthetic == nil {
+		// Nothing sets Throttled without Prometheus: say the rule is off rather than clean.
+		o.audit.Disabled["throttled"] = true
 	}
 	assistant := llm.New(o.llm)
 	assistant.Tools = func(cluster string) llm.Toolbox { return &clusterTools{src: src, cluster: cluster, audit: o.audit} }
