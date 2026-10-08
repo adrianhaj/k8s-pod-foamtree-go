@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
 	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -375,5 +379,38 @@ func TestSlimPodKeepsResizeState(t *testing.T) {
 	if s.AllocatedResources.Cpu().MilliValue() != 500 || s.Resources == nil ||
 		s.ContainerStatuses[0].AllocatedResources.Cpu().MilliValue() != 500 || s.ContainerStatuses[0].Resources == nil {
 		t.Fatalf("resources dropped: %+v", s)
+	}
+}
+
+func TestUsage(t *testing.T) {
+	var absent atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if absent.Load() || r.URL.Path != "/apis/metrics.k8s.io/v1beta1/pods" {
+			http.NotFound(w, r)
+			return
+		}
+		fmt.Fprint(w, `{"items":[{"metadata":{"name":"web-1","namespace":"shop"},"containers":[
+			{"usage":{"cpu":"250000000n","memory":"64Mi"}},{"usage":{"cpu":"10m","memory":"1Mi"}}]}]}`)
+	}))
+	defer srv.Close()
+	cs, err := kubernetes.NewForConfig(&rest.Config{Host: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := testSource(t, fake.NewClientset())
+	s.newClient = func(string) (kubernetes.Interface, error) { return cs, nil }
+
+	got, err := s.Usage(context.Background(), "kind-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]Usage{"shop/web-1": {CPU: 260, Memory: 65 << 20}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("usage = %+v, want %+v", got, want)
+	}
+
+	absent.Store(true)
+	if _, err := s.Usage(context.Background(), "kind-b"); !errors.Is(err, ErrNoMetrics) {
+		t.Errorf("without metrics-server: err = %v, want ErrNoMetrics", err)
 	}
 }

@@ -18,6 +18,10 @@ rules:
   - apiGroups: [""]
     resources: [pods/log]
     verbs: [get]
+  # The Usage color mode. Optional: without metrics-server the map just has no readings.
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods]
+    verbs: [get, list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

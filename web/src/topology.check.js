@@ -43,5 +43,11 @@
     [["y", 1, 0, 200, 0.5], ["x", 2, 1, 200, 0.25], ["z", 1, 1, 50, null]], "showback: by namespace, costliest first");
   eq(T.showback(sbNodes, "team").map(r => [r.group, r.pods, r.cost]), [["", 2, 0.5], ["red", 2, 0.25]], "showback: by label");
 
+  const usageNodes = () => [{ pods: [{ name: "a", namespace: "ns", cpu: 200 }, { name: "b", namespace: "ns", cpu: 0 }, { name: "c", namespace: "ns", cpu: 100 }] }];
+  const shares = res => T.withUsage(usageNodes(), res)[0].pods.map(p => p.share);
+  eq(shares({ available: true, pods: { "ns/a": { cpu: 150 }, "ns/b": { cpu: 5 } } }), [0.75, null, null], "usage: share of CPU request, none without request or reading");
+  eq(shares({ available: false }), [null, null, null], "usage: no metrics-server means no readings");
+  eq(shares(null), [null, null, null], "usage: missing response means no readings");
+
   console.log("ok");
 })();

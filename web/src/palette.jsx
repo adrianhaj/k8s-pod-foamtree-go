@@ -9,6 +9,7 @@ const COLOR_MODES = [
   { id: "namespace", label: "Namespace" },
   { id: "qos", label: "QoS" },
   { id: "problems", label: "Problems" },
+  { id: "usage", label: "Usage" },
 ];
 const byName = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -31,8 +32,17 @@ function assignNamespaces(nodes, prev) {
   return out;
 }
 
+// Share of the CPU request in use (pod.share, set by withUsage). Over the request
+// is danger; under 30% is warn, because that is paying for slack.
+const USAGE_LOW = 0.3;
+function usageRole(share) {
+  if (share == null) return "--pod-neutral";
+  return share > 1 ? "--danger" : share < USAGE_LOW ? "--warn" : "--ok";
+}
+
 function podToken(pod, colorBy, nsMap) {
   if (colorBy === "qos") return QOS_ROLE[pod.qos] || "--pod-neutral";
+  if (colorBy === "usage") return usageRole(pod.share);
   if (colorBy === "problems") {
     const sev = window.k8sPodAudit.worstFindingSeverity(pod.findings);
     return sev ? `--${sev}` : "--pod-neutral";
@@ -56,4 +66,4 @@ const shade = (rgb, k) => mixRgb(rgb, [0, 0, 0], k);
 // color-mix(in srgb, role pct, surface), as hex for the SVG export.
 const tintHex = (roleHex, surfaceHex, pct) => rgbHex(mixRgb(hexRgb(surfaceHex), hexRgb(roleHex), pct));
 
-window.k8sPalette = { QOS_ROLE, COLOR_MODES, assignNamespaces, podToken, utilTone, hexRgb, mixRgb, shade, tintHex };
+window.k8sPalette = { QOS_ROLE, COLOR_MODES, assignNamespaces, podToken, USAGE_LOW, utilTone, hexRgb, mixRgb, shade, tintHex };

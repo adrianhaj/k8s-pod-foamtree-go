@@ -59,6 +59,24 @@ func (s *syntheticSource) Logs(_ context.Context, _ string, req kube.LogRequest)
 	return io.NopCloser(strings.NewReader(b.String())), nil
 }
 
+// Usage makes up readings: pods run from idle to 20% over their request, and
+// one in seven has no metrics yet, so the overlay shows every case.
+func (s *syntheticSource) Usage(ctx context.Context, name string) (map[string]kube.Usage, error) {
+	_, pods, err := s.Snapshot(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]kube.Usage, len(pods))
+	for i, p := range pods {
+		if i%7 == 6 {
+			continue
+		}
+		f := float64(i%5) * 0.3
+		out[p.Namespace+"/"+p.Name] = kube.Usage{CPU: int64(float64(p.CPU) * f), Memory: int64(float64(p.Memory) * f)}
+	}
+	return out, nil
+}
+
 func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam.Pod, error) {
 	gen := int(s.now().UnixNano() / int64(syntheticChurn))
 	pools := []string{"general", "general", "memory", "spot"}

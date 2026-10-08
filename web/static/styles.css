@@ -256,6 +256,7 @@ input { font: inherit; color: inherit; background: none; border: none; outline: 
 .pod-label, .pod-req { position: absolute; left: 5px; right: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pod-label { top: 3px; font-size: 10.5px; color: var(--text); }
 .pod-req { top: 15px; font: 10px/1.2 var(--font-mono); color: var(--text-dim); }
+.pod-usage { position: absolute; left: 0; right: 0; bottom: 0; background: var(--pod-c); opacity: .3; pointer-events: none; }
 .container-box { position: absolute; border-radius: 1px; overflow: hidden; background: color-mix(in srgb, var(--pod-c) var(--tint-box), var(--panel)); }
 .container-box.is-init { --pod-c: var(--pod-neutral); }
 .container-box span { display: block; font-size: 9px; color: var(--text); padding: 1px 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

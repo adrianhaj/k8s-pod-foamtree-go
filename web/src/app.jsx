@@ -13,7 +13,7 @@ const { getJSON, fitMatch, FitForm, FitSummary, FitVerdict, DrainResults } = win
 const { QOS_INFO, QOS_ORDER } = window.k8sQos;
 const { assignNamespaces, utilTone, COLOR_MODES } = window.k8sPalette;
 const { Legend } = window.k8sLegend;
-const { groupNodes, GROUP_BY, podShape, stranded, largestFit, idleCost } = window.k8sTopology;
+const { groupNodes, GROUP_BY, podShape, stranded, largestFit, idleCost, withUsage } = window.k8sTopology;
 const { pack, unpack, record, diff } = window.k8sHistory;
 const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY, PANEL_DEFAULT, validPanel, readViewParams, viewSearch } = window.k8sPrefs;
 const { fmtMem, fmtCost, shortContext, clock } = window.k8sFormat;
@@ -313,6 +313,10 @@ function App() {
       });
   }, []);
 
+  // Usage is only read while its color mode is on: a hidden overlay costs a metrics LIST per refresh.
+  const usageOn = useRef(false);
+  usageOn.current = colorBy === "usage";
+
   // Fetch cluster resource data
   const loadData = async () => {
     setRefreshing(true);
@@ -321,7 +325,7 @@ function App() {
       const ctxParam = currentCtx ? `?context=${encodeURIComponent(currentCtx.context)}` : '';
       const t = Date.now();
 
-      const [cpuText, memText] = await Promise.all([
+      const [cpuText, memText, usage] = await Promise.all([
         apiFetch(`/resources/cpu${ctxParam}`).then(r => {
           if (!r.ok) throw new Error(`CPU resources endpoint returned status ${r.status}`);
           return r.text();
@@ -329,14 +333,16 @@ function App() {
         apiFetch(`/resources/memory${ctxParam}`).then(r => {
           if (!r.ok) throw new Error(`Memory resources endpoint returned status ${r.status}`);
           return r.text();
-        })
+        }),
+        // Optional: a failed read just means no usage overlay this refresh.
+        usageOn.current ? apiFetch(`/api/usage${ctxParam}`).then(r => (r.ok ? r.json() : null)).catch(() => null) : null,
       ]);
 
       const raw = `[${cpuText},${memText}]`;
       const [cpuRes, memRes] = JSON.parse(raw);
       window.k8sPodAudit.configureAudit(cpuRes.audit);
       // While scrubbing, refreshes keep recording but leave the screen alone.
-      if (atRef.current == null) { setNodes(mergeResources(cpuRes, memRes)); setPending(cpuRes.pending || []); }
+      if (atRef.current == null) { setNodes(withUsage(mergeResources(cpuRes, memRes), usage)); setPending(cpuRes.pending || []); }
       setError(null);
       setLastRefresh(Date.now());
       // An unchanged cluster answers byte for byte the same: nothing to record.
@@ -518,6 +524,11 @@ function App() {
   const idle = useMemo(() => idleCost(nodes), [nodes]);
 
   // Auto-refresh tick — re-fetch live cluster data every refreshInterval seconds.
+  // Switching Color by to Usage fetches now rather than at the next refresh.
+  useEffect(() => {
+    if (colorBy === "usage" && contexts.length > 0) loadDataRef.current();
+  }, [colorBy]);
+
   useEffect(() => {
     if (!refreshInterval) return;
     const id = setInterval(() => {
