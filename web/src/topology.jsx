@@ -106,12 +106,12 @@ function largestFit(nodes, shape) {
 
 // Joins metrics-server readings onto pods as pod.share (CPU use over CPU request).
 // A pod with no reading gets null, which is not the same as a reading of zero.
+// Returns new nodes and pods, so React sees a reading that lands after the resources.
 function withUsage(nodes, res) {
-  for (const n of nodes) for (const p of n.pods) {
+  return nodes.map(n => ({ ...n, pods: n.pods.map(p => {
     const u = res?.available ? res.pods[`${p.namespace}/${p.name}`] : null;
-    p.share = u && p.cpu > 0 ? u.cpu / p.cpu : null;
-  }
-  return nodes;
+    return { ...p, share: u && p.cpu > 0 ? u.cpu / p.cpu : null };
+  }) }));
 }
 
 window.k8sTopology = { GROUP_BY, groupNodes, groupUsage, idleCost, showback, podShape, stranded, largestFit, withUsage };

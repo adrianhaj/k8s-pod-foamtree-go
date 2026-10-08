@@ -316,16 +316,35 @@ function App() {
   // Fetch cluster resource data. Calls overlap (context switch, Color by, auto-refresh),
   // so only the latest one may touch the screen; an older answer is still recorded.
   const loadSeq = useRef(0);
+  // Usage is fetched on its own so a slow metrics-server never holds up a refresh.
+  // The last reading (per context) colors new resources until the next one lands.
+  const usageSeq = useRef(0);
+  const lastUsage = useRef({ ctx: null, res: null });
+  const loadUsage = async () => {
+    const seq = ++usageSeq.current;
+    if (colorBy !== "usage") return;
+    const currentCtx = contexts[contextIdx];
+    const ctx = currentCtx ? currentCtx.context : "";
+    const ctxParam = currentCtx ? `?context=${encodeURIComponent(ctx)}` : '';
+    // A failed read just means no usage overlay this refresh.
+    const res = await apiFetch(`/api/usage${ctxParam}`).then(r => (r.ok ? r.json() : null)).catch(() => null);
+    if (seq !== usageSeq.current) return;
+    lastUsage.current = { ctx, res };
+    if (atRef.current == null) setNodes(n => withUsage(n, res));
+  };
   const loadData = async () => {
     const seq = ++loadSeq.current;
     const latest = () => seq === loadSeq.current;
+    // Only while its color mode is on: a hidden overlay costs a metrics LIST per refresh.
+    loadUsage();
     setRefreshing(true);
     try {
       const currentCtx = contexts[contextIdx];
-      const ctxParam = currentCtx ? `?context=${encodeURIComponent(currentCtx.context)}` : '';
+      const name = currentCtx ? currentCtx.context : "";
+      const ctxParam = currentCtx ? `?context=${encodeURIComponent(name)}` : '';
       const t = Date.now();
 
-      const [cpuText, memText, usage] = await Promise.all([
+      const [cpuText, memText] = await Promise.all([
         apiFetch(`/resources/cpu${ctxParam}`).then(r => {
           if (!r.ok) throw new Error(`CPU resources endpoint returned status ${r.status}`);
           return r.text();
@@ -334,19 +353,15 @@ function App() {
           if (!r.ok) throw new Error(`Memory resources endpoint returned status ${r.status}`);
           return r.text();
         }),
-        // Optional, and only read while its color mode is on: a hidden overlay costs a metrics LIST per refresh.
-        // A failed read just means no usage overlay this refresh.
-        colorBy === "usage" ? apiFetch(`/api/usage${ctxParam}`).then(r => (r.ok ? r.json() : null)).catch(() => null) : null,
       ]);
 
       const raw = `[${cpuText},${memText}]`;
       const [cpuRes, memRes] = JSON.parse(raw);
       window.k8sPodAudit.configureAudit(cpuRes.audit);
       // While scrubbing, refreshes keep recording but leave the screen alone.
-      if (latest() && atRef.current == null) { setNodes(withUsage(mergeResources(cpuRes, memRes), usage)); setPending(cpuRes.pending || []); }
+      if (latest() && atRef.current == null) { setNodes(withUsage(mergeResources(cpuRes, memRes), lastUsage.current.ctx === name ? lastUsage.current.res : null)); setPending(cpuRes.pending || []); }
       if (latest()) { setError(null); setLastRefresh(Date.now()); }
       // An unchanged cluster answers byte for byte the same: nothing to record.
-      const name = currentCtx ? currentCtx.context : "";
       if (lastRaw.current.get(name) !== raw) {
         lastRaw.current.set(name, raw);
         const entry = await pack(t, name, raw);
@@ -524,10 +539,12 @@ function App() {
   const idle = useMemo(() => idleCost(nodes), [nodes]);
 
   // Auto-refresh tick — re-fetch live cluster data every refreshInterval seconds.
-  // Switching Color by to Usage fetches now rather than at the next refresh.
+  // Switching Color by to Usage reads usage now rather than at the next refresh.
+  const loadUsageRef = useRef(loadUsage);
+  loadUsageRef.current = loadUsage;
   useEffect(() => {
     // Not while scrubbing: snapshots carry no usage and the live answer would not be shown.
-    if (colorBy === "usage" && contexts.length > 0 && atRef.current == null) loadDataRef.current();
+    if (colorBy === "usage" && contexts.length > 0 && atRef.current == null) loadUsageRef.current();
   }, [colorBy]);
 
   useEffect(() => {
