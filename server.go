@@ -97,19 +97,35 @@ func newHandler(src source, static fs.FS, a *auth.Auth, assistant *llm.Proxy, au
 		}
 	})
 	// Plain "attachment": a filename here would override the UI's download name.
-	app.HandleFunc("GET /report.json", func(w http.ResponseWriter, r *http.Request) {
-		if nodes, pods, ok := snapshot(w, r, src); ok {
-			w.Header().Set("Content-Disposition", "attachment")
-			writeJSON(w, foam.Report(nodes, pods, audit))
+	// ?groupBy= swaps the pod list for showback totals.
+	report := func(w http.ResponseWriter, r *http.Request, asCSV bool) {
+		nodes, pods, ok := snapshot(w, r, src)
+		if !ok {
+			return
 		}
-	})
-	app.HandleFunc("GET /report.csv", func(w http.ResponseWriter, r *http.Request) {
-		if nodes, pods, ok := snapshot(w, r, src); ok {
-			w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-			w.Header().Set("Content-Disposition", "attachment")
+		by := r.URL.Query().Get("groupBy")
+		var sb []foam.ShowbackRow
+		if by != "" {
+			var err error
+			if sb, err = foam.Showback(nodes, pods, by); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		w.Header().Set("Content-Disposition", "attachment")
+		switch {
+		case by == "" && asCSV:
 			writeCSV(w, foam.Report(nodes, pods, audit))
+		case by == "":
+			writeJSON(w, foam.Report(nodes, pods, audit))
+		case asCSV:
+			writeShowbackCSV(w, sb)
+		default:
+			writeJSON(w, sb)
 		}
-	})
+	}
+	app.HandleFunc("GET /report.json", func(w http.ResponseWriter, r *http.Request) { report(w, r, false) })
+	app.HandleFunc("GET /report.csv", func(w http.ResponseWriter, r *http.Request) { report(w, r, true) })
 	// Read-only dry run, so a GET: nothing to forge, and the link can be shared.
 	app.HandleFunc("GET /api/fit", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -216,6 +232,13 @@ func snapshot(w http.ResponseWriter, r *http.Request, src source) ([]foam.Node, 
 	return nil, nil, false
 }
 
+func usd(v *float64) string {
+	if v == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*v, 'f', 6, 64)
+}
+
 func writeCSV(w http.ResponseWriter, rows []foam.ReportRow) {
 	opt := func(v *int64) string {
 		if v == nil {
@@ -223,25 +246,31 @@ func writeCSV(w http.ResponseWriter, rows []foam.ReportRow) {
 		}
 		return strconv.FormatInt(*v, 10)
 	}
-	usd := func(v *float64) string {
-		if v == nil {
-			return ""
-		}
-		return strconv.FormatFloat(*v, 'f', 6, 64)
-	}
-	cw := csv.NewWriter(w)
-	cw.Write([]string{"node", "zone", "pool", "instance_type", "node_cpu_m", "node_memory_bytes", "node_warnings",
+	records := [][]string{{"node", "zone", "pool", "instance_type", "node_cpu_m", "node_memory_bytes", "node_warnings",
 		"namespace", "pod", "qos", "cpu_request_m", "cpu_limit_m", "memory_request_bytes", "memory_limit_bytes", "findings",
-		"node_hourly_usd", "pod_hourly_usd"})
+		"node_hourly_usd", "pod_hourly_usd"}}
 	for _, r := range rows {
-		cw.Write([]string{r.Node, r.Zone, r.Pool, r.InstanceType, strconv.FormatInt(r.NodeCPU, 10),
+		records = append(records, []string{r.Node, r.Zone, r.Pool, r.InstanceType, strconv.FormatInt(r.NodeCPU, 10),
 			strconv.FormatInt(r.NodeMemoryBytes, 10), strings.Join(r.NodeWarnings, " "),
 			r.Namespace, r.Pod, r.QOS, strconv.FormatInt(r.CPU, 10), opt(r.CPULimit),
 			strconv.FormatInt(r.MemoryBytes, 10), opt(r.MemoryLimitBytes), strings.Join(r.Findings, " "),
 			usd(r.NodeHourlyCost), usd(r.HourlyCost)})
 	}
-	cw.Flush()
-	if err := cw.Error(); err != nil {
+	writeRecords(w, records)
+}
+
+func writeShowbackCSV(w http.ResponseWriter, rows []foam.ShowbackRow) {
+	records := [][]string{{"group", "pods", "unpriced_pods", "cpu_request_m", "memory_request_bytes", "hourly_usd"}}
+	for _, r := range rows {
+		records = append(records, []string{r.Group, strconv.Itoa(r.Pods), strconv.Itoa(r.UnpricedPods),
+			strconv.FormatInt(r.CPU, 10), strconv.FormatInt(r.MemoryBytes, 10), usd(r.HourlyCost)})
+	}
+	writeRecords(w, records)
+}
+
+func writeRecords(w http.ResponseWriter, records [][]string) {
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	if err := csv.NewWriter(w).WriteAll(records); err != nil {
 		slog.Warn("write response", "err", err)
 	}
 }

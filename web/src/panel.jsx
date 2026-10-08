@@ -1,13 +1,16 @@
-// The docked bottom panel: Problems, Changes and Drain simulation. Layout and
-// presentation only; App owns the state and hands each tab its data.
+// The docked bottom panel and its tabs (TABS). Layout and presentation only;
+// App owns the state and hands each tab its data.
 
 const { Icon, SevGlyph } = window.k8sIcons;
-const { clock } = window.k8sFormat;
+const { clock, fmtMem, fmtCost } = window.k8sFormat;
+const { showback } = window.k8sTopology;
+const { fileName } = window.k8sExport;
 
 const TABS = [
   { id: "problems", label: "Problems" },
   { id: "pending", label: "Pending" },
   { id: "changes", label: "Changes" },
+  { id: "showback", label: "Showback" },
   { id: "drain", label: "Drain simulation" },
   { id: "logs", label: "Logs" },
   // The transcript needs the height: the Assistant opens maximized.
@@ -104,6 +107,47 @@ function PendingTab({ pods }) {
   );
 }
 
+// Requests and cost per namespace or label value. A row sets the query that
+// lights its pods; the "" group of a label has no such query.
+function ShowbackTab({ nodes, context, memUnit, setQuery }) {
+  const [key, setKey] = React.useState(null); // null groups by namespace
+  const keys = React.useMemo(() => {
+    const s = new Set();
+    for (const n of nodes) for (const p of n.pods) for (const k in p.labels) s.add(k);
+    return [...s].sort();
+  }, [nodes]);
+  const rows = React.useMemo(() => showback(nodes, key), [nodes, key]);
+  const groupBy = key == null ? "namespace" : `label:${key}`;
+  const csv = `/report.csv?${new URLSearchParams({ groupBy, ...(context && { context }) })}`;
+  return (
+    <>
+      <div className="panel-bar">
+        <span>Group by</span>
+        <select value={key ?? ""} onChange={e => setKey(e.target.value || null)} aria-label="Group showback by">
+          <option value="">Namespace</option>
+          {keys.map(k => <option key={k} value={k}>{k}</option>)}
+        </select>
+        <span className="grow" />
+        <a href={csv} download={`${fileName(context, "showback")}.csv`} title="Live data, also during history playback">Download CSV</a>
+      </div>
+      <div className="ptable showback" role="table" aria-label="Showback">
+        <div className="ptr th" role="row"><span>{key || "Namespace"}</span><span>Pods</span><span>CPU</span><span>Memory</span><span>Cost</span></div>
+        {rows.slice(0, ROW_CAP).map(r => {
+          const q = key == null ? `ns:${r.group}` : r.group && `${key}=${r.group}`;
+          return (
+            <button key={r.group} className="ptr" role="row" disabled={!q} onClick={() => setQuery(q)} title={q ? `Highlight ${q}` : undefined}>
+              <span>{r.group || `no ${key}`}</span><span>{r.pods}</span><span>{(r.cpu / 1000).toFixed(2)} c</span>
+              <span>{fmtMem(r.mem, memUnit)} {memUnit}</span>
+              <span>{r.cost == null ? "–" : fmtCost(r.cost)}{r.cost != null && r.unpriced ? <span className="mut"> ({r.unpriced} unpriced)</span> : null}</span>
+            </button>
+          );
+        })}
+        {rows.length > ROW_CAP && <div className="ptr more">+{rows.length - ROW_CAP} more. Download the CSV for all of them.</div>}
+      </div>
+    </>
+  );
+}
+
 function ChangeCol({ sev, glyph, label, items }) {
   return (
     <div className="chg-col">
@@ -197,4 +241,4 @@ function MapChips({ lit, ring, litPod, workload, onClearWorkload, onLogs, at, on
   );
 }
 
-window.k8sPanel = { TAB_IDS: TABS.map(t => t.id), BottomPanel, ProblemsTab, PendingTab, ChangesTab, DrainTab, MapChips, showTab };
+window.k8sPanel = { TAB_IDS: TABS.map(t => t.id), BottomPanel, ProblemsTab, PendingTab, ShowbackTab, ChangesTab, DrainTab, MapChips, showTab };

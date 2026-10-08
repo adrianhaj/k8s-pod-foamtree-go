@@ -1,4 +1,4 @@
-// Check for the stranded-capacity and idle-cost helpers in topology.jsx. Go
+// Check for the stranded-capacity, idle-cost and showback helpers in topology.jsx. Go
 // tests never run JS: paste this into the devtools console of a running
 // dashboard (any --synthetic size); it logs "ok" or throws on the first mismatch.
 (() => {
@@ -36,6 +36,12 @@
   eq(T.idleCost([priced(null, [1])]), null, "idle: nothing priced");
   eq(T.idleCost([priced(1, [0.25, 0.25]), priced(2, []), priced(null, [])]), { idle: 2.5, total: 3, unpriced: 1 }, "idle: price minus pod costs");
   eq(T.idleCost([priced(1, [0.75, 0.5])]), { idle: 0, total: 1, unpriced: 0 }, "idle: overpaid node is 0");
+
+  const sp = (namespace, cpu, cost, labels = {}) => ({ namespace, cpu, mem: 0, cost, labels });
+  const sbNodes = [{ pods: [sp("x", 100, 0.25, { team: "red" }), sp("y", 200, 0.5)] }, { pods: [sp("x", 100, null, { team: "red" }), sp("z", 50, null)] }];
+  eq(T.showback(sbNodes).map(r => [r.group, r.pods, r.unpriced, r.cpu, r.cost]),
+    [["y", 1, 0, 200, 0.5], ["x", 2, 1, 200, 0.25], ["z", 1, 1, 50, null]], "showback: by namespace, costliest first");
+  eq(T.showback(sbNodes, "team").map(r => [r.group, r.pods, r.cost]), [["", 2, 0.5], ["red", 2, 0.25]], "showback: by label");
 
   console.log("ok");
 })();

@@ -36,6 +36,10 @@ Costs read per month of 730 hours.
 
 A node's **idle cost** is its price minus what its pods are charged: the money spent on capacity no request claims. On a single node, idle and requested cost add up to the node's price, unless its pods overpay it, as pods of opposite shapes can: that node counts as 0 idle, so across such nodes the two can sum to more than the total. Unpriced nodes are left out.
 
+## Showback
+
+The **Showback** tab of the bottom panel totals pods, requests and cost per namespace, or per value of any pod label, such as `team`, picked under **Group by**. Costliest first; pods without the label share a `no <key>` row. Pending pods reserve nothing and are left out. Click a row to highlight its pods on the map, and **Download CSV** for the same table as `/report.csv?groupBy=namespace` or `?groupBy=label:<key>`, ready to charge back.
+
 ## Worked example
 
 1. **Write a price table and start a synthetic cluster with it.**
@@ -59,8 +63,12 @@ A node's **idle cost** is its price minus what its pods are charged: the money s
 
    **What you'll see:** the workload chip adds the cost of all its replicas, with the same unpriced count.
 
-5. **Cost per pod.** Click a node.
+5. **Showback.** Open the **Showback** tab in the bottom panel and pick `app` under **Group by**.
+
+   **What you'll see:** one row per app with its pods, CPU, memory and monthly cost, costliest first. Click a row to light that app on the map.
+
+6. **Cost per pod.** Click a node.
 
    **What you'll see:** the node overlay shows the node's monthly price, and each pod row its own cost.
 
-6. **Export.** `/report.csv` adds `node_hourly_usd` and `pod_hourly_usd` columns, empty when unpriced, ready for a spreadsheet pivot by namespace. See [History and export](../history-export/).
+7. **Export.** `/report.csv` adds `node_hourly_usd` and `pod_hourly_usd` columns, empty when unpriced, ready for a spreadsheet pivot by namespace. See [History and export](../history-export/).

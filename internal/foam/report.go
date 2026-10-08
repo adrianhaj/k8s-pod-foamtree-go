@@ -2,7 +2,9 @@ package foam
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
+	"strings"
 )
 
 // ReportRow is one pod with its node and both axes side by side, the flat
@@ -82,4 +84,66 @@ func appendPods(rows []ReportRow, base ReportRow, n Node, pods []Pod, a Audit) [
 		rows = append(rows, r)
 	}
 	return rows
+}
+
+// ShowbackRow totals the pods of one namespace or label value.
+type ShowbackRow struct {
+	Group        string `json:"group"`
+	Pods         int    `json:"pods"`
+	UnpricedPods int    `json:"unpricedPods"`
+	CPU          int64  `json:"cpu"`
+	MemoryBytes  int64  `json:"memoryBytes"`
+	// Estimated USD per hour of the priced pods; null when none is priced.
+	HourlyCost *float64 `json:"hourlyCost"`
+	cost       float64
+}
+
+// Showback totals the pods on known nodes by namespace, or by the value of
+// the label after "label:", where pods without it share the "" group.
+// Pending pods reserve nothing and are left out. Costliest first, then by
+// group.
+func Showback(nodes []Node, pods []Pod, groupBy string) ([]ShowbackRow, error) {
+	key, byLabel := strings.CutPrefix(groupBy, "label:")
+	if groupBy != "namespace" && (!byLabel || key == "") {
+		return nil, fmt.Errorf("groupBy must be namespace or label:<key>, got %q", groupBy)
+	}
+	byName := make(map[string]Node, len(nodes))
+	for _, n := range nodes {
+		byName[n.Name] = n
+	}
+	groups := map[string]*ShowbackRow{}
+	for _, p := range pods {
+		n, ok := byName[p.NodeName]
+		if !ok {
+			continue
+		}
+		g := p.Namespace
+		if byLabel {
+			g = p.Labels[key]
+		}
+		r := groups[g]
+		if r == nil {
+			r = &ShowbackRow{Group: g}
+			groups[g] = r
+		}
+		r.Pods++
+		r.CPU += p.CPU
+		r.MemoryBytes += p.Memory
+		if c := PodCost(p, n); c == nil {
+			r.UnpricedPods++
+		} else {
+			r.cost += *c
+		}
+	}
+	rows := make([]ShowbackRow, 0, len(groups))
+	for _, r := range groups {
+		if r.Pods > r.UnpricedPods {
+			r.HourlyCost = &r.cost
+		}
+		rows = append(rows, *r)
+	}
+	slices.SortFunc(rows, func(a, b ShowbackRow) int {
+		return cmp.Or(cmp.Compare(b.cost, a.cost), cmp.Compare(a.Group, b.Group))
+	})
+	return rows, nil
 }

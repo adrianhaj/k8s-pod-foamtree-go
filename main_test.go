@@ -137,6 +137,16 @@ func TestReportRoutes(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"pod":"etcd","qos":"","cpu":150,"cpuLimit":null,"memoryBytes":100000000`) {
 		t.Fatalf("json: %d %s", w.Code, w.Body)
 	}
+	w = get(h, "/report.csv?groupBy=namespace")
+	if want := "group,pods,unpriced_pods,cpu_request_m,memory_request_bytes,hourly_usd\nkube-system,1,0,150,100000000,0.010000\n"; w.Code != 200 || w.Body.String() != want {
+		t.Fatalf("showback csv: %d\n%s", w.Code, w.Body)
+	}
+	if w := get(h, "/report.json?groupBy=label:team"); w.Code != 200 || !strings.Contains(w.Body.String(), `"group":"","pods":1`) {
+		t.Fatalf("showback json: %d %s", w.Code, w.Body)
+	}
+	if w := get(h, "/report.json?groupBy=pool"); w.Code != 400 {
+		t.Fatalf("bad groupBy: %d", w.Code)
+	}
 	src.err = fmt.Errorf("%w %q", kube.ErrUnknownContext, "prod")
 	if w := get(h, "/report.csv?context=prod"); w.Code != 400 {
 		t.Fatalf("unknown context: %d", w.Code)

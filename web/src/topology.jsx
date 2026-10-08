@@ -1,5 +1,6 @@
-// Node topology grouping shared by the 2D map and the 3D scene. Pure data:
-// the keys are the node fields the backend fills from well-known labels.
+// Node topology grouping shared by the 2D map and the 3D scene, plus the cost
+// totals over it. Pure data: the keys are the node fields the backend fills
+// from well-known labels.
 
 const GROUP_BY = [
   { id: "none", label: "None" },
@@ -51,6 +52,26 @@ function idleCost(nodes) {
   return t;
 }
 
+// Pods on nodes totalled by namespace, or by a label's value when key is set
+// (pods without it share the "" group), costliest first: /report.csv?groupBy=
+// for the snapshot on screen. cost is null while no pod in a group is priced.
+function showback(nodes, key) {
+  const groups = new Map();
+  for (const n of nodes) {
+    for (const p of n.pods) {
+      const g = key == null ? p.namespace : Object.hasOwn(p.labels, key) ? p.labels[key] : "";
+      if (!groups.has(g)) groups.set(g, { group: g, pods: 0, unpriced: 0, cpu: 0, mem: 0, cost: null });
+      const r = groups.get(g);
+      r.pods++;
+      r.cpu += p.cpu;
+      r.mem += p.mem;
+      if (p.cost == null) r.unpriced++;
+      else r.cost = (r.cost || 0) + p.cost;
+    }
+  }
+  return [...groups.values()].sort((a, b) => (b.cost ?? -1) - (a.cost ?? -1) || a.group.localeCompare(b.group));
+}
+
 // Median MiB per millicore over pods that request both: the shape free
 // capacity is judged against. null when no pod requests both.
 function podShape(nodes) {
@@ -83,4 +104,4 @@ function largestFit(nodes, shape) {
   return best;
 }
 
-window.k8sTopology = { GROUP_BY, groupNodes, groupUsage, idleCost, podShape, stranded, largestFit };
+window.k8sTopology = { GROUP_BY, groupNodes, groupUsage, idleCost, showback, podShape, stranded, largestFit };
