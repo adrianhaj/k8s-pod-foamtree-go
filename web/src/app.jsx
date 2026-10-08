@@ -313,12 +313,12 @@ function App() {
       });
   }, []);
 
-  // Usage is only read while its color mode is on: a hidden overlay costs a metrics LIST per refresh.
-  const usageOn = useRef(false);
-  usageOn.current = colorBy === "usage";
-
-  // Fetch cluster resource data
+  // Fetch cluster resource data. Calls overlap (context switch, Color by, auto-refresh),
+  // so only the latest one may touch the screen; an older answer is still recorded.
+  const loadSeq = useRef(0);
   const loadData = async () => {
+    const seq = ++loadSeq.current;
+    const latest = () => seq === loadSeq.current;
     setRefreshing(true);
     try {
       const currentCtx = contexts[contextIdx];
@@ -334,17 +334,17 @@ function App() {
           if (!r.ok) throw new Error(`Memory resources endpoint returned status ${r.status}`);
           return r.text();
         }),
-        // Optional: a failed read just means no usage overlay this refresh.
-        usageOn.current ? apiFetch(`/api/usage${ctxParam}`).then(r => (r.ok ? r.json() : null)).catch(() => null) : null,
+        // Optional, and only read while its color mode is on: a hidden overlay costs a metrics LIST per refresh.
+        // A failed read just means no usage overlay this refresh.
+        colorBy === "usage" ? apiFetch(`/api/usage${ctxParam}`).then(r => (r.ok ? r.json() : null)).catch(() => null) : null,
       ]);
 
       const raw = `[${cpuText},${memText}]`;
       const [cpuRes, memRes] = JSON.parse(raw);
       window.k8sPodAudit.configureAudit(cpuRes.audit);
       // While scrubbing, refreshes keep recording but leave the screen alone.
-      if (atRef.current == null) { setNodes(withUsage(mergeResources(cpuRes, memRes), usage)); setPending(cpuRes.pending || []); }
-      setError(null);
-      setLastRefresh(Date.now());
+      if (latest() && atRef.current == null) { setNodes(withUsage(mergeResources(cpuRes, memRes), usage)); setPending(cpuRes.pending || []); }
+      if (latest()) { setError(null); setLastRefresh(Date.now()); }
       // An unchanged cluster answers byte for byte the same: nothing to record.
       const name = currentCtx ? currentCtx.context : "";
       if (lastRaw.current.get(name) !== raw) {
@@ -354,9 +354,9 @@ function App() {
       }
     } catch (err) {
       console.error("Error loading resources from live cluster:", err);
-      setError(err.message || String(err));
+      if (latest()) setError(err.message || String(err));
     } finally {
-      setRefreshing(false);
+      if (latest()) setRefreshing(false);
     }
   };
 
@@ -526,7 +526,8 @@ function App() {
   // Auto-refresh tick — re-fetch live cluster data every refreshInterval seconds.
   // Switching Color by to Usage fetches now rather than at the next refresh.
   useEffect(() => {
-    if (colorBy === "usage" && contexts.length > 0) loadDataRef.current();
+    // Not while scrubbing: snapshots carry no usage and the live answer would not be shown.
+    if (colorBy === "usage" && contexts.length > 0 && atRef.current == null) loadDataRef.current();
   }, [colorBy]);
 
   useEffect(() => {

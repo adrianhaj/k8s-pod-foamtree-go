@@ -178,7 +178,7 @@ function PodBox({
     if (!highlightActive) cls.push("wl-preview");
   }
   const inset = 2;
-  const share = showUsage ? pod.share ?? null : null;
+  const share = showUsage ? pod.share : null;
   // Labels read top-left like a table cell: name, then the request beneath.
   const showName = rect.w >= 52 && rect.h >= 22;
   const showReq = showName && rect.h >= 38;
@@ -194,8 +194,6 @@ function PodBox({
       onMouseEnter={() => onPodHover(wl)}
       onMouseLeave={() => onPodHover(null)}
       style={{ left: rect.x, top: rect.y, width: rect.w - 2, height: rect.h - 2, "--pod-c": `var(${role})` }}>
-      {/* Filled up to the share of the CPU request in use; the rest is slack. */}
-      {share != null && <div className="pod-usage" style={{ height: `${Math.min(1, share) * 100}%` }} />}
       {showName && <div className="pod-label">{pod.shortName}</div>}
       {showReq && <div className="pod-req">{fmtReq(metricValue(pod, metric), metric)}{share != null && ` · ${Math.round(share * 100)}% used`}</div>}
       {rect.w > 24 && rect.h > 16 && <PodAuditBadge findings={pod.findings} />}
@@ -205,6 +203,9 @@ function PodBox({
           {it.w > 40 && it.h > 18 && <span>{it.container.name}</span>}
         </div>
       ))}
+      {/* Filled up to the share of the CPU request in use; the rest is slack. Drawn
+          after the container boxes, which are opaque and would otherwise hide it. */}
+      {share != null && <div className="pod-usage" style={{ height: `${Math.min(1, share) * 100}%` }} />}
     </div>
   );
 }
