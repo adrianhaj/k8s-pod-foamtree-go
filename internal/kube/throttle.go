@@ -43,12 +43,27 @@ type Throttle struct {
 // failures included: during an outage each refresh would otherwise wait out the timeout.
 func (t *Throttle) Shares(ctx context.Context) (map[string]float64, error) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if time.Since(t.at) < throttleTTL {
-		return t.shares, nil
+		shares := t.shares
+		t.mu.Unlock()
+		return shares, nil
 	}
+	// Marked before the query runs, so concurrent snapshots get the old shares rather than queue behind it.
 	t.at = time.Now()
-	ctx, cancel := context.WithTimeout(ctx, throttleTimeout)
+	t.mu.Unlock()
+	shares, err := t.query(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t.mu.Lock()
+	t.shares = shares
+	t.mu.Unlock()
+	return shares, nil
+}
+
+// query runs detached from the caller: one client disconnect must not cancel the refresh every snapshot shares.
+func (t *Throttle) query(ctx context.Context) (map[string]float64, error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), throttleTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		strings.TrimRight(t.URL, "/")+"/api/v1/query?"+url.Values{"query": {throttleQuery}}.Encode(), nil)
@@ -63,12 +78,7 @@ func (t *Throttle) Shares(ctx context.Context) (map[string]float64, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("prometheus: %s", resp.Status)
 	}
-	shares, err := parseThrottle(io.LimitReader(resp.Body, throttleMaxBytes))
-	if err != nil {
-		return nil, err
-	}
-	t.shares = shares
-	return shares, nil
+	return parseThrottle(io.LimitReader(resp.Body, throttleMaxBytes))
 }
 
 // parseThrottle reads an instant-query vector of per-pod values.

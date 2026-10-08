@@ -105,6 +105,8 @@ func parseFlags(args []string) (options, error) {
 		return o, errors.New("set K8SFOAMS_LLM_API_KEY or --llm-api-key-file, not both")
 	case o.llm.MaxTokens < 0:
 		return o, errors.New("--llm-max-tokens-per-question must be 0 or more")
+	case (o.prometheus == "") != (o.prometheusContext == ""):
+		return o, errors.New("--prometheus-url and --prometheus-context go together")
 	}
 	if o.llm.URL != "" {
 		if err := llm.CheckBaseURL(o.llm.URL); err != nil {
@@ -118,9 +120,6 @@ func parseFlags(args []string) (options, error) {
 	a, err := auditConfig(monolith, ratio, minShare, list(disable))
 	if err != nil {
 		return o, err
-	}
-	if (o.prometheus == "") != (o.prometheusContext == "") {
-		return o, errors.New("--prometheus-url and --prometheus-context go together")
 	}
 	o.audit = a
 	if pricesFile != "" {
@@ -176,6 +175,9 @@ func (s throttledSource) Snapshot(ctx context.Context, name string) ([]foam.Node
 	shares, qerr := s.throttle.Shares(ctx)
 	if qerr != nil {
 		slog.Warn("throttle", "err", qerr)
+		return nodes, pods, nil
+	}
+	if len(shares) == 0 {
 		return nodes, pods, nil
 	}
 	for i := range pods {
@@ -310,7 +312,7 @@ func run(ctx context.Context, o options) error {
 	if o.prices != nil {
 		src = pricedSource{src, o.prices}
 	}
-	if o.prometheus != "" {
+	if o.prometheus != "" && !o.audit.Disabled["throttled"] {
 		src = throttledSource{src, &kube.Throttle{URL: o.prometheus}, o.prometheusContext}
 	} else if o.synthetic == nil {
 		// Nothing sets Throttled without Prometheus: say the rule is off rather than clean.
