@@ -36,6 +36,21 @@ function groupUsage(members) {
   return { cpu: t.cpuUsed / (t.cpuCap || 1), mem: t.memUsed / (t.memCap || 1) };
 }
 
+// Price of the capacity no pod is charged for: each priced node's price minus
+// its pods' costs, so idle and requested add up to the node price. Pods of
+// opposite shapes can overpay a node, which then counts as 0 idle, not less.
+// null when no node is priced.
+function idleCost(nodes) {
+  const priced = nodes.filter(n => n.cost != null);
+  if (priced.length === 0) return null;
+  const t = { idle: 0, total: 0, unpriced: nodes.length - priced.length };
+  for (const n of priced) {
+    t.idle += Math.max(0, n.cost - n.pods.reduce((s, p) => s + (p.cost || 0), 0));
+    t.total += n.cost;
+  }
+  return t;
+}
+
 // Median MiB per millicore over pods that request both: the shape free
 // capacity is judged against. null when no pod requests both.
 function podShape(nodes) {
@@ -68,4 +83,4 @@ function largestFit(nodes, shape) {
   return best;
 }
 
-window.k8sTopology = { GROUP_BY, groupNodes, groupUsage, podShape, stranded, largestFit };
+window.k8sTopology = { GROUP_BY, groupNodes, groupUsage, idleCost, podShape, stranded, largestFit };

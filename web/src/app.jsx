@@ -13,7 +13,7 @@ const { getJSON, fitMatch, FitForm, FitSummary, FitVerdict, DrainResults } = win
 const { QOS_INFO, QOS_ORDER } = window.k8sQos;
 const { assignNamespaces, utilTone, COLOR_MODES } = window.k8sPalette;
 const { Legend } = window.k8sLegend;
-const { groupNodes, GROUP_BY, podShape, stranded, largestFit } = window.k8sTopology;
+const { groupNodes, GROUP_BY, podShape, stranded, largestFit, idleCost } = window.k8sTopology;
 const { pack, unpack, record, diff } = window.k8sHistory;
 const { THEME_PREFS, safeStorage, readPref, writePref, applyThemePref, PANEL_KEY, PANEL_DEFAULT, validPanel, readViewParams, viewSearch } = window.k8sPrefs;
 const { fmtMem, fmtCost, shortContext, clock } = window.k8sFormat;
@@ -515,6 +515,7 @@ function App() {
   // Judged against the snapshot on screen, so history playback stays honest.
   const shape = useMemo(() => podShape(nodes), [nodes]);
   const largest = useMemo(() => largestFit(nodes, shape), [nodes, shape]);
+  const idle = useMemo(() => idleCost(nodes), [nodes]);
 
   // Auto-refresh tick — re-fetch live cluster data every refreshInterval seconds.
   useEffect(() => {
@@ -584,7 +585,7 @@ function App() {
         exportMenu={<ExportMenu view={view} context={context} gridRef={gridRef} sceneRef={sceneRef}
           treemap={{ nodes, metric: activeMetric, match: shown, highlight, highlightActive, colorBy, nsMap }} />} />
       <SummaryStrip totals={totals} memUnit={memUnit} qosBreakdown={qosBreakdown} attention={attention}
-        extCell={extCell} query={query} setQuery={setQuery} largest={largest} />
+        extCell={extCell} query={query} setQuery={setQuery} largest={largest} idle={activeMetric === "cost" ? null : idle} />
       <Toolbar view={view} metric={activeMetric} metrics={metrics} setMetric={setMetric} zoom={zoom} setZoom={setZoom}
         groupBy={groupBy} setGroupBy={setGroupBy} showGroupBy={showGroupBy} colorBy={colorBy} setColorBy={setColorBy}
         legend={<Legend colorBy={colorBy} nsMap={nsMap} view={view} />} />
@@ -803,6 +804,9 @@ function TreemapGrid({
     );
   });
 
+  // Hovering a pod re-renders the grid; idle cost only changes with the data.
+  const groupIdle = useMemo(() => new Map(groupNodes(nodes, groupBy).map(g => [g.key, idleCost(g.members.map(m => m.node))])), [nodes, groupBy]);
+
   // Grouped, the groups are squarified by total capacity first, then each
   // group's nodes inside its frame, under a label with its utilisation.
   const groups = !ready || groupBy === "none" ? [] : window.k8sTreemap.squarify(
@@ -819,6 +823,7 @@ function TreemapGrid({
           const x = stranded(m.node, shape);
           return { cpu: t.cpu + x.cpu, mem: t.mem + x.mem };
         }, { cpu: 0, mem: 0 });
+        const ic = groupIdle.get(g.key);
         return (
           <div key={g.key} className="group-box" style={{ left: g.x, top: g.y, width: g.w - 8, height: g.h - 8 }}>
             <div className="group-label" style={{ height: GROUP_HEAD }}>
@@ -826,6 +831,7 @@ function TreemapGrid({
               <span className="group-meta">{n} node{n === 1 ? "" : "s"}</span>
               {s.cpu >= 1 && <span className="group-meta" title="Free CPU with no memory to pair at the median pod shape">{fmtReq(s.cpu, "cpu")} stranded</span>}
               {parseFloat(fmtReq(s.mem, "mem")) > 0 && <span className="group-meta" title="Free memory with no CPU to pair at the median pod shape">{fmtReq(s.mem, "mem")} stranded</span>}
+              {ic && ic.idle > 0 && <span className="group-meta" title="Node price no pod request is charged for">{fmtCost(ic.idle)} idle</span>}
               <span className={`group-util${utilTone(u) ? ` tone-${utilTone(u)}` : ""}`}>{Math.round(u * 100)}%</span>
             </div>
             {cards(g.members, 6, GROUP_HEAD, g.w - 16, g.h - GROUP_HEAD - 10)}

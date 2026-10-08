@@ -1,6 +1,6 @@
-// Check for the stranded-capacity helpers in topology.jsx. Go tests never run
-// JS: paste this into the devtools console of a running dashboard (any
-// --synthetic size); it logs "ok" or throws on the first mismatch.
+// Check for the stranded-capacity and idle-cost helpers in topology.jsx. Go
+// tests never run JS: paste this into the devtools console of a running
+// dashboard (any --synthetic size); it logs "ok" or throws on the first mismatch.
 (() => {
   const T = window.k8sTopology;
   const pod = (cpu, mem) => ({ cpu, mem });
@@ -30,6 +30,12 @@
   eq(T.largestFit([node("a", 1000, 1000), node("b", 800, 4000), node("c", 4000, 8000, [], ["cordoned"])], 2),
     { node: "b", cpu: 800, mem: 1600 }, "fit: best warning-free node");
   eq(T.largestFit([node("c", 4000, 8000, [], ["cordoned"])], 2), null, "fit: no warning-free node");
+
+  const priced = (cost, pods) => ({ cost, pods: pods.map(c => ({ cost: c })) });
+  eq(T.idleCost([]), null, "idle: empty cluster");
+  eq(T.idleCost([priced(null, [1])]), null, "idle: nothing priced");
+  eq(T.idleCost([priced(1, [0.25, 0.25]), priced(2, []), priced(null, [])]), { idle: 2.5, total: 3, unpriced: 1 }, "idle: price minus pod costs");
+  eq(T.idleCost([priced(1, [0.75, 0.5])]), { idle: 0, total: 1, unpriced: 0 }, "idle: overpaid node is 0");
 
   console.log("ok");
 })();

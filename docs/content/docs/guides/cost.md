@@ -32,6 +32,10 @@ A pod costs its node's hourly price times its larger share of the node's CPU or 
 
 Costs read per month of 730 hours.
 
+## Idle cost
+
+A node's **idle cost** is its price minus what its pods are charged: the money spent on capacity no request claims. Idle and requested cost add up to the node's price. A node whose pods overpay it, as pods of opposite shapes can, counts as 0 idle. Unpriced nodes are left out.
+
 ## Worked example
 
 1. **Write a price table and start a synthetic cluster with it.**
@@ -47,12 +51,16 @@ Costs read per month of 730 hours.
 
    **What you'll see:** the match count adds the monthly cost of the matched pods, something like `22 / 200 pods · ~$92/mo (8 unpriced)`: 8 of them run on the `r.4xlarge` and `g.4xlarge` nodes this table leaves unpriced. Any query works the same way, so `app=svc07` prices one app.
 
-3. **Cost of a workload.** Click a pod to pin its workload.
+3. **Idle cost.** Pick **Group by** → **Pool** in the toolbar.
+
+   **What you'll see:** the summary strip shows `Cost idle` against the total price of the priced nodes, unless **Size by** is Cost, where `Cost requested` already shows it; hover it for how many nodes are unpriced. Each group label adds its own idle cost, like `~$540/mo idle`, so the pool wasting the most stands out. Sized by cost, each node's empty foam reads `idle · ~$40/mo`.
+
+4. **Cost of a workload.** Click a pod to pin its workload.
 
    **What you'll see:** the workload chip adds the cost of all its replicas, with the same unpriced count.
 
-4. **Cost per pod.** Click a node.
+5. **Cost per pod.** Click a node.
 
    **What you'll see:** the node overlay shows the node's monthly price, and each pod row its own cost.
 
-5. **Export.** `/report.csv` adds `node_hourly_usd` and `pod_hourly_usd` columns, empty when unpriced, ready for a spreadsheet pivot by namespace. See [History and export](../history-export/).
+6. **Export.** `/report.csv` adds `node_hourly_usd` and `pod_hourly_usd` columns, empty when unpriced, ready for a spreadsheet pivot by namespace. See [History and export](../history-export/).
