@@ -87,7 +87,7 @@ func parseFlags(args []string) (options, error) {
 	var pricesFile string
 	fs.StringVar(&pricesFile, "prices", "", "CSV of node prices (instance_type,region,capacity_type,hourly_usd) for cost estimates")
 	fs.StringVar(&o.prometheus, "prometheus-url", "", "Prometheus base URL scraping cAdvisor, e.g. http://prometheus:9090; enables the throttled audit rule")
-	fs.StringVar(&o.prometheusContext, "prometheus-context", "", "kubeconfig context that --prometheus-url watches")
+	fs.StringVar(&o.prometheusContext, "prometheus-context", "", "kubeconfig context that --prometheus-url watches (in-cluster when running in a pod)")
 	fs.BoolVar(&o.version, "version", false, "print the version and exit")
 	fs.BoolVar(&o.version, "v", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil || o.version {
@@ -169,21 +169,30 @@ type throttledSource struct {
 
 func (s throttledSource) Snapshot(ctx context.Context, name string) ([]foam.Node, []foam.Pod, error) {
 	nodes, pods, err := s.source.Snapshot(ctx, name)
-	if err != nil || name != s.context {
+	if err != nil || !s.watches(name) {
 		return nodes, pods, err
 	}
 	shares, qerr := s.throttle.Shares(ctx)
 	if qerr != nil {
 		slog.Warn("throttle", "err", qerr)
-		return nodes, pods, nil
-	}
-	if len(shares) == 0 {
-		return nodes, pods, nil
 	}
 	for i := range pods {
 		pods[i].Throttled = shares[pods[i].Namespace+"/"+pods[i].Name]
 	}
 	return nodes, pods, nil
+}
+
+// watches reports whether name, "" meaning the active context, is the one Prometheus watches.
+func (s throttledSource) watches(name string) bool {
+	if name != "" {
+		return name == s.context
+	}
+	contexts, err := s.Contexts()
+	if err != nil {
+		return false
+	}
+	i := slices.IndexFunc(contexts, func(c kube.Context) bool { return c.Active })
+	return i >= 0 && contexts[i].Context == s.context
 }
 
 // pricedSource stamps each node's price on every snapshot, so the map, the

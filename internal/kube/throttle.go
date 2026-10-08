@@ -51,14 +51,12 @@ func (t *Throttle) Shares(ctx context.Context) (map[string]float64, error) {
 	// Marked before the query runs, so concurrent snapshots get the old shares rather than queue behind it.
 	t.at = time.Now()
 	t.mu.Unlock()
+	// A failure stores nil, so the next TTL serves no shares instead of the stale ones.
 	shares, err := t.query(ctx)
-	if err != nil {
-		return nil, err
-	}
 	t.mu.Lock()
 	t.shares = shares
 	t.mu.Unlock()
-	return shares, nil
+	return shares, err
 }
 
 // query runs detached from the caller: one client disconnect must not cancel the refresh every snapshot shares.
