@@ -137,7 +137,7 @@ function mergeResources(cpuData, memData) {
           cpu: cp.resize.desired, mem: mp.resize ? kbToMib(mp.resize.desired) : null } : null,
         // Autoscalers on the pod's workload: the HPA's name, and the VPA's target on each axis.
         hpa: cp.hpa || "",
-        vpa: cp.vpaTarget != null ? { cpu: cp.vpaTarget, mem: mp.vpaTarget != null ? kbToMib(mp.vpaTarget) : null } : null,
+        vpa: cp.vpaTarget != null || mp.vpaTarget != null ? { cpu: cp.vpaTarget ?? null, mem: mp.vpaTarget != null ? kbToMib(mp.vpaTarget) : null } : null,
         // Container status: restarts, waiting reason, last exit. Absent on an older backend.
         phase: cp.phase || "",
         statuses: cp.statuses || [],
@@ -1005,7 +1005,7 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, str
                         {p.hpa && <span className="container-pill" title="A HorizontalPodAutoscaler sets the replica count, so low usage is not called slack">HPA {p.hpa}</span>}
                         {p.vpa && (
                           <span className="container-pill" title="What the VerticalPodAutoscaler recommends requesting">
-                            VPA target {(p.vpa.cpu / 1000).toFixed(2)} cores{p.vpa.mem != null && ` · ${fmtMem(p.vpa.mem, memUnit)} ${memUnit}`}
+                            VPA target {[p.vpa.cpu != null && `${(p.vpa.cpu / 1000).toFixed(2)} cores`, p.vpa.mem != null && `${fmtMem(p.vpa.mem, memUnit)} ${memUnit}`].filter(Boolean).join(" · ")}
                           </span>
                         )}
                       </div>

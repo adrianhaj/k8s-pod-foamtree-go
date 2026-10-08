@@ -25,6 +25,8 @@ func TestAutoscalers(t *testing.T) {
 			fmt.Fprint(w, `{"items":[
 				{"metadata":{"namespace":"shop"},"spec":{"targetRef":{"name":"api"}},"status":{"recommendation":{"containerRecommendations":[
 					{"target":{"cpu":"100m","memory":"64Mi"}},{"target":{"cpu":"20m","memory":"1Mi"}}]}}},
+				{"metadata":{"namespace":"shop"},"spec":{"targetRef":{"name":"cpuonly"}},"status":{"recommendation":{"containerRecommendations":[
+					{"target":{"cpu":"50m"}}]}}},
 				{"metadata":{"namespace":"shop"},"spec":{"targetRef":{"name":"fresh"}},"status":{}}]}`)
 		default:
 			http.NotFound(w, r)
@@ -39,9 +41,25 @@ func TestAutoscalers(t *testing.T) {
 	want := autoscalers{
 		hpa: map[string]string{"shop/web": "web-hpa"},
 		// A VPA with no recommendation yet has nothing to draw.
-		vpa: map[string]foam.Container{"shop/api": {CPU: 120, Memory: 65 << 20}},
+		// A VPA controlling only CPU has no memory target: 0, not a recommendation of none.
+		vpa: map[string]foam.Container{"shop/api": {CPU: 120, Memory: 65 << 20}, "shop/cpuonly": {CPU: 50}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestAutoscalersKeepOnTransientError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "busy", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	cs, err := kubernetes.NewForConfig(&rest.Config{Host: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prev := autoscalers{hpa: map[string]string{"shop/web": "web-hpa"}, vpa: map[string]foam.Container{"shop/api": {CPU: 1}}}
+	if got := (&clusterCache{client: cs}).listAutoscalers(context.Background(), prev); !reflect.DeepEqual(got, prev) {
+		t.Errorf("a 503 dropped the last answer: got %+v", got)
 	}
 }

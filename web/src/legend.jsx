@@ -11,7 +11,7 @@ function Legend({ colorBy, nsMap, view }) {
     items = window.k8sQos.QOS_ORDER.map(q => sw(q, QOS_ROLE[q], q));
   } else if (colorBy === "usage") {
     const low = window.k8sPalette.USAGE_LOW * 100;
-    items = [sw("ok", "--ok", `${low}–100% of CPU request`), sw("warn", "--warn", `under ${low}%, unless HPA-scaled`), sw("danger", "--danger", "over request"), sw("none", "--pod-neutral", "no reading or no CPU request")];
+    items = [sw("ok", "--ok", `${low}–100% of CPU request, or HPA-scaled`), sw("warn", "--warn", `under ${low}%, unless HPA-scaled`), sw("danger", "--danger", "over request"), sw("none", "--pod-neutral", "no reading or no CPU request")];
   } else if (colorBy === "problems") {
     const rules = sev => Object.entries(window.k8sPodAudit.POD_FINDINGS).filter(([slug, f]) => f.sev === sev && !window.k8sPodAudit.isRuleDisabled(slug)).map(([, f]) => f.label).join(", ");
     items = [sw("danger", "--danger", rules("danger")), sw("warn", "--warn", rules("warn")), sw("info", "--info", rules("info")), sw("none", "--pod-neutral", "clean")];

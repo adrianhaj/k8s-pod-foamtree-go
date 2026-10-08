@@ -209,8 +209,10 @@ func podGroup(p Pod, n Node, axis Axis, a Audit) PodGroup {
 	}
 	var vpa *float64
 	if p.VPA != nil {
-		v := axis.weight(axis.container(*p.VPA))
-		vpa = &v
+		// 0 is a target the VPA did not give for this axis.
+		if v := axis.weight(axis.container(*p.VPA)); v > 0 {
+			vpa = &v
+		}
 	}
 	return PodGroup{
 		Label:             p.Name,
