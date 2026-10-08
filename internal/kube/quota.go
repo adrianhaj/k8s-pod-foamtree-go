@@ -41,8 +41,13 @@ func (s *Source) Quotas(ctx context.Context, name string) ([]Quota, error) {
 			if key == "cpu" || key == "memory" {
 				key = "requests." + key
 			}
+			hard := h.AsApproximateFloat64()
+			// A quota may set both "cpu" and "requests.cpu": the tighter one binds.
+			if old, ok := v.Hard[key]; ok && old <= hard {
+				continue
+			}
 			used := q.Status.Used[k]
-			v.Hard[key], v.Used[key] = h.AsApproximateFloat64(), used.AsApproximateFloat64()
+			v.Hard[key], v.Used[key] = hard, used.AsApproximateFloat64()
 		}
 		out = append(out, v)
 	}

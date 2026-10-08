@@ -404,6 +404,7 @@ function App() {
     setSim(SIM_IDLE);
     setAt(null);
     setPlaying(false);
+    setQuotas(null);
     nsRef.current = new Map();
   }, [contextIdx]);
 

@@ -28,7 +28,7 @@ func TestQuotas(t *testing.T) {
 			Status: corev1.ResourceQuotaStatus{Hard: hard, Used: used}}
 	}
 	cs := fake.NewClientset(
-		quota("compute", rl("cpu", "4", "limits.memory", "8Gi"), rl("cpu", "1500m", "limits.memory", "2Gi")),
+		quota("compute", rl("cpu", "4", "requests.cpu", "3", "limits.memory", "8Gi"), rl("cpu", "1500m", "requests.cpu", "1500m", "limits.memory", "2Gi")),
 		quota("objects", rl("pods", "10"), rl("pods", "9")),
 	)
 	got, err := testSource(t, cs).Quotas(context.Background(), "kind-b")
@@ -36,7 +36,7 @@ func TestQuotas(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Quota{
-		{Namespace: "shop", Name: "compute", Hard: map[string]float64{"requests.cpu": 4, "limits.memory": 8 << 30},
+		{Namespace: "shop", Name: "compute", Hard: map[string]float64{"requests.cpu": 3, "limits.memory": 8 << 30},
 			Used: map[string]float64{"requests.cpu": 1.5, "limits.memory": 2 << 30}},
 		{Namespace: "shop", Name: "objects", Hard: map[string]float64{"pods": 10}, Used: map[string]float64{"pods": 9}},
 	}
