@@ -25,6 +25,8 @@ import (
 	"k8s.io/client-go/rest"
 	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/adrianhaj/k8s-pod-foamtree-go/internal/foam"
 )
 
 const kubeconfig = `apiVersion: v1
@@ -194,7 +196,8 @@ func TestSlimPodKeepsOnlyWhatTheDashboardReads(t *testing.T) {
 	always := corev1.ContainerRestartPolicyAlways
 	in := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns", Labels: map[string]string{"app": "x"},
-			Annotations: map[string]string{"big": "blob"}, ManagedFields: []metav1.ManagedFieldsEntry{{Manager: "kubectl"}}},
+			Annotations:   map[string]string{"big": "blob", foam.LimitRangerAnnotation: "LimitRanger plugin set: cpu request for container app"},
+			ManagedFields: []metav1.ManagedFieldsEntry{{Manager: "kubectl"}}},
 		Spec: corev1.PodSpec{NodeName: "n", Containers: []corev1.Container{{Name: "app", Image: "nginx",
 			Env: []corev1.EnvVar{{Name: "SECRET", Value: "s3cr3t"}}}},
 			InitContainers: []corev1.Container{{Name: "proxy", RestartPolicy: &always}}},
@@ -202,10 +205,10 @@ func TestSlimPodKeepsOnlyWhatTheDashboardReads(t *testing.T) {
 	}
 	out, _ := slimPod(in)
 	p := out.(*corev1.Pod)
-	if p.Annotations != nil || p.ManagedFields != nil || p.Spec.Containers[0].Env != nil || p.Spec.Containers[0].Image != "" || p.Status.Message != "" {
+	if len(p.Annotations) != 1 || p.ManagedFields != nil || p.Spec.Containers[0].Env != nil || p.Spec.Containers[0].Image != "" || p.Status.Message != "" {
 		t.Fatalf("not slimmed: %+v", p)
 	}
-	if p.Labels["app"] != "x" || p.Spec.NodeName != "n" || p.Status.QOSClass != corev1.PodQOSBurstable || *p.Spec.InitContainers[0].RestartPolicy != always {
+	if p.Labels["app"] != "x" || p.Annotations[foam.LimitRangerAnnotation] == "" || p.Spec.NodeName != "n" || p.Status.QOSClass != corev1.PodQOSBurstable || *p.Spec.InitContainers[0].RestartPolicy != always {
 		t.Fatalf("dropped a field the dashboard needs: %+v", p)
 	}
 }

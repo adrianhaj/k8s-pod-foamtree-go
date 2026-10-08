@@ -31,6 +31,8 @@ type source interface {
 	Logs(ctx context.Context, name string, req kube.LogRequest) (io.ReadCloser, error)
 	// Pods metrics-server measured, keyed "namespace/name".
 	Usage(ctx context.Context, name string) (map[string]kube.Usage, error)
+	// Every ResourceQuota; none when this account may not read them.
+	Quotas(ctx context.Context, name string) ([]kube.Quota, error)
 }
 
 const (
@@ -208,6 +210,20 @@ func newHandler(src source, static fs.FS, a *auth.Auth, assistant *llm.Proxy, au
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		default:
 			writeJSON(w, map[string]any{"available": true, "pods": pods})
+		}
+	})
+	app.HandleFunc("GET /api/quotas", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), usageTimeout)
+		defer cancel()
+		quotas, err := src.Quotas(ctx, r.URL.Query().Get("context"))
+		switch {
+		case errors.Is(err, kube.ErrUnknownContext):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		case err != nil:
+			slog.Warn("quotas", "err", err)
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		default:
+			writeJSON(w, map[string]any{"quotas": quotas})
 		}
 	})
 	if assistant != nil {

@@ -107,9 +107,26 @@ function PendingTab({ pods }) {
   );
 }
 
+// Each namespace's tightest quota: the highest used/hard share over every
+// ResourceQuota and resource in it, with all of them listed for the tooltip.
+function quotaByNs(quotas) {
+  const m = new Map();
+  for (const q of quotas || []) {
+    for (const [k, hard] of Object.entries(q.hard)) {
+      if (!(hard > 0)) continue;
+      const share = (q.used[k] || 0) / hard;
+      const e = m.get(q.namespace) || { share: -1, items: [] };
+      e.items.push(`${q.name}: ${k} ${Math.round(share * 100)}%`);
+      if (share > e.share) Object.assign(e, { share, key: k });
+      m.set(q.namespace, e);
+    }
+  }
+  return m;
+}
+
 // Requests and cost per namespace or label value. A row sets the query that
 // lights its pods; the "" group of a label has no such query.
-function ShowbackTab({ nodes, context, memUnit, setQuery }) {
+function ShowbackTab({ nodes, quotas, context, memUnit, setQuery }) {
   const [key, setKey] = React.useState(null); // null groups by namespace
   const keys = React.useMemo(() => {
     const s = new Set();
@@ -118,6 +135,8 @@ function ShowbackTab({ nodes, context, memUnit, setQuery }) {
   }, [nodes]);
   const rows = React.useMemo(() => showback(nodes, key), [nodes, key]);
   const groupBy = key == null ? "namespace" : `label:${key}`;
+  // Only by namespace, and only when this account can read some quota.
+  const quota = React.useMemo(() => (key == null && quotas?.length ? quotaByNs(quotas) : null), [key, quotas]);
   const csv = `/report.csv?${new URLSearchParams({ groupBy, ...(context && { context }) })}`;
   return (
     <>
@@ -130,8 +149,8 @@ function ShowbackTab({ nodes, context, memUnit, setQuery }) {
         <span className="grow" />
         <a href={csv} download={`${fileName(context, "showback")}.csv`} title="Live data, also during history playback">Download CSV</a>
       </div>
-      <div className="ptable showback" role="table" aria-label="Showback">
-        <div className="ptr th" role="row"><span>{key || "Namespace"}</span><span>Pods</span><span>CPU</span><span>Memory</span><span>Cost</span></div>
+      <div className={`ptable showback${quota ? " quota" : ""}`} role="table" aria-label="Showback">
+        <div className="ptr th" role="row"><span>{key || "Namespace"}</span><span>Pods</span><span>CPU</span><span>Memory</span><span>Cost</span>{quota && <span>Quota</span>}</div>
         {rows.slice(0, ROW_CAP).map(r => {
           const q = key == null ? `ns:${r.group}` : r.group && `${key}=${r.group}`;
           return (
@@ -139,12 +158,23 @@ function ShowbackTab({ nodes, context, memUnit, setQuery }) {
               <span>{r.group || `no ${key}`}</span><span>{r.pods}</span><span>{(r.cpu / 1000).toFixed(2)} c</span>
               <span>{fmtMem(r.mem, memUnit)} {memUnit}</span>
               <span>{r.cost == null ? "–" : fmtCost(r.cost)}{r.cost != null && r.unpriced ? <span className="mut"> ({r.unpriced} unpriced)</span> : null}</span>
+              {quota && <QuotaCell q={quota.get(r.group)} />}
             </button>
           );
         })}
         {rows.length > ROW_CAP && <div className="ptr more">+{rows.length - ROW_CAP} more. Download the CSV for all of them.</div>}
       </div>
     </>
+  );
+}
+
+function QuotaCell({ q }) {
+  if (!q) return <span className="mut">–</span>;
+  return (
+    <span title={q.items.join("\n")}>
+      <meter min="0" max="1" low="0.8" high="0.95" optimum="0" value={Math.min(q.share, 1)} />
+      {Math.round(q.share * 100)}% {q.key}
+    </span>
   );
 }
 

@@ -37,6 +37,7 @@ type fakeSource struct {
 	// nil means one active context, "kind".
 	contexts []kube.Context
 	usage    map[string]kube.Usage
+	quotas   []kube.Quota
 	usageErr error
 }
 
@@ -44,6 +45,10 @@ func (f *fakeSource) Started() []string { return f.started }
 
 func (f *fakeSource) Usage(context.Context, string) (map[string]kube.Usage, error) {
 	return f.usage, f.usageErr
+}
+
+func (f *fakeSource) Quotas(context.Context, string) ([]kube.Quota, error) {
+	return f.quotas, nil
 }
 
 func (f *fakeSource) Logs(_ context.Context, name string, req kube.LogRequest) (io.ReadCloser, error) {
@@ -584,5 +589,14 @@ func TestUsageRoute(t *testing.T) {
 				t.Errorf("got %d %q, want %d containing %q", rec.Code, rec.Body.String(), tc.code, tc.body)
 			}
 		})
+	}
+}
+
+func TestQuotasRoute(t *testing.T) {
+	h := newHandler(&fakeSource{quotas: []kube.Quota{{Namespace: "shop", Name: "compute",
+		Hard: map[string]float64{"pods": 10}, Used: map[string]float64{"pods": 9}}}}, static, nil, nil, foam.DefaultAudit())
+	rec := get(h, "/api/quotas")
+	if want := `{"quotas":[{"namespace":"shop","name":"compute","hard":{"pods":10},"used":{"pods":9}}]}`; rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != want {
+		t.Errorf("got %d %s", rec.Code, rec.Body.String())
 	}
 }

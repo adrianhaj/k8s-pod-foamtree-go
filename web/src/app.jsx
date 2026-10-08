@@ -137,6 +137,7 @@ function mergeResources(cpuData, memData) {
           cpu: cp.resize.desired, mem: mp.resize ? kbToMib(mp.resize.desired) : null } : null,
         // Autoscalers on the pod's workload: the HPA's name, and the VPA's target on each axis.
         hpa: cp.hpa || "",
+        limitRange: cp.limitRange || "",
         vpa: cp.vpaTarget != null || mp.vpaTarget != null ? { cpu: cp.vpaTarget ?? null, mem: mp.vpaTarget != null ? kbToMib(mp.vpaTarget) : null } : null,
         // Container status: restarts, waiting reason, last exit. Absent on an older backend.
         phase: cp.phase || "",
@@ -275,6 +276,15 @@ function App() {
   };
   const podsByKey = useMemo(() => sim.result ? new Map(nodes.flatMap(n => n.pods.map(p => [podKey(p), p]))) : null, [nodes, sim.result]);
   const context = contexts[contextIdx] ? contexts[contextIdx].context : "";
+  // ResourceQuotas, read only while Showback is open. Live, also during history playback.
+  const [quotas, setQuotas] = useState(null);
+  useEffect(() => {
+    if (!panel.open || panel.tab !== "showback") return;
+    let live = true;
+    apiFetch(`/api/quotas${context ? `?context=${encodeURIComponent(context)}` : ""}`)
+      .then(r => (r.ok ? r.json() : null)).then(j => live && setQuotas(j?.quotas || null)).catch(() => {});
+    return () => { live = false; };
+  }, [panel.open, panel.tab, context, lastRefresh]);
   // Every refresh is recorded; `at` is the snapshot on screen (null = live).
   const [history, setHistory] = useState([]);
   const [at, setAt] = useState(null);
@@ -678,7 +688,7 @@ function App() {
             onPickNode={name => setFocused(nodes.find(n => n.name === name) || null)} />
         )}
         {panel.tab === "pending" && <PendingTab pods={pending} />}
-        {panel.tab === "showback" && <ShowbackTab nodes={nodes} context={context} memUnit={memUnit} setQuery={setQuery} />}
+        {panel.tab === "showback" && <ShowbackTab nodes={nodes} quotas={quotas} context={context} memUnit={memUnit} setQuery={setQuery} />}
         {panel.tab === "changes" && (
           <ChangesTab entries={entries} at={at} atLabel={at == null ? "Live" : clock(at)}
             onScrub={i => { setPlaying(false); setAt(i === entries.length - 1 ? null : entries[i].t); }}
@@ -1000,8 +1010,9 @@ function FocusOverlay({ node, onClose, metric, memUnit, fitReasons, onDrain, str
                         {p.findings.map(f => <FindingPill key={f} f={f} />)}
                       </div>
                     )}
-                    {(p.hpa || p.vpa) && (
+                    {(p.hpa || p.vpa || p.limitRange) && (
                       <div className="pod-row-containers">
+                        {p.limitRange && <span className="container-pill" title="The LimitRanger admission plugin filled this in from the namespace's LimitRange default">LimitRange set {p.limitRange}</span>}
                         {p.hpa && <span className="container-pill" title="A HorizontalPodAutoscaler sets the replica count, so low usage is not called slack">HPA {p.hpa}</span>}
                         {p.vpa && (
                           <span className="container-pill" title="What the VerticalPodAutoscaler recommends requesting">

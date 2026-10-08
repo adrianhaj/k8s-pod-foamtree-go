@@ -111,6 +111,7 @@ type PodGroup struct {
 	HourlyCost        *float64          `json:"hourlyCost,omitempty"`
 	HPA               string            `json:"hpa,omitempty"`
 	VPATarget         *float64          `json:"vpaTarget,omitempty"`
+	LimitRange        string            `json:"limitRange,omitempty"`
 }
 
 type PodResize struct {
@@ -231,6 +232,7 @@ func podGroup(p Pod, n Node, axis Axis, a Audit) PodGroup {
 		HourlyCost:        PodCost(p, n),
 		HPA:               p.HPA,
 		VPATarget:         vpa,
+		LimitRange:        p.LimitRange,
 	}
 }
 

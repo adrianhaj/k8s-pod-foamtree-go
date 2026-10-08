@@ -40,6 +40,8 @@ A node's **idle cost** is its price minus what its pods are charged: the money s
 
 The **Showback** tab of the bottom panel totals pods, requests and cost per namespace, or per value of any pod label, such as `team`, picked under **Group by**. Costliest first; pods without the label share a `no <key>` row. Pending pods reserve nothing and are left out. Click a row to highlight its pods on the map, and **Download CSV** for the same table as `/report.csv?groupBy=namespace` or `?groupBy=label:<key>`, ready to charge back.
 
+Grouped by namespace, a **Quota** column shows each namespace's tightest ResourceQuota: the highest used/hard share over every quota and resource in it, with the full list on hover. A namespace near 100% is refused new pods even when nodes have room. The column is hidden when the cluster has no quotas or the account may not list them (RBAC: `list` on `resourcequotas`). Quotas are read live, also during history playback.
+
 ## Worked example
 
 1. **Write a price table and start a synthetic cluster with it.**
