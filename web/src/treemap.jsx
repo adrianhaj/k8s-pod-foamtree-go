@@ -156,7 +156,7 @@ function NodeCard({
         </div>
       ) : (
         <PodBox key={`pod-${i}`} pod={it.pod} rect={it} role={podToken(it.pod, colorBy, nsMap)}
-          metric={metric} fmtReq={fmtReq}
+          metric={metric} fmtReq={fmtReq} showUsage={colorBy === "usage"}
           matched={podMatched(it.pod)} dim={queryActive && !nodeDim && !podMatched(it.pod)}
           highlight={highlight} highlightActive={highlightActive}
           onPodSelect={onPodSelect} onPodHover={onPodHover} />
@@ -166,7 +166,7 @@ function NodeCard({
 }
 
 function PodBox({
-  pod, rect, role, metric, fmtReq, matched, dim,
+  pod, rect, role, metric, fmtReq, showUsage, matched, dim,
   highlight, highlightActive, onPodSelect, onPodHover,
 }) {
   const wl = workloadKey(pod.name);
@@ -178,6 +178,7 @@ function PodBox({
     if (!highlightActive) cls.push("wl-preview");
   }
   const inset = 2;
+  const share = showUsage ? pod.share : null;
   // Labels read top-left like a table cell: name, then the request beneath.
   const showName = rect.w >= 52 && rect.h >= 22;
   const showReq = showName && rect.h >= 38;
@@ -194,7 +195,7 @@ function PodBox({
       onMouseLeave={() => onPodHover(null)}
       style={{ left: rect.x, top: rect.y, width: rect.w - 2, height: rect.h - 2, "--pod-c": `var(${role})` }}>
       {showName && <div className="pod-label">{pod.shortName}</div>}
-      {showReq && <div className="pod-req">{fmtReq(metricValue(pod, metric), metric)}</div>}
+      {showReq && <div className="pod-req">{fmtReq(metricValue(pod, metric), metric)}{share != null && ` · ${Math.round(share * 100)}% used`}</div>}
       {rect.w > 24 && rect.h > 16 && <PodAuditBadge findings={pod.findings} />}
       {laid.map((it, i) => (
         <div key={i} className={`container-box${it.container.init ? " is-init" : ""}`}
@@ -202,6 +203,9 @@ function PodBox({
           {it.w > 40 && it.h > 18 && <span>{it.container.name}</span>}
         </div>
       ))}
+      {/* Filled up to the share of the CPU request in use; the rest is slack. Drawn
+          after the container boxes, which are opaque and would otherwise hide it. */}
+      {share != null && <div className="pod-usage" style={{ height: `${Math.min(1, share) * 100}%` }} />}
     </div>
   );
 }

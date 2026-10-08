@@ -71,7 +71,8 @@ The dashboard follows the OS light or dark setting by default. **Settings → Th
 
 - **Memory unit**: MiB, GiB (default), or TiB, under Settings on the rail.
 - **Size by**: CPU or Memory, in the toolbar (in 3D, a **Zoom** slider takes its place).
-- **Color by**: in the toolbar. *Namespace* (default) colors each pod by its namespace; *QoS* by its QoS class (see [QoS & eviction risk](../finding-problems/#qos-and-eviction-risk)); *Problems* by the severity of its audit findings. A legend sits beside it.
+- **Color by**: in the toolbar. *Namespace* (default) colors each pod by its namespace; *QoS* by its QoS class (see [QoS & eviction risk](../finding-problems/#qos-and-eviction-risk)); *Problems* by the severity of its audit findings; *Usage* by how much of its CPU request is in use. A legend sits beside it.
+- **Usage**: each pod fills from the bottom to its CPU use as a share of its CPU request; the empty part is slack. Needs metrics-server, and is live only (no history playback). Memory and 3D cubes are not filled yet.
 - **Context**: switch the kubeconfig context, see [Run locally](../../getting-started/run-locally/).
 - **Refresh**: the Auto-refresh menu in the top bar (Off, 15 s … 10 min), plus a *Refresh now* button beside it.
 - **Filter**: the query bar in the top bar highlights matching pods and dims the rest — nothing is removed from the view. See [Filtering](../querying/) for the full grammar.

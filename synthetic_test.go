@@ -218,3 +218,34 @@ func TestSyntheticCrashes(t *testing.T) {
 		t.Fatalf("synthetic cluster should show every crash finding: %v", seen)
 	}
 }
+
+// Usage builds pods from their index, not from Snapshot: both must name the same pods.
+func TestSyntheticUsage(t *testing.T) {
+	s, _ := parseSynthetic("30x20")
+	clock := time.Unix(1_000_000, 0)
+	s.now = func() time.Time { return clock }
+	_, pods, _ := s.Snapshot(context.Background(), "")
+	usage, err := s.Usage(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := 0
+	for k, p := range pods {
+		u, ok := usage[p.Namespace+"/"+p.Name]
+		switch {
+		case p.NodeName == "" || k%7 == 6:
+			if ok {
+				t.Fatalf("%s has a reading it should not", p.Name)
+			}
+		case !ok:
+			t.Fatalf("%s/%s has no reading", p.Namespace, p.Name)
+		case u.CPU != int64(float64(p.CPU)*float64(k%5)*0.3):
+			t.Fatalf("%s: cpu %d for request %d", p.Name, u.CPU, p.CPU)
+		default:
+			read++
+		}
+	}
+	if read != len(usage) {
+		t.Fatalf("%d readings match no pod", len(usage)-read)
+	}
+}

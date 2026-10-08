@@ -36,9 +36,15 @@ type fakeSource struct {
 	started []string
 	// nil means one active context, "kind".
 	contexts []kube.Context
+	usage    map[string]kube.Usage
+	usageErr error
 }
 
 func (f *fakeSource) Started() []string { return f.started }
+
+func (f *fakeSource) Usage(context.Context, string) (map[string]kube.Usage, error) {
+	return f.usage, f.usageErr
+}
 
 func (f *fakeSource) Logs(_ context.Context, name string, req kube.LogRequest) (io.ReadCloser, error) {
 	f.asked, f.logReq = name, req
@@ -554,5 +560,29 @@ func TestAuditConfigReachesRoutes(t *testing.T) {
 		if strings.Contains(b, "missing-limits") {
 			t.Errorf("%s disabled: missing-limits still reported: %s", target, b)
 		}
+	}
+}
+
+func TestUsageRoute(t *testing.T) {
+	cases := []struct {
+		name string
+		src  *fakeSource
+		code int
+		body string
+	}{
+		{"measured", &fakeSource{usage: map[string]kube.Usage{"shop/web-1": {CPU: 120, Memory: 1 << 20}}}, 200,
+			`{"available":true,"pods":{"shop/web-1":{"cpu":120,"memory":1048576}}}`},
+		{"no metrics-server", &fakeSource{usageErr: kube.ErrNoMetrics}, 200, `{"available":false}`},
+		{"unreachable", &fakeSource{usageErr: errors.New("timeout")}, 503, "timeout"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHandler(tc.src, static, nil, nil, foam.DefaultAudit())
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/usage", nil))
+			if rec.Code != tc.code || !strings.Contains(rec.Body.String(), tc.body) {
+				t.Errorf("got %d %q, want %d containing %q", rec.Code, rec.Body.String(), tc.code, tc.body)
+			}
+		})
 	}
 }

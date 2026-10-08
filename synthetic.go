@@ -59,8 +59,38 @@ func (s *syntheticSource) Logs(_ context.Context, _ string, req kube.LogRequest)
 	return io.NopCloser(strings.NewReader(b.String())), nil
 }
 
+// Usage makes up readings: pods run from idle to 20% over their request, and
+// one in seven has no metrics yet, so the overlay shows every case.
+// It derives each pod from its index rather than building the whole cluster.
+func (s *syntheticSource) Usage(context.Context, string) (map[string]kube.Usage, error) {
+	gen := s.gen()
+	total := s.nodes * s.podsPerNode
+	out := make(map[string]kube.Usage, total)
+	for k := range total {
+		if k%7 == 6 {
+			continue
+		}
+		name, ns, cpu, mem := syntheticPod(k, gen)
+		f := float64(k%5) * 0.3
+		out[ns+"/"+name] = kube.Usage{CPU: int64(float64(cpu) * f), Memory: int64(float64(mem) * f)}
+	}
+	return out, nil
+}
+
+func (s *syntheticSource) gen() int { return int(s.now().UnixNano() / int64(syntheticChurn)) }
+
+// syntheticPod is what Snapshot and Usage agree on for pod k: name, namespace and requests.
+func syntheticPod(k, gen int) (name, ns string, cpu, mem int64) {
+	cpu, mem = int64(25+(k*37)%400), int64(50_000+(k*7919)%1_500_000)*1000
+	if k%13 == 0 {
+		cpu, mem = 0, 0
+	}
+	// The last segment changes for pod k once every 50 generations.
+	return fmt.Sprintf("svc%02d-%x-%x", k%40, k, (k+gen)/50), fmt.Sprintf("team-%d", k%9), cpu, mem
+}
+
 func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam.Pod, error) {
-	gen := int(s.now().UnixNano() / int64(syntheticChurn))
+	gen := s.gen()
 	pools := []string{"general", "general", "memory", "spot"}
 	nodes := make([]foam.Node, 0, s.nodes)
 	pods := make([]foam.Pod, 0, s.nodes*s.podsPerNode+3)
@@ -93,19 +123,17 @@ func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam
 		nodes = append(nodes, n)
 		for j := range s.podsPerNode {
 			k := i*s.podsPerNode + j
-			cpu, mem := int64(25+(k*37)%400), int64(50_000+(k*7919)%1_500_000)*1000
+			name, ns, cpu, mem := syntheticPod(k, gen)
 			qos := "Burstable"
 			switch {
 			case k%13 == 0:
-				cpu, mem, qos = 0, 0, "BestEffort"
+				qos = "BestEffort"
 			case k%5 == 0:
 				qos = "Guaranteed"
 			}
 			c := foam.Container{Name: "app", CPU: cpu, Memory: mem}
 			p := foam.Pod{
-				// The last segment changes for pod k once every 50 generations.
-				Name:      fmt.Sprintf("svc%02d-%x-%x", k%40, k, (k+gen)/50),
-				Namespace: fmt.Sprintf("team-%d", k%9), NodeName: n.Name, CPU: cpu, Memory: mem,
+				Name: name, Namespace: ns, NodeName: n.Name, CPU: cpu, Memory: mem,
 				Labels: map[string]string{"app": fmt.Sprintf("svc%02d", k%40)}, QOS: qos,
 			}
 			switch qos {

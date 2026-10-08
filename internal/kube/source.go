@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -154,15 +157,20 @@ func (s *Source) Started() []string {
 	return out
 }
 
-// Logs returns the newest MaxLogBytes of one container's logs through the
-// context's cached client, starting its watches if this is the first request
-// for that context.
-func (s *Source) Logs(ctx context.Context, name string, req LogRequest) (io.ReadCloser, error) {
+// clusterOf resolves a context name and returns its cache, starting the watches on first use.
+func (s *Source) clusterOf(name string) (*clusterCache, error) {
 	name, err := s.resolve(name)
 	if err != nil {
 		return nil, err
 	}
-	c, err := s.cache(name)
+	return s.cache(name)
+}
+
+// Logs returns the newest MaxLogBytes of one container's logs through the
+// context's cached client, starting its watches if this is the first request
+// for that context.
+func (s *Source) Logs(ctx context.Context, name string, req LogRequest) (io.ReadCloser, error) {
+	c, err := s.clusterOf(name)
 	if err != nil {
 		return nil, err
 	}
@@ -179,6 +187,63 @@ func (s *Source) Logs(ctx context.Context, name string, req LogRequest) (io.Read
 		return nil, err
 	}
 	return io.NopCloser(bytes.NewReader(b)), nil
+}
+
+// Usage is what metrics-server measured for one pod, summed over its containers.
+type Usage struct {
+	CPU    int64 `json:"cpu"`    // millicores
+	Memory int64 `json:"memory"` // bytes
+}
+
+// ErrNoMetrics means metrics.k8s.io is not served here (no metrics-server) or
+// this account may not read it. The overlay just has nothing to show.
+var ErrNoMetrics = errors.New("metrics.k8s.io unavailable")
+
+// Usage returns the measured usage of every pod in a context, keyed "namespace/name".
+func (s *Source) Usage(ctx context.Context, name string) (map[string]Usage, error) {
+	c, err := s.clusterOf(name)
+	if err != nil {
+		return nil, err
+	}
+	b, err := c.client.CoreV1().RESTClient().Get().AbsPath("/apis/metrics.k8s.io/v1beta1/pods").DoRaw(ctx)
+	if apierrors.IsNotFound(err) || apierrors.IsForbidden(err) || apierrors.IsServiceUnavailable(err) {
+		return nil, ErrNoMetrics
+	}
+	if err != nil {
+		return nil, err
+	}
+	return parseUsage(b)
+}
+
+// parseUsage sums each pod's containers from a metrics.k8s.io PodMetricsList.
+func parseUsage(b []byte) (map[string]Usage, error) {
+	var list struct {
+		Items []struct {
+			Metadata struct {
+				Name      string `json:"name"`
+				Namespace string `json:"namespace"`
+			} `json:"metadata"`
+			Containers []struct {
+				Usage struct {
+					CPU    resource.Quantity `json:"cpu"`
+					Memory resource.Quantity `json:"memory"`
+				} `json:"usage"`
+			} `json:"containers"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(b, &list); err != nil {
+		return nil, err
+	}
+	out := make(map[string]Usage, len(list.Items))
+	for _, it := range list.Items {
+		var u Usage
+		for _, c := range it.Containers {
+			u.CPU += c.Usage.CPU.MilliValue()
+			u.Memory += c.Usage.Memory.Value()
+		}
+		out[it.Metadata.Namespace+"/"+it.Metadata.Name] = u
+	}
+	return out, nil
 }
 
 // tail reads r to the end holding at most about 2*limit bytes, and returns the newest limit.

@@ -29,6 +29,8 @@ type source interface {
 	// Contexts whose watches already hold their initial list.
 	Started() []string
 	Logs(ctx context.Context, name string, req kube.LogRequest) (io.ReadCloser, error)
+	// Pods metrics-server measured, keyed "namespace/name".
+	Usage(ctx context.Context, name string) (map[string]kube.Usage, error)
 }
 
 const (
@@ -69,6 +71,9 @@ func logsStatus(err error) int {
 
 // First load of a big cluster can take a while; later requests hit the cache.
 const snapshotTimeout = 20 * time.Second
+
+// metrics-server answers from memory; a slow aggregated API should not hold up the map.
+const usageTimeout = 5 * time.Second
 
 // A generous cap on the free-text /api/fit fields, well above any real
 // selector or toleration list, so a client can't force a huge parse.
@@ -186,6 +191,23 @@ func newHandler(src source, static fs.FS, a *auth.Auth, assistant *llm.Proxy, au
 		w.Header().Set("Cache-Control", "no-store")
 		if _, err := io.Copy(w, rc); err != nil {
 			slog.Warn("logs", "err", err)
+		}
+	})
+	// Optional overlay: a cluster without metrics-server answers available:false, not an error.
+	app.HandleFunc("GET /api/usage", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), usageTimeout)
+		defer cancel()
+		pods, err := src.Usage(ctx, r.URL.Query().Get("context"))
+		switch {
+		case errors.Is(err, kube.ErrNoMetrics):
+			writeJSON(w, map[string]any{"available": false})
+		case errors.Is(err, kube.ErrUnknownContext):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		case err != nil:
+			slog.Warn("usage", "err", err)
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		default:
+			writeJSON(w, map[string]any{"available": true, "pods": pods})
 		}
 	})
 	if assistant != nil {
