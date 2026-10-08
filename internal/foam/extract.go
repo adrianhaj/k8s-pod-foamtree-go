@@ -3,6 +3,8 @@
 package foam
 
 import (
+	"strings"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	resourcehelper "k8s.io/component-helpers/resource"
@@ -58,6 +60,13 @@ type Pod struct {
 	Tolerations  []corev1.Toleration
 	// Kind of the controlling owner, "" for a bare pod: decides what a drain does with it.
 	Controller string
+	// Name of the workload an autoscaler targets: the Deployment for a
+	// ReplicaSet-owned pod, else the controller's own name; "" for a bare pod.
+	Workload string
+	// Name of the HorizontalPodAutoscaler scaling the workload, "" when none.
+	HPA string
+	// The VerticalPodAutoscaler's target summed over containers; nil when none recommends.
+	VPA *Container
 	// nil unless a resize waits on the kubelet.
 	Resize *Resize
 	// The scheduler's PodScheduled=False reason and message; "" once
@@ -273,7 +282,11 @@ func FromPod(p *corev1.Pod) Pod {
 		Statuses:     statuses(p),
 	}
 	if ref := metav1.GetControllerOf(p); ref != nil {
-		out.Controller = ref.Kind
+		out.Controller, out.Workload = ref.Kind, ref.Name
+		// A Deployment names its ReplicaSets "<deployment>-<pod-template-hash>".
+		if h := p.Labels["pod-template-hash"]; ref.Kind == "ReplicaSet" && h != "" {
+			out.Workload = strings.TrimSuffix(ref.Name, "-"+h)
+		}
 	}
 	if c, ok := Unscheduled(p); ok {
 		out.SchedReason, out.SchedMessage = c.Reason, c.Message

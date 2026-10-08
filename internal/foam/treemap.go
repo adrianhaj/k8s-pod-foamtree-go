@@ -109,6 +109,8 @@ type PodGroup struct {
 	Extended          map[string]int64  `json:"extended,omitempty"`
 	Resize            *PodResize        `json:"resize,omitempty"`
 	HourlyCost        *float64          `json:"hourlyCost,omitempty"`
+	HPA               string            `json:"hpa,omitempty"`
+	VPATarget         *float64          `json:"vpaTarget,omitempty"`
 }
 
 type PodResize struct {
@@ -205,6 +207,13 @@ func podGroup(p Pod, n Node, axis Axis, a Audit) PodGroup {
 	if r := p.Resize; r != nil {
 		rz = &PodResize{State: r.State, Message: r.Message, Desired: axis.weight(axis.container(r.Desired))}
 	}
+	var vpa *float64
+	if p.VPA != nil {
+		// 0 is a target the VPA did not give for this axis.
+		if v := axis.weight(axis.container(*p.VPA)); v > 0 {
+			vpa = &v
+		}
+	}
 	return PodGroup{
 		Label:             p.Name,
 		Weight:            axis.weight(axis.pod(p)),
@@ -220,6 +229,8 @@ func podGroup(p Pod, n Node, axis Axis, a Audit) PodGroup {
 		Extended:          p.Extended,
 		Resize:            rz,
 		HourlyCost:        PodCost(p, n),
+		HPA:               p.HPA,
+		VPATarget:         vpa,
 	}
 }
 

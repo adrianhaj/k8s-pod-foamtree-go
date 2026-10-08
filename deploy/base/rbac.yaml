@@ -22,6 +22,13 @@ rules:
   - apiGroups: [metrics.k8s.io]
     resources: [pods]
     verbs: [get, list]
+  # HPA and VPA marks on the map. Optional: without them the marks are just hidden.
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [list]
+  - apiGroups: [autoscaling.k8s.io]
+    resources: [verticalpodautoscalers]
+    verbs: [list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

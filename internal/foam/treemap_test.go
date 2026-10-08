@@ -288,6 +288,19 @@ func TestTreemapCarriesResize(t *testing.T) {
 	}
 }
 
+func TestTreemapCarriesAutoscalers(t *testing.T) {
+	p := etcdPod()
+	p.HPA, p.VPA = "etcd", &Container{CPU: 300, Memory: 2_000_000}
+	pod := children(render(t, []Node{minikube}, []Pod{p}, Memory)[0])[0]
+	if pod["hpa"] != "etcd" || pod["vpaTarget"] != 2000.0 {
+		t.Fatalf("got hpa=%v vpaTarget=%v", pod["hpa"], pod["vpaTarget"])
+	}
+	bare := children(render(t, []Node{minikube}, []Pod{etcdPod()}, CPU)[0])[0]
+	if _, ok := bare["vpaTarget"]; ok {
+		t.Fatalf("vpaTarget must be omitted without a VPA: %v", bare)
+	}
+}
+
 func TestTreemapCarriesAuditConfig(t *testing.T) {
 	a := without("resize-deferred", "monolith")
 	a.MonolithShare = 0.7
