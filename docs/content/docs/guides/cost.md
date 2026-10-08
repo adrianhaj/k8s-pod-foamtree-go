@@ -34,7 +34,7 @@ Costs read per month of 730 hours.
 
 ## Idle cost
 
-A node's **idle cost** is its price minus what its pods are charged: the money spent on capacity no request claims. Idle and requested cost add up to the node's price. A node whose pods overpay it, as pods of opposite shapes can, counts as 0 idle. Unpriced nodes are left out.
+A node's **idle cost** is its price minus what its pods are charged: the money spent on capacity no request claims. On a single node, idle and requested cost add up to the node's price, unless its pods overpay it, as pods of opposite shapes can: that node counts as 0 idle, so across such nodes the two can sum to more than the total. Unpriced nodes are left out.
 
 ## Worked example
 
@@ -53,7 +53,7 @@ A node's **idle cost** is its price minus what its pods are charged: the money s
 
 3. **Idle cost.** Pick **Group by** → **Pool** in the toolbar.
 
-   **What you'll see:** the summary strip shows `Cost idle` against the total price of the priced nodes, unless **Size by** is Cost, where `Cost requested` already shows it; hover it for how many nodes are unpriced. Each group label adds its own idle cost, like `~$540/mo idle`, so the pool wasting the most stands out. Sized by cost, each node's empty foam reads `idle · ~$40/mo`.
+   **What you'll see:** the summary strip shows `Cost idle` against the total price of the priced nodes, unless **Size by** is Cost, where `Cost requested` takes its place and each node's empty foam shows its idle cost; hover it for how many nodes are unpriced. Each group label adds its own idle cost, like `~$540/mo idle`, so the pool wasting the most stands out. Sized by cost, each node's empty foam reads `idle · ~$40/mo`.
 
 4. **Cost of a workload.** Click a pod to pin its workload.
 

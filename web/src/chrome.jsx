@@ -141,7 +141,7 @@ function SummaryStrip({ totals, memUnit, qosBreakdown, attention, extCell, query
         value={fmtMem(totals.memUsed, memUnit)} of={`of ${fmtMem(totals.memCap, memUnit, true)} ${memUnit}`} />
       {extCell && <Metric {...extCell} />}
       {idle && <Metric label="Cost idle" u={idle.idle / (idle.total || 1)} value={fmtCost(idle.idle)} of={`of ${fmtCost(idle.total)}`}
-        title={`Node price no pod request is charged for${idle.unpriced ? `; leaves out ${idle.unpriced} unpriced nodes` : ""}`} />}
+        title={`Node price no pod request is charged for${idle.unpriced ? `; leaves out ${idle.unpriced} unpriced node${idle.unpriced === 1 ? "" : "s"}` : ""}`} />}
       <div className="metric">
         <div className="metric-l">Pods by QoS<b>{be ? be.count : 0} BestEffort</b></div>
         <div className="metric-v">{totals.pods} <small>of {totals.nodes * 110} slots</small></div>

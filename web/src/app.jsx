@@ -804,13 +804,14 @@ function TreemapGrid({
     );
   });
 
-  // Hovering a pod re-renders the grid; idle cost only changes with the data.
-  const groupIdle = useMemo(() => new Map(groupNodes(nodes, groupBy).map(g => [g.key, idleCost(g.members.map(m => m.node))])), [nodes, groupBy]);
+  // Hovering a pod re-renders the grid; groups and idle cost only change with the data.
+  const grouped = useMemo(() => groupBy === "none" ? [] : groupNodes(nodes, groupBy)
+    .map(g => ({ ...g, idle: idleCost(g.members.map(m => m.node)) })), [nodes, groupBy]);
 
   // Grouped, the groups are squarified by total capacity first, then each
   // group's nodes inside its frame, under a label with its utilisation.
   const groups = !ready || groupBy === "none" ? [] : window.k8sTreemap.squarify(
-    groupNodes(nodes, groupBy).map(g => ({ ...g, value: g.members.reduce((s, m) => s + cap(m.node), 0) })),
+    grouped.map(g => ({ ...g, value: g.members.reduce((s, m) => s + cap(m.node), 0) })),
     0, 0, box.w, box.h
   );
 
@@ -823,7 +824,6 @@ function TreemapGrid({
           const x = stranded(m.node, shape);
           return { cpu: t.cpu + x.cpu, mem: t.mem + x.mem };
         }, { cpu: 0, mem: 0 });
-        const ic = groupIdle.get(g.key);
         return (
           <div key={g.key} className="group-box" style={{ left: g.x, top: g.y, width: g.w - 8, height: g.h - 8 }}>
             <div className="group-label" style={{ height: GROUP_HEAD }}>
@@ -831,7 +831,7 @@ function TreemapGrid({
               <span className="group-meta">{n} node{n === 1 ? "" : "s"}</span>
               {s.cpu >= 1 && <span className="group-meta" title="Free CPU with no memory to pair at the median pod shape">{fmtReq(s.cpu, "cpu")} stranded</span>}
               {parseFloat(fmtReq(s.mem, "mem")) > 0 && <span className="group-meta" title="Free memory with no CPU to pair at the median pod shape">{fmtReq(s.mem, "mem")} stranded</span>}
-              {ic && ic.idle > 0 && <span className="group-meta" title="Node price no pod request is charged for">{fmtCost(ic.idle)} idle</span>}
+              {g.idle && g.idle.idle > 0 && <span className="group-meta" title="Node price no pod request is charged for">{fmtCost(g.idle.idle)} idle</span>}
               <span className={`group-util${utilTone(u) ? ` tone-${utilTone(u)}` : ""}`}>{Math.round(u * 100)}%</span>
             </div>
             {cards(g.members, 6, GROUP_HEAD, g.w - 16, g.h - GROUP_HEAD - 10)}
