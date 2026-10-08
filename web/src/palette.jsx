@@ -33,16 +33,17 @@ function assignNamespaces(nodes, prev) {
 }
 
 // Share of the CPU request in use (pod.share, set by withUsage). Over the request
-// is danger; under 30% is warn, because that is paying for slack.
+// is danger; under 30% is warn, because that is paying for slack. An HPA-scaled
+// pod is never warn: its autoscaler adds replicas before usage nears the request.
 const USAGE_LOW = 0.3;
-function usageRole(share) {
+function usageRole(share, hpa) {
   if (share == null) return "--pod-neutral";
-  return share > 1 ? "--danger" : share < USAGE_LOW ? "--warn" : "--ok";
+  return share > 1 ? "--danger" : share < USAGE_LOW && !hpa ? "--warn" : "--ok";
 }
 
 function podToken(pod, colorBy, nsMap) {
   if (colorBy === "qos") return QOS_ROLE[pod.qos] || "--pod-neutral";
-  if (colorBy === "usage") return usageRole(pod.share);
+  if (colorBy === "usage") return usageRole(pod.share, pod.hpa);
   if (colorBy === "problems") {
     const sev = window.k8sPodAudit.worstFindingSeverity(pod.findings);
     return sev ? `--${sev}` : "--pod-neutral";

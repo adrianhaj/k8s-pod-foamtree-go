@@ -192,6 +192,13 @@ func (s *syntheticSource) Snapshot(context.Context, string) ([]foam.Node, []foam
 			if k%19 == 2 {
 				p.Throttled = 0.4
 			}
+			// svc00–04 scale on an HPA, svc05–09 carry a VPA recommendation below their requests.
+			switch svc := k % 40; {
+			case svc < 5:
+				p.HPA = fmt.Sprintf("svc%02d", svc)
+			case svc < 10:
+				p.VPA = &foam.Container{CPU: cpu * 6 / 10, Memory: mem * 8 / 10}
+			}
 			p.Containers = []foam.Container{c}
 			pods = append(pods, p)
 		}

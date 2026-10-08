@@ -486,3 +486,24 @@ func TestFromPodContainersFollowResize(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkload(t *testing.T) {
+	ctrl := true
+	pod := func(kind, owner string, labels map[string]string) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p", Labels: labels,
+			OwnerReferences: []metav1.OwnerReference{{Kind: kind, Name: owner, Controller: &ctrl}}}}
+	}
+	for _, tc := range []struct {
+		p    *corev1.Pod
+		want string
+	}{
+		{pod("ReplicaSet", "web-7d9f8c", map[string]string{"pod-template-hash": "7d9f8c"}), "web"},
+		{pod("ReplicaSet", "bare-rs", nil), "bare-rs"},
+		{pod("StatefulSet", "db", nil), "db"},
+		{&corev1.Pod{}, ""},
+	} {
+		if got := FromPod(tc.p).Workload; got != tc.want {
+			t.Errorf("%v: workload %q, want %q", tc.p.OwnerReferences, got, tc.want)
+		}
+	}
+}

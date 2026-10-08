@@ -135,9 +135,18 @@ func (s *Source) Snapshot(ctx context.Context, name string) ([]foam.Node, []foam
 	for _, o := range c.nodes.GetStore().List() {
 		nodes = append(nodes, foam.FromNode(o.(*corev1.Node)))
 	}
+	scalers := c.autoscalers(ctx)
 	pods := []foam.Pod{}
 	for _, o := range c.pods.GetStore().List() {
-		pods = append(pods, foam.FromPod(o.(*corev1.Pod)))
+		p := foam.FromPod(o.(*corev1.Pod))
+		if p.Workload != "" {
+			key := p.Namespace + "/" + p.Workload
+			p.HPA = scalers.hpa[key]
+			if t, ok := scalers.vpa[key]; ok {
+				p.VPA = &t
+			}
+		}
+		pods = append(pods, p)
 	}
 	return nodes, pods, nil
 }
@@ -286,6 +295,7 @@ type clusterCache struct {
 	nodes, pods cache.SharedIndexInformer
 	lastErr     atomic.Pointer[error]
 	cancel      context.CancelFunc
+	scalers     autoscaleCache
 }
 
 // wait returns once both caches hold the initial list, or early with the
