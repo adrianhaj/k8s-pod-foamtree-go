@@ -319,7 +319,9 @@ func (c *clusterCache) wait(ctx context.Context) error {
 }
 
 // ponytail: post-sync staleness (cluster recreated behind the same context
-// name after a successful sync) isn't handled; a restart picks it up.
+// name after a successful sync) isn't handled; a restart picks it up. Nor is a
+// first list that hangs without erroring (client() sets no timeout): only a
+// list or watch error evicts, so it lasts until the transport gives up or a restart.
 func (s *Source) cache(name string) (*clusterCache, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
