@@ -7,7 +7,7 @@ With `--metrics-addr`, k8sfoams serves `GET /metrics` in the Prometheus text for
 
 The metrics listener serves only `/metrics`: no dashboard, no API and no OIDC sign-in. Keep its port off your Ingress. Startup fails on a malformed address, a port outside 1–65535, the dashboard's own `--port`, or a port already in use.
 
-Every scrape reads the watch cache of each context that has already started: kubeconfig's current context, which k8sfoams keeps started while metrics are on (it checks every 30 seconds, so a failed start or a `kubectl config use-context` catches up), and any other context a viewer has opened. A scrape never starts a watch. A context removed from kubeconfig drops out of the metrics. Every sample carries a `context` label.
+Every scrape reads the watch cache of each context that has already started: kubeconfig's current context, which k8sfoams keeps started while metrics are on (it checks every 30 seconds, so a failed start or a `kubectl config use-context` catches up), and any other context a viewer has opened. A scrape never starts a watch. A context removed from kubeconfig drops out of the metrics. Every sample carries a `context` label. If kubeconfig cannot be read, the scrape answers 503 and the target's `up` is `0`.
 
 | Metric | Labels | |
 | --- | --- | --- |
@@ -31,6 +31,9 @@ groups:
     rules:
       - alert: K8sfoamsContextDown
         expr: k8sfoams_context_up == 0
+        for: 5m
+      - alert: K8sfoamsScrapeDown
+        expr: up{job="k8sfoams"} == 0
         for: 5m
       - alert: PoolNearlyFull
         expr: k8sfoams_requested_ratio > 0.9
