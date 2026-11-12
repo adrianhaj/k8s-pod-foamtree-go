@@ -613,7 +613,7 @@ func TestReportsSpendWhenTheStreamBreaks(t *testing.T) {
 	w := chat(New(Config{AllowAnyURL: true}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
 	ev := events(t, w.Body.String())
 	n := len(ev)
-	if n < 2 || ev[n-2].Type != "error" || ev[n-1].Type != "done" || !ev[n-1].Usage.Estimated || ev[n-1].Usage.Completion == 0 {
+	if n < 2 || ev[n-2].Type != "error" || ev[n-1].Type != "done" || !ev[n-1].Usage.Estimated || ev[n-1].Usage.Completion != 50 {
 		t.Fatalf("%+v", ev)
 	}
 	if len(up.got()) != 1 {
