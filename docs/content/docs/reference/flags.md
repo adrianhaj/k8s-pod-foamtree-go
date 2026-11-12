@@ -34,4 +34,6 @@ weight: 1
 | `--prometheus-url` | | Prometheus base URL that scrapes cAdvisor, e.g. `http://prometheus:9090`; turns on the `throttled` rule for `--prometheus-context` |
 | `--prometheus-context` | | kubeconfig context that `--prometheus-url` watches (`in-cluster` when running in a pod); the two flags go together |
 
+Anything that is not a flag stops startup. Boolean flags take no separate value: write `--allow-unauthenticated=false`, not `--allow-unauthenticated false`.
+
 Secrets come from the environment only: `K8SFOAMS_OIDC_CLIENT_SECRET`, `K8SFOAMS_SESSION_KEY` (32 bytes, base64; unset means a random key, so sessions end on restart), and `K8SFOAMS_LLM_API_KEY`, or `--llm-api-key-file` for a mounted Secret.
