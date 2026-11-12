@@ -55,7 +55,7 @@ Grouped by namespace, a **Quota** column shows each namespace's tightest Resourc
 
 2. **Cost of a namespace.** Type `ns:team-3` in the query bar.
 
-   **What you'll see:** the match count adds the monthly cost of the matched pods, something like `22 / 200 pods · ~$92/mo (8 unpriced)`: 8 of them run on the `r.4xlarge` and `g.4xlarge` nodes this table leaves unpriced. Any query works the same way, so `app=svc07` prices one app.
+   **What you'll see:** the match count adds the monthly cost of the matched pods, something like `25 / 200 pods · ~$91/mo (8 unpriced)`: 8 of them run on the `r.4xlarge` and `g.4xlarge` nodes this table leaves unpriced. Any query works the same way, so `app=svc07` prices one app.
 
 3. **Idle cost.** Pick **Group by** → **Pool** in the toolbar.
 

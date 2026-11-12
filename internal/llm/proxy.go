@@ -423,15 +423,16 @@ func (t target) read(parent context.Context, stop context.CancelFunc, c *compat,
 	if cut {
 		rd.Finish, rd.chars, err = "length", chars, nil
 	}
+	// A failed round is charged only once the upstream produced output.
+	if rd.Usage.Total == 0 && (err == nil || rd.chars > 0) {
+		out := rd.chars / charsPerToken
+		rd.Usage = Usage{Prompt: in, Completion: out, Total: in + out, Estimated: true}
+	}
 	if err != nil {
 		if errors.Is(parent.Err(), context.DeadlineExceeded) {
 			return rd, errTimeout
 		}
 		return rd, err
-	}
-	if rd.Usage.Total == 0 {
-		out := rd.chars / charsPerToken
-		rd.Usage = Usage{Prompt: in, Completion: out, Total: in + out, Estimated: true}
 	}
 	switch {
 	case cut || parent.Err() != nil:

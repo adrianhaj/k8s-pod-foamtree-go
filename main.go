@@ -93,6 +93,9 @@ func parseFlags(args []string) (options, error) {
 	if err := fs.Parse(args); err != nil || o.version {
 		return o, err
 	}
+	if fs.NArg() > 0 {
+		return o, fmt.Errorf("unexpected argument %q: boolean flags take no separate value, use --name=false", fs.Arg(0))
+	}
 	// Secrets come from the environment only: flags show up in `ps`.
 	o.oidc.ClientSecret = os.Getenv("K8SFOAMS_OIDC_CLIENT_SECRET")
 	o.sessionKey = os.Getenv("K8SFOAMS_SESSION_KEY")
@@ -352,7 +355,7 @@ func run(ctx context.Context, o options) error {
 			}
 			return fmt.Errorf("%s: %w", e.name, err)
 		}
-		e.ln, e.srv = ln, &http.Server{Handler: e.handler, ReadHeaderTimeout: 10 * time.Second}
+		e.ln, e.srv = ln, &http.Server{Handler: e.handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	}
 	if o.metricsAddr != "" {
 		go startDefault(ctx, src, 30*time.Second)

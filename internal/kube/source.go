@@ -126,7 +126,7 @@ func (s *Source) Snapshot(ctx context.Context, name string) ([]foam.Node, []foam
 		return nil, nil, err
 	}
 	if err := c.wait(ctx); err != nil {
-		if !c.nodes.HasSynced() || !c.pods.HasSynced() {
+		if c.lastErr.Load() != nil && (!c.nodes.HasSynced() || !c.pods.HasSynced()) {
 			s.evict(name, c)
 		}
 		return nil, nil, fmt.Errorf("cluster %q: %w", name, err)
@@ -319,7 +319,9 @@ func (c *clusterCache) wait(ctx context.Context) error {
 }
 
 // ponytail: post-sync staleness (cluster recreated behind the same context
-// name after a successful sync) isn't handled; a restart picks it up.
+// name after a successful sync) isn't handled; a restart picks it up. Nor is a
+// first list that hangs without erroring (client() sets no timeout): only a
+// list or watch error evicts, so it lasts until the transport gives up or a restart.
 func (s *Source) cache(name string) (*clusterCache, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

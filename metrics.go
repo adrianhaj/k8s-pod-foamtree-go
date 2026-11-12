@@ -26,6 +26,8 @@ func newMetricsHandler(src source, audit foam.Audit) http.Handler {
 		contexts, err := src.Contexts()
 		if err != nil {
 			slog.Warn("metrics", "err", err)
+			http.Error(w, "contexts unavailable", http.StatusServiceUnavailable)
+			return
 		}
 		var clusters []cluster
 		known := map[string]bool{}

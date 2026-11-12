@@ -11,7 +11,7 @@ const { squarify, cardItems, metricCap, metricValue } = window.k8sTreemap;
 const { worstSeverity, WarnIcon } = window.k8sNodeStatus;
 const { worstFindingSeverity } = window.k8sPodAudit;
 const { token } = window.k8sScene3D;
-const { workloadKey } = window.k8sWorkload;
+const { workloadId } = window.k8sWorkload;
 const { podToken, utilTone, tintHex } = window.k8sPalette;
 
 const SCALE = 2;
@@ -126,7 +126,7 @@ function SvgPod({ it, metric, look, matched, dim }) {
   const { pod, x, y, w, h } = it;
   const role = look.role(podToken(pod, look.colorBy, look.nsMap));
   const neutral = look.role("--pod-neutral");
-  const peer = !!look.highlight && workloadKey(pod.name) === look.highlight;
+  const peer = !!look.highlight && workloadId(pod) === look.highlight;
   const opacity = dim ? 0.16 : look.highlight && !peer ? (look.pinned ? 0.22 : 0.55) : 1;
   const ring = !dim && (matched || peer);
   const showName = w >= 52 && h >= 22;

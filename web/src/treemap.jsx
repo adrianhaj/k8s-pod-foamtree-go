@@ -1,7 +1,7 @@
 // Squarified treemap. Pure function: given a rect + items[{value,...}],
 // returns items with x/y/w/h placed.
 
-const { workloadKey } = window.k8sWorkload;
+const { workloadId } = window.k8sWorkload;
 const { worstSeverity, NodeWarnBadge } = window.k8sNodeStatus;
 const { PodAuditBadge } = window.k8sPodAudit;
 const { podToken, utilTone } = window.k8sPalette;
@@ -169,7 +169,7 @@ function PodBox({
   pod, rect, role, metric, fmtReq, showUsage, matched, dim,
   highlight, highlightActive, onPodSelect, onPodHover,
 }) {
-  const wl = workloadKey(pod.name);
+  const wl = workloadId(pod);
   const cls = ["pod-box"];
   if (dim) cls.push("is-dim");
   if (matched) cls.push("is-match");

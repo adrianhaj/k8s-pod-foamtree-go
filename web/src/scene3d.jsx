@@ -9,7 +9,7 @@
 // the CSS filter values for dim / match / workload states are applied here in
 // the same sRGB math.
 
-const { workloadKey, podKey } = window.k8sWorkload;
+const { workloadId, podKey } = window.k8sWorkload;
 const { findingInfo } = window.k8sPodAudit;
 const { worstSeverity } = window.k8sNodeStatus;
 const { podToken, utilTone, shade, hexRgb: hex, mixRgb: mix } = window.k8sPalette;
@@ -95,7 +95,7 @@ function layout(nodes, groupBy) {
         const w = Math.min(cell * 0.86, footprint(pod.cpu));
         const h = tall(pod.mem);
         cubes.push({
-          pod, node, w, h, wl: workloadKey(pod.name),
+          pod, node, w, h, wl: workloadId(pod),
           x: x - PLATE / 2 + cell * ((j % per) + 0.5),
           z: z - PLATE / 2 + cell * (Math.floor(j / per) + 0.5),
           // A shell only grows on the axes that have a limit.
@@ -291,7 +291,7 @@ function Scene3D({
         hoverFrame = 0;
         const hit = pick(e);
         setTip(hit ? { ...hit, x: e.clientX, y: e.clientY } : null);
-        props.current.onPodHover(hit && hit.pod ? workloadKey(hit.pod.name) : null);
+        props.current.onPodHover(hit && hit.pod ? workloadId(hit.pod) : null);
       });
     };
     const onLeave = () => { setTip(null); props.current.onPodHover(null); };
@@ -302,7 +302,7 @@ function Scene3D({
       down = null;
       if (e.button !== 0 || !was || Math.hypot(e.clientX - was.x, e.clientY - was.y) > 4) return;
       const hit = pick(e);
-      if (hit && hit.pod) props.current.onPodSelect(workloadKey(hit.pod.name));
+      if (hit && hit.pod) props.current.onPodSelect(workloadId(hit.pod));
       else if (hit && hit.node) props.current.onFocus(hit.node);
     };
     const el = renderer.domElement;

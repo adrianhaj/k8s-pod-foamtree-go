@@ -2,7 +2,7 @@
 // /resources/memory responses, gzipped, tagged with time and context. Plus the
 // diff of two snapshots (merged nodes, as mergeResources builds them).
 
-const { workloadKey } = window.k8sWorkload;
+const { workloadId } = window.k8sWorkload;
 
 // ponytail: 64 MB of gzipped snapshots across all contexts, oldest dropped
 // first: ~300 refreshes of a 5 000-pod cluster (~200 KB each). Gone on reload;
@@ -37,7 +37,7 @@ function diff(before, after) {
     for (const n of nodes) {
       for (const p of n.pods) {
         pods.set(`${p.namespace}/${p.name}`, { pod: p, node: n.name });
-        const key = `${p.namespace}/${workloadKey(p.name)}`;
+        const key = workloadId(p);
         if (!workloads.has(key)) workloads.set(key, { cpu: new Set(), mem: new Set(), pods: [] });
         const w = workloads.get(key);
         w.cpu.add(p.cpu);
