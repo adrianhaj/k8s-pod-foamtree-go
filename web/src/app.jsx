@@ -3,7 +3,7 @@
 const { useState, useEffect, useMemo, useRef } = React;
 const { NodeCard, metricCap, metricValue } = window.k8sTreemap;
 const { Scene3D } = window.k8sScene3D;
-const { workloadKey, podKey } = window.k8sWorkload;
+const { workloadId, podKey } = window.k8sWorkload;
 const { Icon } = window.k8sIcons;
 const { LogsTab, selFor } = window.k8sLogs;
 const { warnInfo, statusOf } = window.k8sNodeStatus;
@@ -81,7 +81,7 @@ function mergeResources(cpuData, memData) {
 
     const memPodsMap = new Map();
     for (const mp of memPods) {
-      memPodsMap.set(mp.label, mp);
+      memPodsMap.set(`${mp.namespace}/${mp.label}`, mp);
     }
 
     const pods = [];
@@ -89,9 +89,9 @@ function mergeResources(cpuData, memData) {
     let memUsed = 0;
 
     for (const cp of cpuPods) {
-      if (cp.label === 'empty') continue;
+      if (cp.label === 'empty' && cp.namespace === undefined) continue;
 
-      const mp = memPodsMap.get(cp.label) || { weight: 0, groups: [] };
+      const mp = memPodsMap.get(`${cp.namespace}/${cp.label}`) || { weight: 0, groups: [] };
 
       // Group containers by label
       const cpuConts = cp.groups || [];
@@ -242,7 +242,8 @@ function App() {
   const [query, setQuery] = useState(linked.q);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(Date.now());
-  const [focused, setFocused] = useState(null);
+  const [focusedName, setFocusedName] = useState(null);
+  const setFocused = node => setFocusedName(node ? node.name : null);
   // Cross-node workload highlighting. A click pins a workload; hover only
   // previews one, so a pinned selection always wins over the pointer.
   const [selectedWorkload, setSelectedWorkload] = useState(null);
@@ -250,6 +251,7 @@ function App() {
   const [nodes, setNodes] = useState([]);
   const [pending, setPending] = useState([]);
   const [logsPod, setLogsPod] = useState(null);
+  const focused = useMemo(() => nodes.find(n => n.name === focusedName) || null, [nodes, focusedName]);
   const [logsText, setLogsText] = useState(null);
   const allPods = useMemo(() => nodes.flatMap(n => n.pods), [nodes]);
   const openLogs = pod => {
@@ -405,6 +407,10 @@ function App() {
     setAt(null);
     setPlaying(false);
     setQuotas(null);
+    setNodes([]);
+    setPending([]);
+    setFocused(null);
+    setLogsPod(null);
     nsRef.current = new Map();
   }, [contextIdx]);
 
@@ -524,7 +530,7 @@ function App() {
     const pods = [];
     for (const n of nodes) {
       for (const p of n.pods) {
-        if (workloadKey(p.name) !== selectedWorkload) continue;
+        if (workloadId(p) !== selectedWorkload) continue;
         pods.push(p);
         spread.add(n.name);
       }
@@ -643,7 +649,7 @@ function App() {
           settings={<SettingsMenu themePref={themePref} setThemePref={setThemePref} memUnit={memUnit} setMemUnit={setMemUnit} onAssistant={assistant.openConnection} />} />
         <MapChips lit={shown.lit} ring={shown.ring}
           litPod={logsPod ? podKey(logsPod) : ""}
-          onLogs={() => { const p = allPods.find(x => workloadKey(x.name) === selectedWorkload); if (p) openLogs(p); }}
+          onLogs={() => { const p = allPods.find(x => workloadId(x) === selectedWorkload); if (p) openLogs(p); }}
           workload={workloadStats} onClearWorkload={() => setSelectedWorkload(null)}
           at={at} onLive={goLive} />
         {view === "3d" ? (
