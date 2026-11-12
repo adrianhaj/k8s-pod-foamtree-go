@@ -352,7 +352,7 @@ func TestStartDefaultStopsWithTheServer(t *testing.T) {
 func TestMetricsFailWhenContextsCannotBeListed(t *testing.T) {
 	src := &fakeSource{started: []string{"kind"}, contextsErr: errors.New("bad kubeconfig")}
 	w := get(newMetricsHandler(src, foam.DefaultAudit()), "/metrics")
-	if w.Code != http.StatusServiceUnavailable || strings.Contains(w.Body.String(), "bad kubeconfig") {
+	if w.Code != http.StatusServiceUnavailable || strings.TrimSpace(w.Body.String()) != "contexts unavailable" {
 		t.Fatalf("%d %q", w.Code, w.Body)
 	}
 }
