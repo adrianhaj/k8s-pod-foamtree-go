@@ -602,12 +602,17 @@ func TestToolLoopReportsSpendWhenALaterRoundFails(t *testing.T) {
 	}
 }
 
+// streamWords relays one 200-character delta, 50 estimated tokens, and leaves the stream open.
+func streamWords(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"`+strings.Repeat("word ", 40)+`"}}]}`)
+	w.(http.Flusher).Flush()
+}
+
 // A stream that breaks after text was relayed still cost tokens.
 func TestReportsSpendWhenTheStreamBreaks(t *testing.T) {
 	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"`+strings.Repeat("word ", 40)+`"}}]}`)
-		w.(http.Flusher).Flush()
+		streamWords(w)
 		panic(http.ErrAbortHandler)
 	})
 	w := chat(New(Config{AllowAnyURL: true}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
@@ -624,9 +629,7 @@ func TestReportsSpendWhenTheStreamBreaks(t *testing.T) {
 // A round that streamed output and then hit the question deadline still cost tokens.
 func TestReportsSpendWhenARoundTimesOut(t *testing.T) {
 	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request, _ int, _ map[string]any) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"`+strings.Repeat("word ", 40)+`"}}]}`)
-		w.(http.Flusher).Flush()
+		streamWords(w)
 		<-r.Context().Done()
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
