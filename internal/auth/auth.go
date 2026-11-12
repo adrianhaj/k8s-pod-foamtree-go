@@ -125,11 +125,13 @@ type loginState struct {
 	State, Nonce, Verifier, Next string
 }
 
-// localPath rejects "//host", "/\host" and the same with a tab or newline
-// inserted ("/<TAB>/host"): browsers strip those, turning it into "//host".
-// url.Parse refuses every control character.
+// localPath rejects "//host" and the same with a tab or newline inserted
+// ("/<TAB>/host"): browsers strip those, turning it into "//host". url.Parse
+// refuses every control character. Backslashes are refused anywhere because
+// http.Redirect cleans the path, so "/./\host" becomes "/\host", which
+// browsers treat as another origin.
 func localPath(p string) bool {
-	if len(p) > 2048 || !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.HasPrefix(p, `/\`) {
+	if len(p) > 2048 || !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.Contains(p, `\`) {
 		return false
 	}
 	u, err := url.Parse(p)

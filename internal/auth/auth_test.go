@@ -209,6 +209,10 @@ func TestLoginReturnsToRequestedPage(t *testing.T) {
 		"/auth/login?next=javascript:alert(1)":           "/",
 		"/auth/login?next=/%09/evil.com":                 "/",
 		"/auth/login?next=/%09%5Cevil.com":               "/",
+		`/auth/login?next=/./\evil.com`:                  "/",
+		`/auth/login?next=/../\evil.com`:                 "/",
+		`/auth/login?next=/a/../\evil.com`:               "/",
+		"/auth/login?next=/" + strings.Repeat("b", 2047): "/" + strings.Repeat("b", 2047),
 		"/auth/login?next=/%0A/evil.com":                 "/",
 		"/auth/login?next=/" + strings.Repeat("a", 2048): "/",
 	}
