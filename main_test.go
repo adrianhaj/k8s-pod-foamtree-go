@@ -180,6 +180,8 @@ func TestFlags(t *testing.T) {
 		{[]string{"--host", "0.0.0.0", "--allow-unauthenticated", "false", "--auth", "oidc"}, false},
 		{[]string{"stray"}, false},
 		{[]string{"--host", "0.0.0.0", "--allow-unauthenticated=true"}, true},
+		{[]string{"--allow-unauthenticated=false"}, true},
+		{[]string{"--host", "0.0.0.0", "--allow-unauthenticated=false"}, false},
 		{[]string{"--host", "0.0.0.0", "--auth", "oidc"}, true},
 		{[]string{"--host", "::1"}, true},
 		{[]string{"--port", "x"}, false},
