@@ -127,11 +127,13 @@ type loginState struct {
 
 // localPath rejects "//host" and the same with a tab or newline inserted
 // ("/<TAB>/host"): browsers strip those, turning it into "//host". url.Parse
-// refuses every control character. Backslashes are refused anywhere because
+// refuses every control character. The length cap is on the JSON-encoded form,
+// which is what the login cookie holds ("&" costs 6 bytes there). Backslashes are refused anywhere because
 // http.Redirect cleans the path, so "/./\host" becomes "/\host", which
 // browsers treat as another origin.
 func localPath(p string) bool {
-	if len(p) > 2048 || !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.Contains(p, `\`) {
+	enc, _ := json.Marshal(p)
+	if len(enc) > 2050 || !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.Contains(p, `\`) {
 		return false
 	}
 	u, err := url.Parse(p)
