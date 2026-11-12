@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"io"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -250,21 +251,31 @@ func TestSyntheticUsage(t *testing.T) {
 	}
 }
 
+var podNameRe = regexp.MustCompile(`^svc\d\d-[bcdfghjklmnpqrstvwxz2456789]{5,10}-[bcdfghjklmnpqrstvwxz2456789]{5}$`)
+
 // The console groups replicas by stripping the ReplicaSet hash and pod suffix
 // (web/src/workload.jsx); every app must land on more than one node.
 func TestSyntheticReplicasSpreadAcrossNodes(t *testing.T) {
 	s, _ := parseSynthetic("20x10")
 	_, pods, _ := s.Snapshot(context.Background(), "")
 	spread := map[string]map[string]bool{}
+	appNS := map[string]string{}
 	for _, p := range pods {
-		parts := strings.Split(p.Name, "-")
-		if p.NodeName == "" || len(parts) != 3 {
+		if p.NodeName == "" {
 			continue
 		}
-		if spread[parts[0]] == nil {
-			spread[parts[0]] = map[string]bool{}
+		if !podNameRe.MatchString(p.Name) {
+			t.Fatalf("scheduled pod name %q does not match the Deployment shape", p.Name)
 		}
-		spread[parts[0]][p.NodeName] = true
+		app := strings.SplitN(p.Name, "-", 2)[0]
+		if ns, ok := appNS[app]; ok && ns != p.Namespace {
+			t.Fatalf("%s spans namespaces %s and %s", app, ns, p.Namespace)
+		}
+		appNS[app] = p.Namespace
+		if spread[app] == nil {
+			spread[app] = map[string]bool{}
+		}
+		spread[app][p.NodeName] = true
 	}
 	if len(spread) != 40 {
 		t.Fatalf("want 40 apps, got %d", len(spread))
