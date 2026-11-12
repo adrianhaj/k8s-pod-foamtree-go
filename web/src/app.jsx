@@ -1,6 +1,6 @@
 // Main app — console chrome + treemap grid for the k8sfoams dashboard.
 
-const { useState, useEffect, useMemo, useRef } = React;
+const { useState, useEffect, useMemo, useRef, useCallback } = React;
 const { NodeCard, metricCap, metricValue } = window.k8sTreemap;
 const { Scene3D } = window.k8sScene3D;
 const { workloadId, podKey } = window.k8sWorkload;
@@ -243,7 +243,7 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(Date.now());
   const [focusedName, setFocusedName] = useState(null);
-  const setFocused = node => setFocusedName(node ? node.name : null);
+  const setFocused = useCallback(node => setFocusedName(node ? node.name : null), []);
   // Cross-node workload highlighting. A click pins a workload; hover only
   // previews one, so a pinned selection always wins over the pointer.
   const [selectedWorkload, setSelectedWorkload] = useState(null);
@@ -251,9 +251,10 @@ function App() {
   const [nodes, setNodes] = useState([]);
   const [pending, setPending] = useState([]);
   const [logsPod, setLogsPod] = useState(null);
-  const focused = useMemo(() => nodes.find(n => n.name === focusedName) || null, [nodes, focusedName]);
   const [logsText, setLogsText] = useState(null);
   const allPods = useMemo(() => nodes.flatMap(n => n.pods), [nodes]);
+  const focused = useMemo(() => nodes.find(n => n.name === focusedName) || null, [nodes, focusedName]);
+  useEffect(() => { if (focusedName && !focused) setFocusedName(null); }, [focusedName, focused]);
   const openLogs = pod => {
     setLogsPod(selFor(pod));
     setPanel(p => ({ ...p, open: true, tab: "logs" }));
