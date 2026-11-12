@@ -621,6 +621,28 @@ func TestReportsSpendWhenTheStreamBreaks(t *testing.T) {
 	}
 }
 
+// A round that streamed output and then hit the question deadline still cost tokens.
+func TestReportsSpendWhenARoundTimesOut(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request, _ int, _ map[string]any) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"`+strings.Repeat("word ", 40)+`"}}]}`)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	r := httptest.NewRequest("POST", "/api/llm/chat", strings.NewReader(`{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)).WithContext(ctx)
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("X-LLM-Key", "sk-secret")
+	w := httptest.NewRecorder()
+	New(Config{AllowAnyURL: true}).ServeChat(w, r)
+	ev := events(t, w.Body.String())
+	n := len(ev)
+	if n < 2 || ev[n-2].Type != "error" || ev[n-2].Text != errTimeout.Error() || ev[n-1].Type != "done" || !ev[n-1].Usage.Estimated || ev[n-1].Usage.Completion != 50 {
+		t.Fatalf("%+v", ev)
+	}
+}
+
 // Ollama sends tool calls with finish_reason "stop".
 func TestToolCallsRunWhateverTheFinishReason(t *testing.T) {
 	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
