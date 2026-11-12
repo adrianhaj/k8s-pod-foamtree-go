@@ -4,6 +4,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: '17 6 * * 1'
 
 jobs:
   test:
@@ -19,6 +21,19 @@ jobs:
 
       - run: make lint
       - run: make test
+
+  vuln:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   docs:
     runs-on: ubuntu-latest
