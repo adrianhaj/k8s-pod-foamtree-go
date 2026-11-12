@@ -355,7 +355,7 @@ func run(ctx context.Context, o options) error {
 			}
 			return fmt.Errorf("%s: %w", e.name, err)
 		}
-		e.ln, e.srv = ln, &http.Server{Handler: e.handler, ReadHeaderTimeout: 10 * time.Second}
+		e.ln, e.srv = ln, &http.Server{Handler: e.handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	}
 	if o.metricsAddr != "" {
 		go startDefault(ctx, src, 30*time.Second)
