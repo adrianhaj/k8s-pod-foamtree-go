@@ -55,4 +55,4 @@ const podKey = p => `${p.namespace}/${p.name}`;
 
 const workloadId = p => `${p.namespace}/${workloadKey(p.name)}`;
 
-window.k8sWorkload = { workloadKey, podKey, workloadId };
+window.k8sWorkload = { podKey, workloadId };

@@ -16,7 +16,7 @@ THREE_JS := web/static/three.js
 web: $(APP_JS) $(THREE_JS)
 
 # Each file becomes its own IIFE: the sources redeclare top-level consts
-# (e.g. `const { workloadKey }`), which in-browser Babel hid by compiling to var.
+# (e.g. `const { workloadId }`), which in-browser Babel hid by compiling to var.
 $(APP_JS): $(JSX)
 	go tool esbuild $(JSX) --format=iife --minify --target=es2020 --log-level=warning --outdir=build/js
 	cat $(patsubst web/src/%.jsx,build/js/%.js,$(JSX)) > $@
