@@ -347,3 +347,12 @@ func TestStartDefaultStopsWithTheServer(t *testing.T) {
 		t.Fatal("still retrying after shutdown")
 	}
 }
+
+// An unreadable kubeconfig must fail the scrape, not answer with no series.
+func TestMetricsFailWhenContextsCannotBeListed(t *testing.T) {
+	src := &fakeSource{started: []string{"kind"}, contextsErr: errors.New("bad kubeconfig")}
+	w := get(newMetricsHandler(src, foam.DefaultAudit()), "/metrics")
+	if w.Code != http.StatusServiceUnavailable || strings.Contains(w.Body.String(), "bad kubeconfig") {
+		t.Fatalf("%d %q", w.Code, w.Body)
+	}
+}

@@ -39,6 +39,8 @@ type fakeSource struct {
 	usage    map[string]kube.Usage
 	quotas   []kube.Quota
 	usageErr error
+	// Contexts fails with this when set.
+	contextsErr error
 }
 
 func (f *fakeSource) Started() []string { return f.started }
@@ -60,6 +62,9 @@ func (f *fakeSource) Logs(_ context.Context, name string, req kube.LogRequest) (
 }
 
 func (f *fakeSource) Contexts() ([]kube.Context, error) {
+	if f.contextsErr != nil {
+		return nil, f.contextsErr
+	}
 	if f.contexts != nil {
 		return f.contexts, nil
 	}
