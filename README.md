@@ -32,7 +32,7 @@ Full docs: <https://adrianhaj.github.io/k8s-pod-foamtree-go/>
 
 ## Development
 
-Requires Go 1.27.1. No Node: the JSX is compiled by `go tool esbuild` and React is vendored in `web/static/vendor/`.
+Requires Go 1.27.4 or newer. No Node: the JSX is compiled by `go tool esbuild` and React is vendored in `web/static/vendor/`.
 
 ```bash
 make test lint
