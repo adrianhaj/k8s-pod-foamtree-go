@@ -201,12 +201,16 @@ func TestDenied(t *testing.T) {
 func TestLoginReturnsToRequestedPage(t *testing.T) {
 	ada := map[string]any{"email": "ada@example.com", "email_verified": true}
 	cases := map[string]string{
-		"/auth/login?next=%2F%3Fcontext%3Dprod": "/?context=prod",
-		"/auth/login":                           "/",
-		"/auth/login?next=https://evil.com":     "/",
-		"/auth/login?next=//evil.com":           "/",
-		`/auth/login?next=/\evil.com`:           "/",
-		"/auth/login?next=javascript:alert(1)":  "/",
+		"/auth/login?next=%2F%3Fcontext%3Dprod":          "/?context=prod",
+		"/auth/login":                                    "/",
+		"/auth/login?next=https://evil.com":              "/",
+		"/auth/login?next=//evil.com":                    "/",
+		`/auth/login?next=/\evil.com`:                    "/",
+		"/auth/login?next=javascript:alert(1)":           "/",
+		"/auth/login?next=/%09/evil.com":                 "/",
+		"/auth/login?next=/%09%5Cevil.com":               "/",
+		"/auth/login?next=/%0A/evil.com":                 "/",
+		"/auth/login?next=/" + strings.Repeat("a", 2048): "/",
 	}
 	for start, want := range cases {
 		t.Run(start, func(t *testing.T) {

@@ -125,9 +125,15 @@ type loginState struct {
 	State, Nonce, Verifier, Next string
 }
 
-// localPath rejects "//host" and "/\host", which browsers treat as another origin.
+// localPath rejects "//host", "/\host" and the same with a tab or newline
+// inserted ("/<TAB>/host"): browsers strip those, turning it into "//host".
+// url.Parse refuses every control character.
 func localPath(p string) bool {
-	return strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "//") && !strings.HasPrefix(p, `/\`)
+	if len(p) > 2048 || !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.HasPrefix(p, `/\`) {
+		return false
+	}
+	u, err := url.Parse(p)
+	return err == nil && u.Scheme == "" && u.Host == ""
 }
 
 // Each login gets its own cookie, named by its state, so parallel logins in
