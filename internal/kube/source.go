@@ -126,7 +126,7 @@ func (s *Source) Snapshot(ctx context.Context, name string) ([]foam.Node, []foam
 		return nil, nil, err
 	}
 	if err := c.wait(ctx); err != nil {
-		if !c.nodes.HasSynced() || !c.pods.HasSynced() {
+		if c.lastErr.Load() != nil && (!c.nodes.HasSynced() || !c.pods.HasSynced()) {
 			s.evict(name, c)
 		}
 		return nil, nil, fmt.Errorf("cluster %q: %w", name, err)

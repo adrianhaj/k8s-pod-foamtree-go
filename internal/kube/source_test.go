@@ -417,3 +417,30 @@ func TestUsage(t *testing.T) {
 		t.Errorf("without metrics-server: err = %v, want ErrNoMetrics", err)
 	}
 }
+
+// A request that gives up while the first list is still running must not
+// throw the list away: the next request picks up the same watches.
+func TestSnapshotKeepsASlowFirstSync(t *testing.T) {
+	release := make(chan struct{})
+	cs := fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "n1"}})
+	cs.PrependReactor("list", "*", func(k8stesting.Action) (bool, runtime.Object, error) {
+		<-release
+		return false, nil, nil
+	})
+	s := testSource(t, cs)
+	var clients atomic.Int32
+	s.newClient = func(string) (kubernetes.Interface, error) { clients.Add(1); return cs, nil }
+
+	short, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if _, _, err := s.Snapshot(short, "kind-a"); err == nil || !strings.Contains(err.Error(), "still loading") {
+		t.Fatalf("got %v", err)
+	}
+	close(release)
+	long, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel2()
+	nodes, _, err := s.Snapshot(long, "kind-a")
+	if err != nil || len(nodes) != 1 || clients.Load() != 1 {
+		t.Fatalf("nodes=%d clients=%d err=%v", len(nodes), clients.Load(), err)
+	}
+}
