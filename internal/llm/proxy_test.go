@@ -602,6 +602,25 @@ func TestToolLoopReportsSpendWhenALaterRoundFails(t *testing.T) {
 	}
 }
 
+// A stream that breaks after text was relayed still cost tokens.
+func TestReportsSpendWhenTheStreamBreaks(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: %s\n\n", `{"choices":[{"delta":{"content":"`+strings.Repeat("word ", 40)+`"}}]}`)
+		w.(http.Flusher).Flush()
+		panic(http.ErrAbortHandler)
+	})
+	w := chat(New(Config{AllowAnyURL: true}), "k", `{"url":"`+up.URL+`/v1","model":"m",`+q+`}`)
+	ev := events(t, w.Body.String())
+	n := len(ev)
+	if n < 2 || ev[n-2].Type != "error" || ev[n-1].Type != "done" || !ev[n-1].Usage.Estimated || ev[n-1].Usage.Completion == 0 {
+		t.Fatalf("%+v", ev)
+	}
+	if len(up.got()) != 1 {
+		t.Fatalf("%d upstream calls", len(up.got()))
+	}
+}
+
 // Ollama sends tool calls with finish_reason "stop".
 func TestToolCallsRunWhateverTheFinishReason(t *testing.T) {
 	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request, call int, _ map[string]any) {
