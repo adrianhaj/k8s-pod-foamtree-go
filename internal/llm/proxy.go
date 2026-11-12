@@ -423,7 +423,7 @@ func (t target) read(parent context.Context, stop context.CancelFunc, c *compat,
 	if cut {
 		rd.Finish, rd.chars, err = "length", chars, nil
 	}
-	// A failed round that produced nothing is not charged, only one that streamed text.
+	// A failed round is charged only once the upstream produced output (text, reasoning or tool-call arguments).
 	if rd.Usage.Total == 0 && (err == nil || rd.chars > 0) {
 		out := rd.chars / charsPerToken
 		rd.Usage = Usage{Prompt: in, Completion: out, Total: in + out, Estimated: true}
